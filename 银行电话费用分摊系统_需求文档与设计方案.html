@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>银行内部电话费用分摊系统 — 需求文档 &amp; 设计方案</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config={theme:{extend:{colors:{navy:'#1F4E79',blue:'#2E75B6',slate:'#3B4F6B',pale:'#EDF2F7',danger:'#CC0000',warn:'#E65100'}}}}
+</script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
+:root{--sidebar-w:260px;--header-h:56px}
+*{font-family:'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif}
+html{scroll-behavior:smooth;scroll-padding-top:72px}
+body{margin:0;background:#F7F9FC;color:#1A202C}
+.sidebar{position:fixed;top:0;left:0;width:var(--sidebar-w);height:100vh;background:linear-gradient(180deg,#1F4E79 0%,#163A5C 100%);overflow-y:auto;z-index:50;padding:20px 0}
+.sidebar a{display:block;color:#CBD5E0;text-decoration:none;padding:7px 20px;font-size:13px;border-left:3px solid transparent;transition:all .15s}
+.sidebar a:hover,.sidebar a.active{color:#fff;background:rgba(255,255,255,.08);border-left-color:#2E75B6}
+.sidebar .grp{color:#8FA8C8;font-size:11px;font-weight:700;letter-spacing:1px;padding:18px 20px 6px;text-transform:uppercase}
+.sidebar .logo{color:#fff;font-size:15px;font-weight:700;padding:0 20px 6px}
+.sidebar .sub{font-size:11px;color:#8FA8C8;padding:0 20px 20px}
+.main{margin-left:var(--sidebar-w);padding:32px 40px 80px;max-width:960px}
+h1{font-size:28px;font-weight:700;color:#1F4E79;border-bottom:3px solid #2E75B6;padding-bottom:10px;margin:48px 0 24px}
+h2{font-size:21px;font-weight:700;color:#2E75B6;margin:36px 0 16px}
+h3{font-size:17px;font-weight:600;color:#3B4F6B;margin:24px 0 10px}
+p{line-height:1.75;margin:8px 0}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13.5px}
+th{background:#1F4E79;color:#fff;font-weight:600;padding:9px 14px;text-align:left;white-space:nowrap}
+td{padding:8px 14px;border-bottom:1px solid #E2E8F0;vertical-align:top}
+tr:nth-child(even) td{background:#F7FAFC}
+.tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:3px;margin:0 2px}
+.tag-p0{background:#FEE2E2;color:#991B1B}.tag-p1{background:#DBEAFE;color:#1E40AF}.tag-p2{background:#FEF3C7;color:#92400E}.tag-p3{background:#F3F4F6;color:#6B7280}
+.tag-blue{background:#DBEAFE;color:#1E40AF}.tag-green{background:#D1FAE5;color:#065F46}.tag-orange{background:#FEF3C7;color:#92400E}
+.note{background:#EBF4FF;border-left:4px solid #2E75B6;padding:12px 18px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px}
+.warn{background:#FFF7ED;border-left:4px solid #E65100;padding:12px 18px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px}
+.code{background:#1E293B;color:#E2E8F0;padding:16px 20px;border-radius:8px;font-family:'JetBrains Mono','Fira Code',monospace;font-size:13px;overflow-x:auto;line-height:1.6;margin:12px 0}
+.badge{display:inline-block;background:#2E75B6;color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px}
+ul{margin:6px 0;padding-left:24px}li{margin:4px 0;line-height:1.7}
+.card{background:#fff;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.06);padding:20px 24px;margin:16px 0}
+.cover{text-align:center;padding:80px 0 40px}
+.cover h1{font-size:36px;border:none;padding:0;margin:0}
+.cover .sub{font-size:20px;color:#2E75B6;margin:12px 0 0}
+.cover .meta{color:#718096;font-size:14px;margin:28px 0 0}
+.flow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0}
+.flow .step{background:#2E75B6;color:#fff;padding:6px 14px;border-radius:6px;font-size:13px;font-weight:600;white-space:nowrap}
+.flow .arrow{color:#A0AEC0;font-size:18px}
+.vs{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
+.vs>div{border-radius:8px;padding:16px 20px}
+.vs .old{background:#FFF5F5;border:1px solid #FED7D7}
+.vs .new{background:#F0FFF4;border:1px solid #C6F6D5}
+.sql{white-space:pre;font-size:12.5px}
+@media(max-width:900px){.sidebar{display:none}.main{margin-left:0;padding:20px}}
+</style>
+</head>
+<body>
+
+<!-- ========== 侧边栏 ========== -->
+<nav class="sidebar">
+  <div class="logo">费用分摊系统</div>
+  <div class="sub">需求文档 &amp; 设计方案 V1.1</div>
+  <div class="grp">概述</div>
+  <a href="#ch1">一、项目概述</a>
+  <a href="#ch1-1">1.1 项目背景</a>
+  <a href="#ch1-2">1.2 5W1H分析</a>
+  <a href="#ch1-3">1.3 核心业务流</a>
+  <a href="#ch1-4">1.4 系统边界</a>
+  <div class="grp">角色</div>
+  <a href="#ch2">二、角色与权限</a>
+  <div class="grp">数据源</div>
+  <a href="#ch3">三、数据源与导入</a>
+  <a href="#ch3-1">3.1 三份源数据文件</a>
+  <a href="#ch3-2">3.2 号码归属表</a>
+  <a href="#ch3-3">3.3 通讯录</a>
+  <a href="#ch3-4">3.4 电信账单</a>
+  <a href="#ch3-5">3.5 导入顺序</a>
+  <a href="#ch3-6">3.6 账单模板配置</a>
+  <div class="grp">归属</div>
+  <a href="#ch4">四、号码归属优先级与匹配</a>
+  <a href="#ch4-1">4.1 三源归属模型</a>
+  <a href="#ch4-2">4.2 匹配算法</a>
+  <a href="#ch4-3">4.3 借调处理</a>
+  <div class="grp">分摊</div>
+  <a href="#ch5">五、分摊与确认机制</a>
+  <a href="#ch5-1">5.1 自动分摊规则</a>
+  <a href="#ch5-2">5.2 费用字段</a>
+  <a href="#ch5-3">5.3 状态机</a>
+  <a href="#ch5-4">5.4 逐级确认</a>
+  <div class="grp">导出</div>
+  <a href="#ch6">六、分行账单导出</a>
+  <a href="#ch6-1">6.1 导出格式</a>
+  <a href="#ch6-2">6.2 V1→V2变更</a>
+  <div class="grp">交互</div>
+  <a href="#ch7">七、页面结构</a>
+  <div class="grp">数据模型</div>
+  <a href="#ch8">八、数据模型</a>
+  <a href="#ch8-ddl">DDL脚本</a>
+  <div class="grp">用户故事</div>
+  <a href="#ch9">九、用户故事</a>
+  <div class="grp">API</div>
+  <a href="#ch10">十、API设计</a>
+  <div class="grp">技术</div>
+  <a href="#ch11">十一、技术架构</a>
+  <div class="grp">计划</div>
+  <a href="#ch12">十二、里程碑与风险</a>
+  <div class="grp">非功能</div>
+  <a href="#ch13">十三、非功能需求</a>
+</nav>
+
+<!-- ========== 正文 ========== -->
+<div class="main">
+
+<!-- 封面 -->
+<div class="cover">
+  <div style="font-size:48px;margin-bottom:16px">🏦</div>
+  <h1>银行内部电话费用分摊系统</h1>
+  <div class="sub">需求文档 &amp; 设计方案</div>
+  <p style="color:#4A5568;margin-top:16px">基于电信账单的多级组织费用分摊与确认系统</p>
+  <div class="meta">V1.1 &nbsp;|&nbsp; 2026-06-22 &nbsp;|&nbsp; 密级：内部 &nbsp;|&nbsp; 状态：评审中</div>
+  <div style="margin-top:32px;display:flex;gap:12px;justify-content:center">
+    <span class="badge">PRD</span><span class="badge" style="background:#E65100">技术架构</span><span class="badge" style="background:#333">DDL</span><span class="badge" style="background:#7C3AED">API</span>
+  </div>
+</div>
+
+<!-- ====== 一、项目概述 ====== -->
+<h1 id="ch1">一、项目概述</h1>
+
+<h2 id="ch1-1">1.1 项目背景</h2>
+<p>银行内部使用中国电信提供的电话服务，每月产生大量通讯费用（基础通话费、录音费、彩铃费、闪信费）。这些费用需要按号码归属逐级分摊到<strong>集团→一级分行→二级分行→部门</strong>，供各级财务入账。</p>
+<p>当前依赖人工Excel操作，效率低、易出错、难以追溯。本系统旨在实现<strong>导入电信账单→自动匹配号码归属→按组织层级分摊→逐级确认→导出分行账单</strong>的全流程自动化。</p>
+
+<h2 id="ch1-2">1.2 5W1H分析</h2>
+<table>
+<tr><th style="width:120px">维度</th><th>内容</th></tr>
+<tr><td><strong>Why</strong></td><td>人工分摊效率低、错误率高、追溯困难</td></tr>
+<tr><td><strong>What</strong></td><td>基于电信账单的多级组织费用分摊与确认系统</td></tr>
+<tr><td><strong>Who</strong></td><td>4类角色：集团管理员、分行管理员、部门管理员、财务人员</td></tr>
+<tr><td><strong>When</strong></td><td>每月账单周期T+5日前完成导入分摊，T+15日前完成确认</td></tr>
+<tr><td><strong>Where</strong></td><td>银行内部Web系统，独立部署</td></tr>
+<tr><td><strong>How</strong></td><td>导入账单→匹配归属→自动分摊→逐级确认→导出Excel</td></tr>
+</table>
+
+<h2 id="ch1-3">1.3 核心业务流</h2>
+<div class="flow">
+  <span class="step">号码归属表导入</span><span class="arrow">→</span>
+  <span class="step">通讯录导入</span><span class="arrow">→</span>
+  <span class="step">归属校验</span><span class="arrow">→</span>
+  <span class="step">借调+例外处理</span><span class="arrow">→</span>
+  <span class="step">账单导入</span><span class="arrow">→</span>
+  <span class="step">自动分摊</span><span class="arrow">→</span>
+  <span class="step">逐级确认</span><span class="arrow">→</span>
+  <span class="step">导出Excel</span>
+</div>
+
+<h2 id="ch1-4">1.4 系统边界</h2>
+<ul>
+  <li><strong>运营商</strong>：仅中国电信（单一运营商）</li>
+  <li><strong>费用类型</strong>：基础通话费、录音费、彩铃费、闪信费（4类）</li>
+  <li><strong>无公共费用分摊</strong>：所有费用均可归属到具体号码</li>
+  <li><strong>无审批流程</strong>：逐级确认即可，不需要审批</li>
+  <li><strong>无财务系统API对接</strong>：通过Excel导出实现</li>
+</ul>
+
+<!-- ====== 二、角色与权限 ====== -->
+<h1 id="ch2">二、角色与权限模型</h1>
+
+<h2>2.1 角色定义</h2>
+<table>
+<tr><th>角色</th><th>组织范围</th><th>核心职责</th></tr>
+<tr><td><strong>集团管理员</strong></td><td>集团</td><td>导入账单/归属表/通讯录，查看全部分摊结果，确认集团级分摊，导出全集团账单</td></tr>
+<tr><td><strong>分行管理员</strong></td><td>一级/二级分行</td><td>确认本分行分摊结果，处理借调调整，导出本分行账单</td></tr>
+<tr><td><strong>部门管理员</strong></td><td>部门</td><td>确认本部门费用，查看明细</td></tr>
+<tr><td><strong>财务人员</strong></td><td>授权范围</td><td>查看分摊结果，导出Excel，查看汇总报表</td></tr>
+</table>
+
+<h2>2.2 权限矩阵</h2>
+<table>
+<tr><th>功能</th><th style="text-align:center">集团管理员</th><th style="text-align:center">分行管理员</th><th style="text-align:center">部门管理员</th><th style="text-align:center">财务人员</th></tr>
+<tr><td>导入账单/归属表/通讯录</td><td style="text-align:center;color:#065F46">✓</td><td style="text-align:center;color:#999">—</td><td style="text-align:center;color:#999">—</td><td style="text-align:center;color:#999">—</td></tr>
+<tr><td>确认分摊</td><td style="text-align:center;color:#065F46">✓</td><td style="text-align:center;color:#065F46">✓</td><td style="text-align:center;color:#065F46">✓</td><td style="text-align:center;color:#999">—</td></tr>
+<tr><td>撤回确认</td><td style="text-align:center;color:#065F46">✓</td><td style="text-align:center;color:#065F46">✓</td><td style="text-align:center;color:#999">—</td><td style="text-align:center;color:#999">—</td></tr>
+<tr><td>借调调整</td><td style="text-align:center;color:#065F46">✓</td><td style="text-align:center;color:#065F46">✓</td><td style="text-align:center;color:#999">—</td><td style="text-align:center;color:#999">—</td></tr>
+<tr><td>导出Excel</td><td style="text-align:center;color:#065F46">✓</td><td style="text-align:center;color:#065F46">✓</td><td style="text-align:center;color:#999">—</td><td style="text-align:center;color:#065F46">✓</td></tr>
+<tr><td>查看分摊结果</td><td style="text-align:center;color:#065F46">✓</td><td style="text-align:center;color:#065F46">✓</td><td style="text-align:center;color:#065F46">✓</td><td style="text-align:center;color:#065F46">✓</td></tr>
+</table>
+
+<!-- ====== 三、数据源与导入 ====== -->
+<h1 id="ch3">三、数据源与导入</h1>
+
+<h2 id="ch3-1">3.1 三份源数据文件</h2>
+<table>
+<tr><th>文件</th><th>列数</th><th>关键字段</th><th>用途</th></tr>
+<tr><td><strong>号码归属.xlsx</strong></td><td>2列</td><td>外线号码+描述</td><td>分行级归属+例外标记+通讯录缺失时的兜底</td></tr>
+<tr><td><strong>通讯录.xlsx</strong></td><td>4列</td><td>部门全路径+用户名+分机+外线</td><td>主归属源：号码→员工→部门（最细粒度）</td></tr>
+<tr><td><strong>电信账单.xlsx</strong></td><td>4 Sheets</td><td>按号码费用/录音/彩铃/闪信</td><td>费用数据源，按Sheet分别解析</td></tr>
+</table>
+
+<h2 id="ch3-2">3.2 号码归属表</h2>
+<div class="note"><strong>格式：</strong>2列（外线号码 + 描述）</div>
+<p>描述字段用 <code>/</code> 分隔组织层级，层数不固定。描述以 <code>[例外]</code> 前缀开头的号码，优先级最高（P0）。</p>
+<table>
+<tr><th>外线号码</th><th>描述</th><th>解析结果</th></tr>
+<tr><td>01056089999</td><td>北京分行/营业部</td><td>归属北京分行营业部</td></tr>
+<tr><td>01088881234</td><td>[例外]总行专用</td><td><span class="tag tag-p0">P0 例外</span></td></tr>
+</table>
+
+<h2 id="ch3-3">3.3 通讯录</h2>
+<div class="note"><strong>格式：</strong>4列（部门全路径 + 用户名称 + 分机号码 + 外线号码）</div>
+<p>部门全路径用 <code>-</code> 分隔，层数不固定。用户名称为纯数字（=员工ID）。</p>
+<p>部门全路径包含<strong>借调/挂职/交流/代管/外派/轮岗/驻点</strong>等关键词时，自动标记为借调。</p>
+<table>
+<tr><th>部门全路径</th><th>用户</th><th>分机</th><th>外线</th><th>检测</th></tr>
+<tr><td>总行-信息科技部-软件开发中心</td><td>张三</td><td>367702</td><td>01056089999</td><td></td></tr>
+<tr><td>北京分行-运营管理部(借调)</td><td>李四</td><td>367703</td><td>01056080001</td><td><span class="tag tag-orange">借调</span></td></tr>
+</table>
+
+<h2 id="ch3-4">3.4 电信账单</h2>
+<div class="note"><strong>4个Sheet结构</strong>，Sheet名含月前缀（如"2026年3月按号码费用"），通过sheetNamePattern正则匹配。</div>
+<table>
+<tr><th>Sheet</th><th>列数</th><th>号码列位置</th><th>费用字段</th></tr>
+<tr><td>按号码费用</td><td>9列</td><td>A列</td><td>平台使用费+码号月租费+国内外呼时长+转接外呼时长+国内费用+国际时长+国际费用+费用小计+备注</td></tr>
+<tr><td>录音</td><td>4列</td><td>B列</td><td>分机号+号码+录音目录+费用小计</td></tr>
+<tr><td>彩铃</td><td>3列</td><td>B列</td><td>分机号+号码+费用</td></tr>
+<tr><td>闪信</td><td>4列</td><td>A列</td><td>号码+月份+下发量+金额（<span class="tag tag-orange">季度结算</span>）</td></tr>
+</table>
+<p><strong>闪信季度结算：</strong>所有月份的闪信数据累计到当前月份总额，按号码归属分摊。</p>
+
+<h2 id="ch3-5">3.5 导入顺序（关键依赖）</h2>
+<div class="flow">
+  <span class="step">号码归属表</span><span class="arrow">→</span>
+  <span class="step">通讯录</span><span class="arrow">→</span>
+  <span class="step">归属校验</span><span class="arrow">→</span>
+  <span class="step">借调+例外</span><span class="arrow">→</span>
+  <span class="step">账单导入</span><span class="arrow">→</span>
+  <span class="step">分摊</span><span class="arrow">→</span>
+  <span class="step">确认</span><span class="arrow">→</span>
+  <span class="step">导出</span>
+</div>
+
+<h2 id="ch3-6">3.6 账单模板配置（bill_template）</h2>
+<p>采用JSON配置驱动解析，支持不同月份账单格式微调：</p>
+<ul>
+  <li><strong>sheetNamePattern</strong>：正则匹配Sheet名（如 <code>/按号码费用$/</code>）</li>
+  <li><strong>phoneColumn</strong>：号码所在列（A或B，不同Sheet位置不同）</li>
+  <li><strong>feeMappings</strong>：费用列到字段的映射（如 <code>{F:'call_fee', H:'international_fee'}</code>）</li>
+  <li><strong>isQuarterly</strong>：是否季度结算（闪信=true）</li>
+  <li><strong>skipRows</strong>：跳过行数（表头行）</li>
+</ul>
+
+<div class="code">{  "sheetNamePattern": "按号码费用$",
+  "phoneColumn": "A",
+  "feeMappings": { "E":"monthly_rent_platform","F":"monthly_rent_code","J":"call_fee_domestic","K":"call_fee_international","L":"total_fee" },
+  "isQuarterly": false,
+  "skipRows": 1
+}</div>
+
+<!-- ====== 四、号码归属 ====== -->
+<h1 id="ch4">四、号码归属优先级与匹配</h1>
+
+<h2 id="ch4-1">4.1 三源归属模型</h2>
+<table>
+<tr><th style="width:60px">优先级</th><th>来源</th><th>标记</th><th>含义</th></tr>
+<tr><td><span class="tag tag-p0">P0</span></td><td><strong>号码归属表</strong></td><td>is_exception=1</td><td>例外号码，最高优先级，不可被任何规则覆盖</td></tr>
+<tr><td><span class="tag tag-p1">P1</span></td><td><strong>通讯录</strong></td><td>部门全路径</td><td>主归属源，最细粒度（到员工/部门）</td></tr>
+<tr><td><span class="tag tag-p2">P2</span></td><td><strong>号码归属表</strong></td><td>描述字段</td><td>兜底归属，通讯录缺失时使用（仅到分行级）</td></tr>
+<tr><td><span class="tag tag-p3">P3</span></td><td><em>无</em></td><td>UNASSIGNED</td><td>两个源均无该号码，待人工分配</td></tr>
+</table>
+
+<h2 id="ch4-2">4.2 匹配算法</h2>
+<div class="code">function resolveOwnership(phoneNumber):
+  if 号码归属表.is_exception(phoneNumber):
+    return { source: 'P0', org: 归属表.org, is_exception: true }
+
+  if 通讯录.has(phoneNumber):
+    return { source: 'P1', org: 通讯录.department, is_exception: false }
+
+  if 号码归属表.has(phoneNumber):
+    return { source: 'P2', org: 归属表.branch, is_exception: false }
+
+  return { source: 'P3', org: NULL, is_exception: false }</div>
+
+<h2 id="ch4-3">4.3 借调处理</h2>
+<div class="card">
+  <p><strong>默认规则：</strong>费用归属到编制部门（从通讯录部门全路径解析）</p>
+  <p><strong>自动检测：</strong>部门全路径包含借调/挂职/交流/代管/外派/轮岗/驻点关键词 → 标记 is_seconded=true</p>
+  <p><strong>人工调整：</strong>管理员可将借调人员费用转移到实际工作部门，调整记录存入 allocation_adjustment 表</p>
+</div>
+
+<!-- ====== 五、分摊与确认 ====== -->
+<h1 id="ch5">五、分摊与确认机制</h1>
+
+<h2 id="ch5-1">5.1 自动分摊规则</h2>
+<p>分摊逻辑：<strong>按号码归属到组织</strong>。每个号码的费用归入其所属组织，并沿组织树向上汇总。</p>
+<ul>
+  <li>每个号码 → 归属到末级组织（部门）</li>
+  <li>部门费用 = 该部门所有号码费用之和</li>
+  <li>分行费用 = 该分行下属所有部门费用之和</li>
+  <li>集团费用 = 所有分行费用之和 <strong>= 总账单金额</strong>（校验条件）</li>
+</ul>
+
+<h2 id="ch5-2">5.2 费用字段（6项）</h2>
+<table>
+<tr><th>字段</th><th>来源</th><th>说明</th></tr>
+<tr><td><code>monthly_rent</code></td><td>平台使用费+码号月租费</td><td>月租类固定费用</td></tr>
+<tr><td><code>call_fee</code></td><td>国内费用+国际费用</td><td>通话类变动费用</td></tr>
+<tr><td><code>recording_fee</code></td><td>录音Sheet费用小计</td><td>录音增值业务费</td></tr>
+<tr><td><code>crbt_fee</code></td><td>彩铃Sheet费用</td><td>彩铃增值业务费</td></tr>
+<tr><td><code>flash_msg_fee</code></td><td>闪信Sheet金额</td><td>闪信增值业务费（季度结算）</td></tr>
+<tr><td><code>total_fee</code></td><td>以上5项之和</td><td>费用合计</td></tr>
+</table>
+
+<h2 id="ch5-3">5.3 批次状态机</h2>
+<table>
+<tr><th style="width:40px">状态</th><th style="width:120px">名称</th><th>说明</th></tr>
+<tr><td><span class="badge" style="background:#999">0</span></td><td>DRAFT</td><td>草稿：账单已导入，分摊数据待校验</td></tr>
+<tr><td><span class="badge" style="background:#2E75B6">1</span></td><td>ALLOCATED</td><td>已分摊：分摊完成，待逐级确认</td></tr>
+<tr><td><span class="badge" style="background:#065F46">2</span></td><td>CONFIRMED</td><td>已确认：所有层级确认完成</td></tr>
+<tr><td><span class="badge" style="background:#333">3</span></td><td>LOCKED</td><td>已锁定：已进入财务入账流程，不可撤回</td></tr>
+</table>
+
+<h2 id="ch5-4">5.4 逐级确认与撤回</h2>
+<div class="flow">
+  <span class="step">集团确认</span><span class="arrow">→</span>
+  <span class="step">一级分行确认</span><span class="arrow">→</span>
+  <span class="step">二级分行确认</span><span class="arrow">→</span>
+  <span class="step">部门确认</span><span class="arrow">→</span>
+  <span class="step" style="background:#333">LOCKED</span>
+</div>
+<ul>
+  <li>撤回需填写原因，<strong>级联撤回所有下级</strong></li>
+  <li>已锁定（LOCKED）状态不可撤回</li>
+  <li>所有变更操作记录审计日志</li>
+</ul>
+
+<!-- ====== 六、分行账单导出 ====== -->
+<h1 id="ch6">六、分行账单导出</h1>
+
+<h2 id="ch6-1">6.1 导出格式（基于银行财务系统模板）</h2>
+<div class="warn"><strong>关键变更：</strong>导出格式已对齐银行财务系统实际导入模板（V2），不再是V1设计稿中的5 Sheet复杂格式。</div>
+
+<h3>文件1：分行费用分摊汇总.xlsx</h3>
+<p>按成本中心汇总费用，供财务系统批量导入入账。</p>
+<table>
+<tr><th>#</th><th>列名</th><th>示例</th><th>说明</th></tr>
+<tr><td style="text-align:center">A</td><td><strong>成本中心</strong></td><td>121006</td><td>末级部门成本中心代码（数值型）</td></tr>
+<tr><td style="text-align:center">B</td><td><strong>费用小计(单位：元)</strong></td><td>11.615</td><td>该成本中心全部费用合计</td></tr>
+</table>
+
+<h3>文件2：分行费用分摊明细.xlsx</h3>
+<p>按号码列示明细，供分行核对和追溯。</p>
+<table>
+<tr><th>#</th><th>列名</th><th>示例</th><th>说明</th></tr>
+<tr><td style="text-align:center">A</td><td><strong>号码</strong></td><td>085199911027</td><td>电信外线号码（字符串型）</td></tr>
+<tr><td style="text-align:center">B</td><td><strong>成本中心</strong></td><td>121006</td><td>号码归属的成本中心代码</td></tr>
+<tr><td style="text-align:center">C</td><td><strong>费用小计(单位：元)</strong></td><td>11.62</td><td>该号码全部费用合计</td></tr>
+</table>
+
+<h3>核心规则</h3>
+<ul>
+  <li><strong>成本中心</strong> = sys_organization.code（末级部门代码，如121006）</li>
+  <li><strong>费用小计</strong> = total_fee（6项费用之和）</li>
+  <li>汇总：按成本中心聚合，金额保留3位小数</li>
+  <li>明细：按号码列示，金额保留2位小数</li>
+  <li>不含P3未归属号码</li>
+  <li>完整性校验：汇总SUM = 明细SUM = 总账单金额</li>
+</ul>
+
+<h2 id="ch6-2">6.2 V1→V2 变更对比</h2>
+<div class="vs">
+  <div class="old">
+    <p style="font-weight:700;color:#9B2C2C;margin:0 0 8px">V1 设计稿（已废弃）</p>
+    <ul style="margin:0;padding-left:18px">
+      <li>1个Excel（5个Sheet）</li>
+      <li>汇总表13列（分行+7项费用+合计）</li>
+      <li>4个明细Sheet按费用类型拆</li>
+      <li>组织标识：一级分行+部门代码+部门名称</li>
+      <li>费用按月租/通话/录音/彩铃/闪信拆分</li>
+    </ul>
+  </div>
+  <div class="new">
+    <p style="font-weight:700;color:#276749;margin:0 0 8px">V2 实际模板（当前）</p>
+    <ul style="margin:0;padding-left:18px">
+      <li>2个Excel（各1个Sheet）</li>
+      <li>汇总2列（成本中心+费用小计）</li>
+      <li>1个明细Sheet（3列，不拆费用类型）</li>
+      <li>组织标识：成本中心（=部门代码）</li>
+      <li>费用仅合计（total_fee）</li>
+    </ul>
+  </div>
+</div>
+<div class="note"><strong>设计取舍：</strong>导出文件面向财务系统（极简），费用构成拆分通过系统页面交互式满足（可钻取、可筛选、可对比）。</div>
+
+<!-- ====== 七、页面结构 ====== -->
+<h1 id="ch7">七、页面结构</h1>
+
+<table>
+<tr><th>分组</th><th>菜单</th><th>功能</th></tr>
+<tr><td rowspan="3"><strong>数据导入</strong></td><td>号码归属管理</td><td>导入/查看号码归属表，例外标记</td></tr>
+<tr><td>通讯录管理</td><td>导入/查看通讯录，借调检测与处理</td></tr>
+<tr><td>账单导入</td><td>上传电信账单，模板配置，解析预览</td></tr>
+<tr><td rowspan="3"><strong>分摊管理</strong></td><td>归属校验</td><td>校验号码归属，查看P0-P3分布</td></tr>
+<tr><td>分摊结果</td><td>查看/确认/撤回分摊结果，借调调整</td></tr>
+<tr><td>分摊调整</td><td>调整分摊金额/归属，审计记录</td></tr>
+<tr><td rowspan="2"><strong>账单导出</strong></td><td>分行账单导出</td><td>选择账期+分行，导出汇总+明细2个Excel</td></tr>
+<tr><td>导出记录</td><td>查看历史导出记录和文件</td></tr>
+<tr><td rowspan="3"><strong>报表分析</strong></td><td>费用汇总</td><td>按组织/时间维度的费用汇总</td></tr>
+<tr><td>趋势分析</td><td>多月费用趋势对比</td></tr>
+<tr><td>异常检测</td><td>费用异常波动预警</td></tr>
+<tr><td rowspan="2"><strong>组织管理</strong></td><td>组织架构</td><td>树形展示集团→分行→部门</td></tr>
+<tr><td>用户管理</td><td>系统用户和角色管理</td></tr>
+<tr><td><strong>系统管理</strong></td><td>系统设置</td><td>账单模板、借调关键词等配置</td></tr>
+</table>
+
+<!-- ====== 八、数据模型 ====== -->
+<h1 id="ch8">八、数据模型</h1>
+
+<h2>8.1 表总览（12张表）</h2>
+<table>
+<tr><th>表名</th><th>说明</th></tr>
+<tr><td><code>sys_organization</code></td><td>组织架构树（集团→一级分行→二级分行→部门），type:1/2/3/4</td></tr>
+<tr><td><code>sys_user</code></td><td>系统用户，关联组织和角色</td></tr>
+<tr><td><code>phone_ownership_batch</code></td><td>号码归属导入批次</td></tr>
+<tr><td><code>phone_ownership_entry</code></td><td>号码归属明细（phone_number/description/is_exception/org_id）</td></tr>
+<tr><td><code>directory_batch</code></td><td>通讯录导入批次</td></tr>
+<tr><td><code>directory_entry</code></td><td>通讯录明细（dept_path/username/extension/phone/is_seconded/actual_org_id）</td></tr>
+<tr><td><code>bill_template</code></td><td>账单解析模板（JSON配置）</td></tr>
+<tr><td><code>bill_batch</code></td><td>账单导入批次（billing_month/status/template_id）</td></tr>
+<tr><td><code>bill_detail</code></td><td>账单明细（号码+6项费用+ownership_source+is_exception+is_seconded+org_id）</td></tr>
+<tr><td><code>allocation_result</code></td><td>分摊结果（按组织汇总6项费用+确认状态+乐观锁版本号）</td></tr>
+<tr><td><code>allocation_adjustment</code></td><td>分摊调整记录（调整前后值+原因+操作人）</td></tr>
+<tr><td><code>audit_log</code></td><td>审计日志</td></tr>
+</table>
+
+<h2>8.2 核心字段</h2>
+<h3>bill_detail 费用字段</h3>
+<table>
+<tr><th>字段</th><th>类型</th><th>来源Sheet</th><th>说明</th></tr>
+<tr><td><code>monthly_rent</code></td><td>DECIMAL(12,2)</td><td>按号码费用</td><td>平台使用费+码号月租费</td></tr>
+<tr><td><code>call_fee</code></td><td>DECIMAL(12,2)</td><td>按号码费用</td><td>国内费用+国际费用</td></tr>
+<tr><td><code>recording_fee</code></td><td>DECIMAL(12,2)</td><td>录音</td><td>录音费用小计</td></tr>
+<tr><td><code>crbt_fee</code></td><td>DECIMAL(12,2)</td><td>彩铃</td><td>彩铃费用</td></tr>
+<tr><td><code>flash_msg_fee</code></td><td>DECIMAL(12,2)</td><td>闪信</td><td>闪信金额（季度）</td></tr>
+<tr><td><code>total_fee</code></td><td>DECIMAL(12,2)</td><td>计算</td><td>以上5项之和</td></tr>
+</table>
+
+<h3>bill_detail 归属字段</h3>
+<table>
+<tr><th>字段</th><th>类型</th><th>说明</th></tr>
+<tr><td><code>ownership_source</code></td><td>VARCHAR(2)</td><td>P0/P1/P2/P3</td></tr>
+<tr><td><code>is_exception</code></td><td>TINYINT</td><td>是否例外（0/1）</td></tr>
+<tr><td><code>is_seconded</code></td><td>TINYINT</td><td>是否借调（0/1）</td></tr>
+<tr><td><code>org_id</code></td><td>BIGINT</td><td>归属组织ID</td></tr>
+</table>
+
+<h2 id="ch8-ddl">8.3 DDL脚本（V1__init_schema.sql）</h2>
+<div style="max-height:480px;overflow-y:auto;border:1px solid #E2E8F0;border-radius:8px">
+<div class="code sql">-- 1. 组织架构
+CREATE TABLE sys_organization (
+    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    name        VARCHAR(200) NOT NULL COMMENT '组织名称',
+    type        TINYINT      NOT NULL DEFAULT 0 COMMENT '类型: 1=集团 2=一级分行 3=二级分行 4=部门',
+    code        VARCHAR(50)  NOT NULL DEFAULT '' COMMENT '组织代码(成本中心/部门代码)',
+    parent_id   BIGINT       NULL COMMENT '上级组织ID',
+    sort_order  INT          NOT NULL DEFAULT 0,
+    path        VARCHAR(500) NOT NULL DEFAULT '' COMMENT '物化路径',
+    is_active   TINYINT      NOT NULL DEFAULT 1,
+    created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at  DATETIME     NULL,
+    INDEX idx_parent_id (parent_id),
+    INDEX idx_type (type),
+    INDEX idx_path (path(191))
+) COMMENT='组织架构';
+
+-- 2. 系统用户
+CREATE TABLE sys_user (
+    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    username        VARCHAR(100) NOT NULL,
+    password        VARCHAR(255) NOT NULL COMMENT 'BCrypt',
+    real_name       VARCHAR(100) NOT NULL DEFAULT '',
+    role            TINYINT NOT NULL DEFAULT 4 COMMENT '1=集团管理员 2=分行管理员 3=部门管理员 4=财务人员',
+    org_id          BIGINT NULL,
+    status          TINYINT NOT NULL DEFAULT 1 COMMENT '0=停用 1=启用',
+    must_change_pwd TINYINT NOT NULL DEFAULT 0,
+    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at  DATETIME NULL,
+    UNIQUE INDEX uk_username (username)
+) COMMENT='系统用户';
+
+-- 3-4. 号码归属
+CREATE TABLE phone_ownership_batch (
+    id             BIGINT AUTO_INCREMENT PRIMARY KEY,
+    batch_no       VARCHAR(50) NOT NULL,
+    file_name      VARCHAR(255) NOT NULL DEFAULT '',
+    total_count    INT NOT NULL DEFAULT 0,
+    exception_count INT NOT NULL DEFAULT 0,
+    import_status  TINYINT NOT NULL DEFAULT 0 COMMENT '0=处理中 1=成功 2=失败',
+    error_message  TEXT NULL,
+    imported_by    BIGINT NOT NULL,
+    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at  DATETIME NULL,
+    UNIQUE INDEX uk_batch_no (batch_no)
+) COMMENT='号码归属导入批次';
+
+CREATE TABLE phone_ownership_entry (
+    id           BIGINT AUTO_INCREMENT PRIMARY KEY,
+    batch_id     BIGINT NOT NULL,
+    phone_number VARCHAR(30) NOT NULL,
+    description  VARCHAR(500) NOT NULL DEFAULT '' COMMENT '用/分隔组织层级',
+    is_exception TINYINT NOT NULL DEFAULT 0 COMMENT '0=否 1=是([例外]前缀)',
+    org_id       BIGINT NULL,
+    match_level  VARCHAR(2) NOT NULL DEFAULT '' COMMENT 'P0/P1/P2/P3',
+    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at  DATETIME NULL,
+    INDEX idx_batch_id (batch_id),
+    INDEX idx_phone_number (phone_number),
+    INDEX idx_is_exception (is_exception)
+) COMMENT='号码归属明细';
+
+-- 5-6. 通讯录
+CREATE TABLE directory_batch (
+    id             BIGINT AUTO_INCREMENT PRIMARY KEY,
+    batch_no       VARCHAR(50) NOT NULL,
+    file_name      VARCHAR(255) NOT NULL DEFAULT '',
+    total_count    INT NOT NULL DEFAULT 0,
+    seconded_count INT NOT NULL DEFAULT 0,
+    import_status  TINYINT NOT NULL DEFAULT 0,
+    error_message  TEXT NULL,
+    imported_by    BIGINT NOT NULL,
+    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at  DATETIME NULL,
+    UNIQUE INDEX uk_batch_no (batch_no)
+) COMMENT='通讯录导入批次';
+
+CREATE TABLE directory_entry (
+    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    batch_id        BIGINT NOT NULL,
+    dept_path       VARCHAR(500) NOT NULL DEFAULT '' COMMENT '用-分隔',
+    username        VARCHAR(100) NOT NULL DEFAULT '',
+    extension       VARCHAR(30) NOT NULL DEFAULT '',
+    phone_number    VARCHAR(30) NOT NULL DEFAULT '',
+    org_id          BIGINT NULL COMMENT '匹配到的编制部门',
+    is_seconded     TINYINT NOT NULL DEFAULT 0,
+    actual_org_id   BIGINT NULL COMMENT '实际工作部门(借调调整后)',
+    seconded_keyword VARCHAR(50) NOT NULL DEFAULT '',
+    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at  DATETIME NULL,
+    INDEX idx_batch_id (batch_id),
+    INDEX idx_phone_number (phone_number)
+) COMMENT='通讯录明细';
+
+-- 7. 账单模板
+CREATE TABLE bill_template (
+    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    name        VARCHAR(100) NOT NULL,
+    operator    VARCHAR(50) NOT NULL DEFAULT 'CHINA_TELECOM',
+    sheet_configs JSON NOT NULL COMMENT 'Sheet配置数组',
+    is_active   TINYINT NOT NULL DEFAULT 1,
+    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at  DATETIME NULL
+) COMMENT='账单解析模板';
+
+-- 8. 账单批次
+CREATE TABLE bill_batch (
+    id            BIGINT AUTO_INCREMENT PRIMARY KEY,
+    batch_no      VARCHAR(50) NOT NULL,
+    billing_month VARCHAR(7) NOT NULL COMMENT 'YYYY-MM',
+    file_name     VARCHAR(255) NOT NULL DEFAULT '',
+    template_id   BIGINT NOT NULL,
+    status        TINYINT NOT NULL DEFAULT 0 COMMENT '0=DRAFT 1=ALLOCATED 2=CONFIRMED 3=LOCKED',
+    total_amount  DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+    total_count   INT NOT NULL DEFAULT 0,
+    import_status TINYINT NOT NULL DEFAULT 0,
+    error_message TEXT NULL,
+    imported_by   BIGINT NOT NULL,
+    confirmed_at  DATETIME NULL,
+    confirmed_by  BIGINT NULL,
+    locked_at     DATETIME NULL,
+    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at  DATETIME NULL,
+    UNIQUE INDEX uk_batch_no (batch_no),
+    INDEX idx_billing_month (billing_month),
+    INDEX idx_status (status)
+) COMMENT='账单导入批次';
+
+-- 9. 账单明细
+CREATE TABLE bill_detail (
+    id               BIGINT AUTO_INCREMENT PRIMARY KEY,
+    batch_id         BIGINT NOT NULL,
+    phone_number     VARCHAR(30) NOT NULL,
+    extension        VARCHAR(30) NOT NULL DEFAULT '',
+    sheet_type       VARCHAR(20) NOT NULL DEFAULT 'CALL' COMMENT 'CALL/RECORDING/CRBT/FLASH_MSG',
+    monthly_rent     DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    call_fee         DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    recording_fee    DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    crbt_fee         DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    flash_msg_fee    DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    total_fee        DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    ownership_source VARCHAR(2) NOT NULL DEFAULT '' COMMENT 'P0/P1/P2/P3',
+    is_exception     TINYINT NOT NULL DEFAULT 0,
+    is_seconded      TINYINT NOT NULL DEFAULT 0,
+    org_id           BIGINT NULL,
+    flash_month      VARCHAR(7) NOT NULL DEFAULT '',
+    raw_data         JSON NULL COMMENT '原始行数据(审计)',
+    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at  DATETIME NULL,
+    INDEX idx_batch_id (batch_id),
+    INDEX idx_phone_number (phone_number),
+    INDEX idx_org_id (org_id),
+    INDEX idx_sheet_type (sheet_type)
+) COMMENT='账单明细';
+
+-- 10. 分摊结果
+CREATE TABLE allocation_result (
+    id             BIGINT AUTO_INCREMENT PRIMARY KEY,
+    batch_id       BIGINT NOT NULL,
+    org_id         BIGINT NOT NULL,
+    org_name       VARCHAR(200) NOT NULL DEFAULT '',
+    monthly_rent   DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    call_fee       DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    recording_fee  DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    crbt_fee       DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    flash_msg_fee  DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    total_fee      DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    phone_count    INT NOT NULL DEFAULT 0,
+    confirm_status TINYINT NOT NULL DEFAULT 0 COMMENT '0=PENDING 1=CONFIRMED 2=WITHDRAWN',
+    confirmed_at   DATETIME NULL,
+    confirmed_by   BIGINT NULL,
+    withdrawn_at   DATETIME NULL,
+    withdrawn_by   BIGINT NULL,
+    withdraw_reason VARCHAR(500) NOT NULL DEFAULT '',
+    version        INT NOT NULL DEFAULT 0 COMMENT '乐观锁版本号',
+    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at  DATETIME NULL,
+    UNIQUE INDEX uk_batch_org (batch_id, org_id),
+    INDEX idx_confirm_status (confirm_status)
+) COMMENT='分摊结果';
+
+-- 11. 分摊调整
+CREATE TABLE allocation_adjustment (
+    id            BIGINT AUTO_INCREMENT PRIMARY KEY,
+    batch_id      BIGINT NOT NULL,
+    phone_number  VARCHAR(30) NOT NULL,
+    from_org_id   BIGINT NOT NULL,
+    to_org_id     BIGINT NOT NULL,
+    from_org_name VARCHAR(200) NOT NULL DEFAULT '',
+    to_org_name   VARCHAR(200) NOT NULL DEFAULT '',
+    amount        DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    fee_type      VARCHAR(20) NOT NULL DEFAULT 'TOTAL',
+    reason        VARCHAR(500) NOT NULL DEFAULT '',
+    adjusted_by   BIGINT NOT NULL,
+    adjusted_name VARCHAR(100) NOT NULL DEFAULT '',
+    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at  DATETIME NULL,
+    INDEX idx_batch_id (batch_id),
+    INDEX idx_phone_number (phone_number)
+) COMMENT='分摊调整记录';
+
+-- 12. 审计日志
+CREATE TABLE audit_log (
+    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id     BIGINT NOT NULL,
+    username    VARCHAR(100) NOT NULL DEFAULT '',
+    action      VARCHAR(50) NOT NULL,
+    entity_type VARCHAR(50) NOT NULL DEFAULT '',
+    entity_id   BIGINT NULL,
+    detail      JSON NULL,
+    ip_address  VARCHAR(50) NOT NULL DEFAULT '',
+    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_action (action),
+    INDEX idx_created_at (created_at)
+) COMMENT='审计日志';</div>
+</div>
+
+<!-- ====== 九、用户故事 ====== -->
+<h1 id="ch9">九、用户故事</h1>
+
+<h3>US-001 导入号码归属表</h3>
+<p>作为集团管理员，我想要导入号码归属表，以便建立号码与组织的归属关系。</p>
+<ul><li>支持Excel上传，解析2列数据</li><li>自动识别[例外]前缀并标记is_exception=1</li><li>描述字段用"/"分隔解析组织层级</li></ul>
+
+<h3>US-002 导入通讯录</h3>
+<p>作为集团管理员，我想要导入通讯录，以便建立号码→员工→部门的归属链。</p>
+<ul><li>解析4列数据，部门全路径用"-"分隔</li><li>自动检测借调关键词并标记is_seconded=true</li><li>与号码归属表交叉校验，输出P0-P3分布报告</li></ul>
+
+<h3>US-003 导入电信账单</h3>
+<p>作为集团管理员，我想要导入电信账单，以便开始费用分摊流程。</p>
+<ul><li>支持4个Sheet分别解析，Sheet名通过模板正则匹配</li><li>不同Sheet号码列位置不同（A/B）自动识别</li><li>闪信Sheet标记isQuarterly=true，季度累计</li></ul>
+
+<h3>US-004 号码归属校验</h3>
+<p>作为集团管理员，我想要校验号码归属，以便确认P0-P3分布并处理未归属号码。</p>
+<ul><li>对所有号码执行P0→P1→P2→P3匹配</li><li>输出校验报告：各优先级数量和占比</li><li>P3未归属号码可人工分配组织</li></ul>
+
+<h3>US-005 自动分摊</h3>
+<p>作为集团管理员，我想要系统自动按号码归属分摊费用到组织。</p>
+<ul><li>按号码归属将费用汇总到末级组织</li><li>沿组织树向上汇总到分行和集团</li><li>集团合计=总账单金额（数据完整性校验）</li></ul>
+
+<h3>US-006 借调调整</h3>
+<p>作为分行管理员，我想要调整借调人员的费用归属，使费用归入实际工作部门。</p>
+<ul><li>选择借调号码，指定目标部门</li><li>调整后自动重新计算分摊结果</li><li>调整记录写入审计表</li></ul>
+
+<h3>US-007 逐级确认</h3>
+<p>作为各级管理员，我想要确认本级的分摊结果，以便完成费用入账。</p>
+<ul><li>集团确认→自动生成分行分摊数据</li><li>撤回需填写原因，级联撤回下级</li><li>LOCKED状态不可撤回</li></ul>
+
+<h3>US-008 导出分行分摊Excel</h3>
+<p>作为管理员/财务人员，我想要导出分行分摊汇总和明细Excel，以便提交财务系统入账和分行核对。</p>
+<ul><li>支持全集团导出和单分行导出</li><li>一次导出生成2个Excel（汇总2列+明细3列）</li><li>格式严格匹配银行财务系统模板（成本中心+费用小计）</li><li>导出前执行完整性校验</li></ul>
+
+<h3>US-009 费用汇总报表</h3>
+<p>作为财务人员，我想要查看按组织/时间维度的费用汇总，以便分析费用构成。</p>
+<ul><li>支持按分行/部门/月份维度汇总</li><li>展示6项费用分布和趋势</li></ul>
+
+<h3>US-010 异常检测</h3>
+<p>作为管理员，我想要系统自动检测费用异常波动，以便及时发现问题。</p>
+<ul><li>环比/同比波动超阈值自动预警</li><li>预警结果在仪表盘展示</li></ul>
+
+<!-- ====== 十、API设计 ====== -->
+<h1 id="ch10">十、API设计</h1>
+
+<h2>10.1 数据导入</h2>
+<table>
+<tr><th style="width:60px">方法</th><th>路径</th><th>说明</th></tr>
+<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/phone-ownership/import</code></td><td>导入号码归属表</td></tr>
+<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/phone-ownership/batches</code></td><td>查询导入批次列表</td></tr>
+<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/directory/import</code></td><td>导入通讯录</td></tr>
+<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/directory/batches</code></td><td>查询通讯录批次列表</td></tr>
+<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/bills/import</code></td><td>导入电信账单</td></tr>
+<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/bills/batches</code></td><td>查询账单批次列表</td></tr>
+</table>
+
+<h2>10.2 归属与分摊</h2>
+<table>
+<tr><th style="width:60px">方法</th><th>路径</th><th>说明</th></tr>
+<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/ownership/validate</code></td><td>执行归属校验</td></tr>
+<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/ownership/report</code></td><td>获取校验报告（P0-P3分布）</td></tr>
+<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/ownership/assign</code></td><td>人工分配P3未归属号码</td></tr>
+<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/allocations/run</code></td><td>执行自动分摊</td></tr>
+<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/allocations?batchId=&orgId=</code></td><td>查询分摊结果</td></tr>
+<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/allocations/confirm</code></td><td>确认分摊</td></tr>
+<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/allocations/withdraw</code></td><td>撤回确认</td></tr>
+<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/allocations/adjust</code></td><td>调整分摊（借调等）</td></tr>
+</table>
+
+<h2>10.3 导出与报表</h2>
+<table>
+<tr><th style="width:60px">方法</th><th>路径</th><th>说明</th></tr>
+<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/branch-allocations/export-summary?batchId=&branchId=</code></td><td>导出分行分摊汇总Excel</td></tr>
+<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/branch-allocations/export-details?batchId=&branchId=</code></td><td>导出分行分摊明细Excel</td></tr>
+<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/branch-allocations/summary?batchId=&branchId=</code></td><td>查询分行汇总数据</td></tr>
+<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/reports/summary?orgId=&month=</code></td><td>费用汇总报表</td></tr>
+<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/reports/trend?orgId=&start=&end=</code></td><td>趋势分析</td></tr>
+<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/reports/anomalies?batchId=</code></td><td>异常检测结果</td></tr>
+</table>
+
+<h2>10.4 组织与系统</h2>
+<table>
+<tr><th style="width:60px">方法</th><th>路径</th><th>说明</th></tr>
+<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/organizations/tree</code></td><td>获取组织架构树</td></tr>
+<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/bill-templates</code></td><td>获取账单解析模板</td></tr>
+<tr><td><span class="badge" style="background:#E65100">PUT</span></td><td><code>/api/bill-templates/:id</code></td><td>更新模板配置</td></tr>
+</table>
+
+<!-- ====== 十一、技术架构 ====== -->
+<h1 id="ch11">十一、技术架构</h1>
+
+<h2>11.1 技术栈</h2>
+<table>
+<tr><th>层</th><th>技术</th><th>选型理由</th></tr>
+<tr><td><strong>前端</strong></td><td>React 18 + Ant Design 5 + Zustand + React Query</td><td>组件丰富、状态管理轻量、数据请求缓存/重试/轮询</td></tr>
+<tr><td><strong>构建</strong></td><td>Vite 5 + TypeScript 5</td><td>极速HMR、原生ESM、类型安全</td></tr>
+<tr><td><strong>后端</strong></td><td>Spring Boot 3.2 + JPA + Flyway</td><td>Java生态成熟、JPA适合CRUD、Flyway版本化DDL</td></tr>
+<tr><td><strong>数据库</strong></td><td>MySQL 8.0</td><td>企业级RDBMS、DECIMAL精度、JSON支持</td></tr>
+<tr><td><strong>缓存</strong></td><td>Redis 7</td><td>会话缓存、分摊结果缓存、限流、组织树缓存</td></tr>
+<tr><td><strong>部署</strong></td><td>Docker Compose + Nginx</td><td>容器化部署、HTTPS终止、静态资源服务</td></tr>
+<tr><td><strong>Excel</strong></td><td>Apache POI（后端）+ xlsx（前端预览）</td><td>后端生成导出、前端导入预览</td></tr>
+</table>
+
+<h2>11.2 架构分层</h2>
+<div class="card">
+  <p><strong>前端层：</strong>React SPA → Zustand状态 → React Query缓存 → Axios HTTP → Ant Design UI</p>
+  <p><strong>网关层：</strong>Nginx → HTTPS终止 → 静态资源(/) → API代理(/api/*)</p>
+  <p><strong>后端层：</strong>Controller → Service → Repository(JPA) → MySQL</p>
+  <p style="margin-left:120px;color:#718096">独立模块：ExcelParser / AllocationEngine / ExportGenerator</p>
+  <p><strong>数据层：</strong>MySQL 8 → Flyway迁移 → 定时备份</p>
+</div>
+
+<h2>11.3 核心Service</h2>
+<table>
+<tr><th>Service</th><th>职责</th></tr>
+<tr><td><code>PhoneOwnershipService</code></td><td>归属表导入、例外解析、P0匹配</td></tr>
+<tr><td><code>DirectoryService</code></td><td>通讯录导入、部门路径解析、借调检测</td></tr>
+<tr><td><code>BillImportService</code></td><td>账单导入、模板匹配、Sheet解析、闪信季度累计</td></tr>
+<tr><td><code>OwnershipResolver</code></td><td>归属校验引擎：P0→P1→P2→P3优先级匹配</td></tr>
+<tr><td><code>AllocationEngine</code></td><td>自动分摊：按号码归属汇总到组织树</td></tr>
+<tr><td><code>AllocationConfirmService</code></td><td>确认/撤回逻辑、级联撤回、状态机</td></tr>
+<tr><td><code>AdjustmentService</code></td><td>借调调整、金额调整、审计记录</td></tr>
+<tr><td><code>BranchBillExportService</code></td><td>分行分摊汇总+明细导出</td></tr>
+</table>
+
+<h2>11.4 分摊引擎算法</h2>
+<div class="code">输入: bill_batch_id + 全部 bill_detail 记录
+───────────────────────────────────────
+1. 批量加载 bill_detail (按 batch_id)
+2. 遍历每条 bill_detail:
+     → 按 org_id 汇总到 allocation_result
+3. 沿组织树向上汇总:
+     部门 → 二级分行 → 一级分行 → 集团
+4. 校验: 集团 total_fee = SUM(bill_detail.total_fee)
+5. 更新 bill_batch.status = ALLOCATED
+6. 批量写库: saveAll(batch_size=100)
+───────────────────────────────────────
+优化: 组织树一次性加载并缓存, 避免N+1</div>
+
+<h2>11.5 关键技术决策</h2>
+<table>
+<tr><th>决策点</th><th>选择</th><th>理由</th></tr>
+<tr><td>账单解析</td><td>JSON模板配置</td><td>电信账单格式可能微调，配置驱动无需改代码</td></tr>
+<tr><td>分摊算法</td><td>纯内存+批量写</td><td>1万条明细内存聚合极快，避免逐条写库</td></tr>
+<tr><td>Excel导出</td><td>后端POI生成</td><td>极简2+3列格式，POI轻松胜任</td></tr>
+<tr><td>状态管理</td><td>Zustand</td><td>轻量、TypeScript友好、无boilerplate</td></tr>
+<tr><td>组织树</td><td>邻接表+缓存</td><td>929+节点，一次性加载缓存</td></tr>
+<tr><td>闪信季度</td><td>isQuarterly标记</td><td>与月度分摊逻辑分离</td></tr>
+</table>
+
+<!-- ====== 十二、里程碑 ====== -->
+<h1 id="ch12">十二、里程碑与风险</h1>
+
+<h2>12.1 四阶段开发计划（10周）</h2>
+<table>
+<tr><th>阶段</th><th>时间</th><th>内容</th><th>交付物</th></tr>
+<tr><td><span class="badge" style="background:#2E75B6">P1</span></td><td>第1-3周</td><td>数据导入+归属校验</td><td>3个导入页面+校验报告</td></tr>
+<tr><td><span class="badge" style="background:#2E75B6">P2</span></td><td>第4-6周</td><td>分摊+确认+调整</td><td>分摊结果页+确认流程</td></tr>
+<tr><td><span class="badge" style="background:#2E75B6">P3</span></td><td>第7-8周</td><td>导出+报表</td><td>分行分摊导出+汇总报表</td></tr>
+<tr><td><span class="badge" style="background:#2E75B6">P4</span></td><td>第9-10周</td><td>优化+上线</td><td>性能优化+UAT+部署</td></tr>
+</table>
+
+<h2>12.2 风险与应对</h2>
+<table>
+<tr><th>风险</th><th>等级</th><th>应对</th></tr>
+<tr><td>账单格式变更</td><td><span class="tag" style="background:#FEE2E2;color:#991B1B">高</span></td><td>JSON模板配置驱动解析，新增Sheet/字段无需改代码</td></tr>
+<tr><td>组织架构调整</td><td><span class="tag" style="background:#FEE2E2;color:#991B1B">高</span></td><td>组织树版本化，历史分摊数据不受影响</td></tr>
+<tr><td>大量未归属号码</td><td><span class="tag tag-orange">中</span></td><td>P3未归属号码高亮展示，支持批量人工分配</td></tr>
+<tr><td>闪信季度结算复杂</td><td><span class="tag tag-orange">中</span></td><td>isQuarterly标记，累计逻辑与月度分摊分离</td></tr>
+<tr><td>并发确认冲突</td><td><span class="tag" style="background:#F3F4F6;color:#6B7280">低</span></td><td>乐观锁+版本号，冲突时提示重试</td></tr>
+</table>
+
+<!-- ====== 十三、非功能需求 ====== -->
+<h1 id="ch13">十三、非功能需求</h1>
+
+<h2>性能</h2>
+<ul>
+  <li>账单导入（含4 Sheet、1万行明细）&lt; 30秒</li>
+  <li>自动分摊计算 &lt; 10秒</li>
+  <li>分行分摊导出（汇总+明细2个文件）&lt; 10秒</li>
+  <li>页面首次加载 &lt; 3秒，路由切换 &lt; 500ms</li>
+</ul>
+
+<h2>可靠性</h2>
+<ul>
+  <li>导入操作幂等：重复导入同一批次不产生重复记录</li>
+  <li>分摊结果与总账单金额强一致：校验失败不允许确认</li>
+  <li>数据库事务保证：导入、分摊、确认操作原子性</li>
+</ul>
+
+<h2>安全性</h2>
+<ul>
+  <li>JWT认证 + RBAC权限控制</li>
+  <li>所有API接口参数校验，防SQL注入/XSS</li>
+  <li>敏感信息环境变量化，日志脱敏</li>
+  <li>操作审计：所有变更操作记录审计日志</li>
+</ul>
+
+<h2>可扩展性</h2>
+<ul>
+  <li>账单模板JSON配置：新增Sheet/字段无需改代码</li>
+  <li>借调关键词可配置：无需改代码</li>
+  <li>组织层级支持扩展：当前4级，可扩展到N级</li>
+</ul>
+
+<h2>兼容性</h2>
+<ul>
+  <li>浏览器：Chrome 90+、Edge 90+、Firefox 88+</li>
+  <li>Excel：导出文件兼容Microsoft Excel 2016+、WPS 2019+</li>
+</ul>
+
+<!-- 页脚 -->
+<div style="margin-top:80px;padding-top:24px;border-top:2px solid #E2E8F0;color:#A0AEC0;font-size:12px;text-align:center">
+  银行内部电话费用分摊系统 — 需求文档 &amp; 设计方案 V1.1 &nbsp;|&nbsp; 2026-06-22 &nbsp;|&nbsp; 密级：内部
+</div>
+
+</div><!-- .main -->
+
+<!-- 侧边栏高亮 -->
+<script>
+const links=document.querySelectorAll('.sidebar a');
+const obs=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting){links.forEach(l=>l.classList.remove('active'));const id=e.target.id;const a=document.querySelector(`.sidebar a[href="#${id}"]`);if(a){{a.classList.add('active');a.scrollIntoView({block:'nearest'})}}}})},{rootMargin:'-60px 0px -70% 0px'});
+document.querySelectorAll('h1[id],h2[id],h3[id]').forEach(h=>obs.observe(h));
+</script>
+</body>
+</html>

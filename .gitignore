@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build output
+dist/
+**/dist/
+target/
+**/target/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp/intermediate
+.temp/
+
+# Logs
+*.log
+
+# Environment (secrets)
+.env
+.env.local
+.env.*.local
+
+# Sample data (contains AIGC watermarks, not source code)
+*.xlsx
+
+# Java
+*.class
+*.jar
+*.war
+
+# Maven wrapper (not needed, server has mvn)
+.mvn/
+mvnw
+mvnw.cmd
