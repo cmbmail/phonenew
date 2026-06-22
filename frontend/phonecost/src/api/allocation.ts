@@ -1,7 +1,7 @@
 import { apiGet, apiPost } from '../lib/request';
 import { useAuthStore } from '../store/auth';
 import type { BillBatch, BillDetail } from '../types/bill';
-import type { AllocationResult } from '../types/allocation';
+import type { AllocationResult, AllocationAdjustment } from '../types/allocation';
 
 // ==================== Bill ====================
 
@@ -27,6 +27,18 @@ export const confirmAllAllocation = (batchId: number) =>
 
 export const withdrawAllocation = (batchId: number, orgId: number, reason: string) =>
   apiPost<{ org_id: number; result_count: number }>('/allocation/withdraw', { batch_id: batchId, org_id: orgId, reason });
+
+export const adjustAllocation = (batchId: number, phoneNumber: string, fromOrgId: number, toOrgId: number, reason: string) =>
+  apiPost<AllocationAdjustment>('/allocation/adjust', {
+    batch_id: batchId,
+    phone_number: phoneNumber,
+    from_org_id: fromOrgId,
+    to_org_id: toOrgId,
+    reason,
+  });
+
+export const getAdjustments = (batchId: number) =>
+  apiGet<AllocationAdjustment[]>(`/allocation/adjustments/${batchId}`);
 
 // ==================== Export URLs ====================
 

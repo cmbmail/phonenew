@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
-import { Card, Table, Tag, Button, Space, Modal, Input, Select, message, Descriptions } from 'antd';
-import { CheckOutlined, UndoOutlined, DownloadOutlined } from '@ant-design/icons';
+import { useState, useEffect, useMemo } from 'react';
+import { Card, Table, Tag, Button, Space, Modal, Input, Select, message, Descriptions, Tabs, Form, TreeSelect } from 'antd';
+import { CheckOutlined, UndoOutlined, DownloadOutlined, SwapOutlined, HistoryOutlined } from '@ant-design/icons';
 import type { BillBatch } from '../types/bill';
-import type { AllocationResult } from '../types/allocation';
+import type { AllocationResult, AllocationAdjustment } from '../types/allocation';
 import { CONFIRM_STATUS_MAP } from '../types/allocation';
+import type { Organization } from '../types/organization';
 import {
   getBillBatches,
   getAllocationResults,
@@ -12,16 +13,58 @@ import {
   withdrawAllocation,
   getExportSummaryUrl,
   getExportDetailUrl,
+  adjustAllocation,
+  getAdjustments,
 } from '../api/allocation';
+import { getOrgTree } from '../api/org';
+import { useAuthStore } from '../store/auth';
+
+/** Build Ant Design TreeSelect data from flat org list */
+function buildTreeData(orgs: Organization[]) {
+  const map = new Map<number, { value: number; title: string; children: any[] }>();
+  const roots: any[] = [];
+  for (const org of orgs) {
+    map.set(org.id, { value: org.id, title: org.name, children: [] });
+  }
+  for (const org of orgs) {
+    const node = map.get(org.id)!;
+    if (org.parent_id && map.has(org.parent_id)) {
+      map.get(org.parent_id)!.children.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+  // Remove empty children arrays to avoid leaf arrow
+  function clean(nodes: any[]) {
+    for (const n of nodes) {
+      if (n.children.length === 0) delete n.children;
+      else clean(n.children);
+    }
+  }
+  clean(roots);
+  return roots;
+}
 
 export default function AllocationPage() {
+  const role = useAuthStore((s) => s.role);
+  const isAdminOrFinance = role === 1 || role === 4;
+
   const [batches, setBatches] = useState<BillBatch[]>([]);
   const [selectedBatchId, setSelectedBatchId] = useState<number | null>(null);
   const [results, setResults] = useState<AllocationResult[]>([]);
+  const [adjustments, setAdjustments] = useState<AllocationAdjustment[]>([]);
   const [loading, setLoading] = useState(false);
   const [resultsLoading, setResultsLoading] = useState(false);
+  const [adjustmentsLoading, setAdjustmentsLoading] = useState(false);
   const [withdrawModal, setWithdrawModal] = useState<{ open: boolean; result?: AllocationResult }>({ open: false });
   const [withdrawReason, setWithdrawReason] = useState('');
+
+  // Adjust modal state
+  const [adjustModalOpen, setAdjustModalOpen] = useState(false);
+  const [adjustSubmitting, setAdjustSubmitting] = useState(false);
+  const [adjustForm] = Form.useForm();
+  const [orgList, setOrgList] = useState<Organization[]>([]);
+  const [activeTab, setActiveTab] = useState('results');
 
   const fetchBatches = async () => {
     setLoading(true);
@@ -47,11 +90,43 @@ export default function AllocationPage() {
     }
   };
 
-  useEffect(() => { fetchBatches(); }, []);
+  const fetchAdjustments = async (batchId: number) => {
+    setAdjustmentsLoading(true);
+    try {
+      const data = await getAdjustments(batchId);
+      setAdjustments(data);
+    } catch {
+      message.error('获取调整记录失败');
+    } finally {
+      setAdjustmentsLoading(false);
+    }
+  };
+
+  const fetchOrgTree = async () => {
+    try {
+      const data = await getOrgTree();
+      setOrgList(data);
+    } catch {
+      // silently fail, org tree is optional for adjust
+    }
+  };
+
+  useEffect(() => { fetchBatches(); fetchOrgTree(); }, []);
 
   useEffect(() => {
-    if (selectedBatchId) fetchResults(selectedBatchId);
+    if (selectedBatchId) {
+      fetchResults(selectedBatchId);
+      if (activeTab === 'adjustments') fetchAdjustments(selectedBatchId);
+    }
   }, [selectedBatchId]);
+
+  useEffect(() => {
+    if (selectedBatchId && activeTab === 'adjustments') {
+      fetchAdjustments(selectedBatchId);
+    }
+  }, [activeTab]);
+
+  const treeData = useMemo(() => buildTreeData(orgList), [orgList]);
 
   const handleConfirm = async (batchId: number, orgId: number) => {
     try {
@@ -94,6 +169,35 @@ export default function AllocationPage() {
     window.open(url, '_blank');
   };
 
+  const handleAdjust = async () => {
+    try {
+      const values = await adjustForm.validateFields();
+      setAdjustSubmitting(true);
+      await adjustAllocation(
+        selectedBatchId!,
+        values.phone_number,
+        values.from_org_id,
+        values.to_org_id,
+        values.reason,
+      );
+      message.success('费用调整成功');
+      setAdjustModalOpen(false);
+      adjustForm.resetFields();
+      fetchResults(selectedBatchId!);
+      if (activeTab === 'adjustments') fetchAdjustments(selectedBatchId!);
+    } catch (err: any) {
+      if (err?.errorFields) return; // form validation error
+      message.error(err?.response?.data?.message || '调整失败');
+    } finally {
+      setAdjustSubmitting(false);
+    }
+  };
+
+  const openAdjustModal = () => {
+    adjustForm.resetFields();
+    setAdjustModalOpen(true);
+  };
+
   const resultColumns = [
     {
       title: '组织名称', dataIndex: 'org_name', key: 'org_name', width: 180,
@@ -125,6 +229,9 @@ export default function AllocationPage() {
       render: (v: number) => <strong>¥{v?.toFixed(2)}</strong>,
     },
     {
+      title: '号码数', dataIndex: 'phone_count', key: 'phone_count', width: 70,
+    },
+    {
       title: '确认状态', dataIndex: 'confirm_status', key: 'confirm_status', width: 90,
       render: (s: number) => {
         const info = CONFIRM_STATUS_MAP[s] || { label: '未知', color: 'default' };
@@ -152,6 +259,29 @@ export default function AllocationPage() {
     },
   ];
 
+  const adjustmentColumns = [
+    {
+      title: '号码', dataIndex: 'phone_number', key: 'phone_number', width: 120,
+    },
+    {
+      title: '原组织', dataIndex: 'from_org_name', key: 'from_org_name', width: 160,
+    },
+    {
+      title: '目标组织', dataIndex: 'to_org_name', key: 'to_org_name', width: 160,
+    },
+    {
+      title: '调整金额', dataIndex: 'amount', key: 'amount', width: 110,
+      render: (v: number) => <strong>¥{v?.toFixed(2)}</strong>,
+    },
+    {
+      title: '原因', dataIndex: 'reason', key: 'reason', width: 200,
+      ellipsis: true,
+    },
+    {
+      title: '调整时间', dataIndex: 'created_at', key: 'created_at', width: 160,
+    },
+  ];
+
   const totalFee = results.reduce((sum, r) => sum + (r.total_fee || 0), 0);
   const confirmedCount = results.filter(r => r.confirm_status === 1).length;
   const pendingCount = results.filter(r => r.confirm_status === 0).length;
@@ -174,6 +304,11 @@ export default function AllocationPage() {
               <Button type="primary" icon={<CheckOutlined />} onClick={handleConfirmAll}>
                 批量确认
               </Button>
+              {isAdminOrFinance && (
+                <Button icon={<SwapOutlined />} onClick={openAdjustModal}>
+                  费用调整
+                </Button>
+              )}
               <Button icon={<DownloadOutlined />}
                 onClick={() => handleExport(getExportSummaryUrl(selectedBatchId))}>
                 导出汇总
@@ -195,18 +330,42 @@ export default function AllocationPage() {
               <Descriptions.Item label="待确认">{pendingCount}</Descriptions.Item>
             </Descriptions>
 
-            <Table
-              columns={resultColumns}
-              dataSource={results}
-              rowKey="id"
-              size="small"
-              loading={resultsLoading}
-              pagination={{ pageSize: 20 }}
-            />
+            <Tabs activeKey={activeTab} onChange={setActiveTab} items={[
+              {
+                key: 'results',
+                label: '分摊结果',
+                children: (
+                  <Table
+                    columns={resultColumns}
+                    dataSource={results}
+                    rowKey="id"
+                    size="small"
+                    loading={resultsLoading}
+                    pagination={{ pageSize: 20 }}
+                  />
+                ),
+              },
+              {
+                key: 'adjustments',
+                label: <span><HistoryOutlined /> 调整记录</span>,
+                children: (
+                  <Table
+                    columns={adjustmentColumns}
+                    dataSource={adjustments}
+                    rowKey="id"
+                    size="small"
+                    loading={adjustmentsLoading}
+                    pagination={{ pageSize: 20 }}
+                    locale={{ emptyText: '暂无调整记录' }}
+                  />
+                ),
+              },
+            ]} />
           </>
         )}
       </Card>
 
+      {/* 撤回弹窗 */}
       <Modal
         title="撤回确认"
         open={withdrawModal.open}
@@ -222,6 +381,62 @@ export default function AllocationPage() {
           value={withdrawReason}
           onChange={(e) => setWithdrawReason(e.target.value)}
         />
+      </Modal>
+
+      {/* 费用调整弹窗 */}
+      <Modal
+        title="费用调整"
+        open={adjustModalOpen}
+        onOk={handleAdjust}
+        onCancel={() => { setAdjustModalOpen(false); adjustForm.resetFields(); }}
+        okText="确认调整"
+        confirmLoading={adjustSubmitting}
+        width={520}
+      >
+        <Form form={adjustForm} layout="vertical">
+          <Form.Item
+            name="phone_number"
+            label="号码"
+            rules={[{ required: true, message: '请输入要调整的号码' }]}
+          >
+            <Input placeholder="输入外线号码，如 01088881234" />
+          </Form.Item>
+          <Form.Item
+            name="from_org_id"
+            label="原组织"
+            rules={[{ required: true, message: '请选择原组织' }]}
+          >
+            <TreeSelect
+              treeData={treeData}
+              placeholder="选择号码当前归属的组织"
+              showSearch
+              treeNodeFilterProp="title"
+              style={{ width: '100%' }}
+              allowClear
+            />
+          </Form.Item>
+          <Form.Item
+            name="to_org_id"
+            label="目标组织"
+            rules={[{ required: true, message: '请选择目标组织' }]}
+          >
+            <TreeSelect
+              treeData={treeData}
+              placeholder="选择将号码调整到的目标组织"
+              showSearch
+              treeNodeFilterProp="title"
+              style={{ width: '100%' }}
+              allowClear
+            />
+          </Form.Item>
+          <Form.Item
+            name="reason"
+            label="调整原因"
+            rules={[{ required: true, message: '请输入调整原因' }]}
+          >
+            <Input.TextArea rows={3} placeholder="说明调整原因，如：该号码已调拨至XX支行" />
+          </Form.Item>
+        </Form>
       </Modal>
     </div>
   );

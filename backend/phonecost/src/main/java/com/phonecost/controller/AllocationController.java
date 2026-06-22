@@ -1,11 +1,13 @@
 package com.phonecost.controller;
 
+import com.phonecost.domain.AllocationAdjustment;
 import com.phonecost.domain.AllocationResult;
 import com.phonecost.domain.BillBatch;
 import com.phonecost.dto.ApiResponse;
 import com.phonecost.repository.AllocationResultRepository;
 import com.phonecost.repository.BillBatchRepository;
 import com.phonecost.repository.SysUserRepository;
+import com.phonecost.service.AllocationAdjustService;
 import com.phonecost.service.AllocationConfirmService;
 import com.phonecost.service.AllocationExportService;
 import com.phonecost.service.AllocationService;
@@ -34,6 +36,7 @@ public class AllocationController {
     private final AllocationService allocationService;
     private final AllocationConfirmService confirmService;
     private final AllocationExportService exportService;
+    private final AllocationAdjustService adjustService;
     private final AllocationResultRepository resultRepository;
     private final BillBatchRepository billBatchRepository;
     private final DataScopeService dataScopeService;
@@ -145,6 +148,43 @@ public class AllocationController {
                 "org_id", orgId,
                 "result_count", results.size()
         )));
+    }
+
+    // ==================== 费用调整 ====================
+
+    @PostMapping("/adjust")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_FINANCE')")
+    public ResponseEntity<ApiResponse<AllocationAdjustment>> adjust(
+            @RequestBody Map<String, Object> body,
+            @RequestAttribute("userId") Long userId) {
+        Long batchId = toLong(body.get("batch_id"));
+        String phoneNumber = (String) body.get("phone_number");
+        Long fromOrgId = toLong(body.get("from_org_id"));
+        Long toOrgId = toLong(body.get("to_org_id"));
+        String reason = (String) body.get("reason");
+
+        if (batchId == null || phoneNumber == null || fromOrgId == null || toOrgId == null) {
+            throw new IllegalArgumentException("参数不完整：batch_id, phone_number, from_org_id, to_org_id 均为必填");
+        }
+
+        // 校验数据范围：from/to 组织至少一个在管辖范围内
+        DataScope scope = dataScopeService.getDataScope(userId);
+        if (!scope.isOrgVisible(fromOrgId) && !scope.isOrgVisible(toOrgId)) {
+            throw new IllegalArgumentException("调整涉及的组织不在您的管辖范围内");
+        }
+
+        AllocationAdjustment adjustment = adjustService.adjust(
+                batchId, phoneNumber, fromOrgId, toOrgId, reason, userId);
+        return ResponseEntity.ok(ApiResponse.ok(adjustment));
+    }
+
+    @GetMapping("/adjustments/{batchId}")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_FINANCE', 'ROLE_BRANCH')")
+    public ResponseEntity<ApiResponse<List<AllocationAdjustment>>> listAdjustments(
+            @PathVariable Long batchId,
+            @RequestAttribute("userId") Long userId) {
+        List<AllocationAdjustment> adjustments = adjustService.listAdjustments(batchId);
+        return ResponseEntity.ok(ApiResponse.ok(adjustments));
     }
 
     // ==================== 导出 ====================
