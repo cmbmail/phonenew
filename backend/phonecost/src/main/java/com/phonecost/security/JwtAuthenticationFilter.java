@@ -28,29 +28,37 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
+        // Try Authorization header first, then fallback to query param (for file downloads via window.open)
+        String token = null;
         String header = request.getHeader("Authorization");
         if (header != null && header.startsWith("Bearer ")) {
-            String token = header.substring(7);
-            if (jwtUtil.validateToken(token)) {
-                try {
-                    Long userId = jwtUtil.getUserId(token);
-                    String username = jwtUtil.getUsername(token);
-                    Byte role = jwtUtil.getRole(token);
-                    Long orgId = jwtUtil.getOrgId(token);
-                    String roleName = jwtUtil.mapRoleToName(role);
+            token = header.substring(7);
+        } else {
+            String queryToken = request.getParameter("token");
+            if (queryToken != null && !queryToken.isEmpty()) {
+                token = queryToken;
+            }
+        }
 
-                    var auth = new UsernamePasswordAuthenticationToken(
-                        userId, null, List.of(new SimpleGrantedAuthority(roleName)));
-                    SecurityContextHolder.getContext().setAuthentication(auth);
+        if (token != null && jwtUtil.validateToken(token)) {
+            try {
+                Long userId = jwtUtil.getUserId(token);
+                String username = jwtUtil.getUsername(token);
+                Byte role = jwtUtil.getRole(token);
+                Long orgId = jwtUtil.getOrgId(token);
+                String roleName = jwtUtil.mapRoleToName(role);
 
-                    // Also set userId as request attribute for @RequestAttribute access
-                    request.setAttribute("userId", userId);
-                    request.setAttribute("username", username);
-                    request.setAttribute("role", role);
-                    request.setAttribute("orgId", orgId);
-                } catch (Exception e) {
-                    log.debug("JWT parsing failed: {}", e.getMessage());
-                }
+                var auth = new UsernamePasswordAuthenticationToken(
+                    userId, null, List.of(new SimpleGrantedAuthority(roleName)));
+                SecurityContextHolder.getContext().setAuthentication(auth);
+
+                // Also set userId as request attribute for @RequestAttribute access
+                request.setAttribute("userId", userId);
+                request.setAttribute("username", username);
+                request.setAttribute("role", role);
+                request.setAttribute("orgId", orgId);
+            } catch (Exception e) {
+                log.debug("JWT parsing failed: {}", e.getMessage());
             }
         }
         chain.doFilter(request, response);

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Layout, Menu, Avatar, Dropdown, Typography, Popconfirm, Modal, Form, Input, message } from 'antd';
 import { DashboardOutlined, FileTextOutlined, PhoneOutlined, TeamOutlined, SettingOutlined, LogoutOutlined, ImportOutlined } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
@@ -7,13 +7,20 @@ import { apiPost } from '../lib/request';
 const { Sider, Header, Content } = Layout;
 const { Text } = Typography;
 
-const menuItems = [
+interface MenuItemDef {
+  key: string;
+  icon: React.ReactNode;
+  label: string;
+  roles?: number[]; // undefined = all roles, otherwise only listed roles can see
+}
+
+const allMenuItems: MenuItemDef[] = [
   { key: '/', icon: <DashboardOutlined />, label: '系统看板' },
   { key: '/bill', icon: <FileTextOutlined />, label: '账单管理' },
-  { key: '/import', icon: <ImportOutlined />, label: '数据导入' },
+  { key: '/import', icon: <ImportOutlined />, label: '数据导入', roles: [1, 2, 4] },
   { key: '/allocation', icon: <PhoneOutlined />, label: '费用分摊' },
   { key: '/org', icon: <TeamOutlined />, label: '组织架构' },
-  { key: '/settings', icon: <SettingOutlined />, label: '系统管理' },
+  { key: '/settings', icon: <SettingOutlined />, label: '系统管理', roles: [1] },
 ];
 
 const AppLayout: React.FC = () => {
@@ -23,7 +30,15 @@ const AppLayout: React.FC = () => {
   const [form] = Form.useForm();
   const navigate = useNavigate();
   const location = useLocation();
-  const { username, realName, mustChangePwd, clearMustChangePwd, logout } = useAuthStore();
+  const { username, realName, role, mustChangePwd, clearMustChangePwd, logout } = useAuthStore();
+
+  // Filter menu items by role
+  const menuItems = useMemo(() => {
+    if (!role) return allMenuItems.map(({ key, icon, label }) => ({ key, icon, label }));
+    return allMenuItems
+      .filter(item => !item.roles || item.roles.includes(role))
+      .map(({ key, icon, label }) => ({ key, icon, label }));
+  }, [role]);
 
   const handleChangePwd = async () => {
     try {

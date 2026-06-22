@@ -1,4 +1,5 @@
 import { apiGet, apiPost } from '../lib/request';
+import { useAuthStore } from '../store/auth';
 import type { BillBatch, BillDetail } from '../types/bill';
 import type { AllocationResult } from '../types/allocation';
 
@@ -29,14 +30,21 @@ export const withdrawAllocation = (batchId: number, orgId: number, reason: strin
 
 // ==================== Export URLs ====================
 
+/**
+ * Build export URL with JWT token as query parameter
+ * The backend export endpoints now require authentication,
+ * so we pass the token as a query param since window.open() can't set headers.
+ */
 export const getExportSummaryUrl = (batchId: number, branchOrgId?: number) => {
-  let url = `/api/allocation/export/summary?batchId=${batchId}`;
+  const token = useAuthStore.getState().token;
+  let url = `/api/allocation/export/summary?batchId=${batchId}&token=${token}`;
   if (branchOrgId) url += `&branchOrgId=${branchOrgId}`;
   return url;
 };
 
 export const getExportDetailUrl = (batchId: number, branchOrgId?: number) => {
-  let url = `/api/allocation/export/detail?batchId=${batchId}`;
+  const token = useAuthStore.getState().token;
+  let url = `/api/allocation/export/detail?batchId=${batchId}&token=${token}`;
   if (branchOrgId) url += `&branchOrgId=${branchOrgId}`;
   return url;
 };
