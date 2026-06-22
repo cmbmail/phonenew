@@ -21,6 +21,7 @@ import java.util.*;
 public class OrganizationService {
 
     private final SysOrganizationRepository orgRepository;
+    private final AuditLogService auditLogService;
 
     public List<SysOrganization> getTree() {
         return orgRepository.findAll();
@@ -177,6 +178,8 @@ public class OrganizationService {
         orgRepository.saveAll(saved);
 
         log.info("Organization import completed: total={}, skipped={}", rows.size(), skipped);
+        auditLogService.log(0L, "system", "ORG_IMPORT", "organization", null,
+                "{\"total_count\":" + rows.size() + ",\"skipped_count\":" + skipped + "}");
         return Map.of("total_count", rows.size(), "skipped_count", skipped);
     }
 

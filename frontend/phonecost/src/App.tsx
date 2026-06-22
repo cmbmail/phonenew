@@ -9,6 +9,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import DataImport from './pages/DataImport';
 import BillManagement from './pages/BillManagement';
+import AllocationPage from './pages/AllocationPage';
 import Organization from './pages/Organization';
 import UserManagement from './pages/UserManagement';
 
@@ -28,6 +29,7 @@ const App: React.FC = () => (
             <Route index element={<Dashboard />} />
             <Route path="import" element={<DataImport />} />
             <Route path="bill" element={<BillManagement />} />
+            <Route path="allocation" element={<AllocationPage />} />
             <Route path="org" element={<Organization />} />
             <Route path="settings" element={<UserManagement />} />
           </Route>
