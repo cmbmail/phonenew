@@ -95,7 +95,7 @@ public class AllocationController {
 
         // 校验数据范围：分行管理员只能确认自己管辖范围内的组织
         DataScope scope = dataScopeService.getDataScope(userId);
-        if (!scope.canOperateOrg(scope, orgId)) {
+        if (!scope.isOrgVisible(orgId)) {
             throw new IllegalArgumentException("无权操作该组织的分摊数据");
         }
 
@@ -136,7 +136,7 @@ public class AllocationController {
 
         // 校验数据范围：分行管理员只能撤回自己管辖范围内的组织
         DataScope scope = dataScopeService.getDataScope(userId);
-        if (!scope.canOperateOrg(scope, orgId)) {
+        if (!scope.isOrgVisible(orgId)) {
             throw new IllegalArgumentException("无权操作该组织的分摊数据");
         }
 
