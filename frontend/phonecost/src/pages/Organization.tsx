@@ -56,7 +56,6 @@ function buildTree(list: Organization[]): TreeDataNode[] {
 
 export default function OrganizationPage() {
   const [orgList, setOrgList] = useState<Organization[]>([]);
-  const [loading, setLoading] = useState(false);
   const [treeData, setTreeData] = useState<TreeDataNode[]>([]);
   const [selectedOrg, setSelectedOrg] = useState<Organization | null>(null);
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -67,15 +66,12 @@ export default function OrganizationPage() {
   const [rebuilding, setRebuilding] = useState(false);
 
   const fetchOrgTree = async () => {
-    setLoading(true);
     try {
       const data = await getOrgTree();
       setOrgList(data);
       setTreeData(buildTree(data));
     } catch {
       message.error('获取组织架构失败');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -226,7 +222,6 @@ export default function OrganizationPage() {
               treeData={treeData}
               defaultExpandAll
               onSelect={handleSelect}
-              loading={loading}
               showLine
             />
           </Card>
