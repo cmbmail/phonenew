@@ -9,6 +9,7 @@ import com.phonecost.service.OwnershipMatchService;
 import com.phonecost.service.PhoneOwnershipImportService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -39,6 +40,7 @@ public class DataImportController {
     // ==================== 号码归属导入 ====================
 
     @PostMapping("/ownership")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_BRANCH')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> importOwnership(
             @RequestParam("file") MultipartFile file,
             @RequestAttribute("userId") Long userId) {
@@ -72,6 +74,7 @@ public class DataImportController {
     // ==================== 通讯录导入 ====================
 
     @PostMapping("/directory")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_BRANCH')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> importDirectory(
             @RequestParam("file") MultipartFile file,
             @RequestAttribute("userId") Long userId) {
@@ -105,6 +108,7 @@ public class DataImportController {
     // ==================== 电信账单导入 ====================
 
     @PostMapping("/bill")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_BRANCH')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> importBill(
             @RequestParam("file") MultipartFile file,
             @RequestAttribute("userId") Long userId) {
@@ -139,6 +143,7 @@ public class DataImportController {
     // ==================== 归属匹配 ====================
 
     @PostMapping("/match-ownership")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_BRANCH')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> matchOwnership(
             @RequestBody Map<String, Long> body) {
         Long billBatchId = body.get("bill_batch_id");

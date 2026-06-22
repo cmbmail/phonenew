@@ -3,16 +3,18 @@ import { persist } from 'zustand/middleware';
 
 interface AuthState {
   token: string | null; refreshToken: string | null; role: number | null;
-  username: string | null; realName: string | null; mustChangePwd: boolean;
-  setAuth: (data: { access_token: string; refresh_token: string; role: number; username: string; real_name: string; must_change_pwd: number }) => void;
-  setToken: (token: string) => void; logout: () => void;
+  username: string | null; realName: string | null; orgId: number | null;
+  mustChangePwd: boolean;
+  setAuth: (data: { access_token: string; refresh_token: string; role: number; username: string; real_name: string; org_id?: number; must_change_pwd: number }) => void;
+  setToken: (token: string) => void; clearMustChangePwd: () => void; logout: () => void;
 }
 
 export const useAuthStore = create<AuthState>()(
   persist((set) => ({
-    token: null, refreshToken: null, role: null, username: null, realName: null, mustChangePwd: false,
-    setAuth: (data) => set({ token: data.access_token, refreshToken: data.refresh_token, role: data.role, username: data.username, realName: data.real_name, mustChangePwd: data.must_change_pwd === 1 }),
+    token: null, refreshToken: null, role: null, username: null, realName: null, orgId: null, mustChangePwd: false,
+    setAuth: (data) => set({ token: data.access_token, refreshToken: data.refresh_token, role: data.role, username: data.username, realName: data.real_name, orgId: data.org_id ?? null, mustChangePwd: data.must_change_pwd === 1 }),
     setToken: (token) => set({ token }),
-    logout: () => set({ token: null, refreshToken: null, role: null, username: null, realName: null, mustChangePwd: false }),
+    clearMustChangePwd: () => set({ mustChangePwd: false }),
+    logout: () => set({ token: null, refreshToken: null, role: null, username: null, realName: null, orgId: null, mustChangePwd: false }),
   }), { name: 'phonecost-auth' })
 );

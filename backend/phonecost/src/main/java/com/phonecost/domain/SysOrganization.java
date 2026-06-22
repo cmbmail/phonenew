@@ -19,8 +19,7 @@ public class SysOrganization extends BaseEntity {
     @ColumnDefault("0")
     private Byte type;
 
-    @Column(name = "code", nullable = false)
-    @ColumnDefault("''")
+    @Column(name = "code")
     private String code;
 
     @Column(name = "parent_id")

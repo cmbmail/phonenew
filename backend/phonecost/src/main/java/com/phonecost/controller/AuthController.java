@@ -47,7 +47,23 @@ public class AuthController {
             "must_change_pwd", user.getMustChangePwd(),
             "role", user.getRole(),
             "username", user.getUsername(),
-            "real_name", user.getRealName()
+            "real_name", user.getRealName(),
+            "org_id", user.getOrgId() != null ? user.getOrgId() : 0
+        )));
+    }
+
+    @GetMapping("/me")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> me(@RequestAttribute("userId") Long userId) {
+        var user = userRepository.findById(userId)
+            .orElseThrow(() -> new IllegalArgumentException("用户不存在"));
+        return ResponseEntity.ok(ApiResponse.ok(Map.of(
+            "id", user.getId(),
+            "username", user.getUsername(),
+            "real_name", user.getRealName(),
+            "role", user.getRole(),
+            "org_id", user.getOrgId() != null ? user.getOrgId() : 0,
+            "status", user.getStatus(),
+            "must_change_pwd", user.getMustChangePwd()
         )));
     }
 

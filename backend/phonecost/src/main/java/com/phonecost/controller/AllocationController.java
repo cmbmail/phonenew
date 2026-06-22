@@ -12,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -35,6 +36,7 @@ public class AllocationController {
     // ==================== 分摊计算 ====================
 
     @PostMapping("/calculate")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> calculate(
             @RequestBody Map<String, Long> body) {
         Long billBatchId = body.get("bill_batch_id");
@@ -65,6 +67,7 @@ public class AllocationController {
     // ==================== 确认/撤回 ====================
 
     @PostMapping("/confirm")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_BRANCH')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> confirm(
             @RequestBody Map<String, Object> body,
             @RequestAttribute("userId") Long userId) {
@@ -81,6 +84,7 @@ public class AllocationController {
     }
 
     @PostMapping("/confirm-all")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_BRANCH')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> confirmAll(
             @RequestBody Map<String, Long> body,
             @RequestAttribute("userId") Long userId) {
@@ -93,6 +97,7 @@ public class AllocationController {
     }
 
     @PostMapping("/withdraw")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_BRANCH')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> withdraw(
             @RequestBody Map<String, Object> body,
             @RequestAttribute("userId") Long userId) {

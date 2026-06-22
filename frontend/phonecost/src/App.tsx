@@ -9,6 +9,8 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import DataImport from './pages/DataImport';
 import BillManagement from './pages/BillManagement';
+import Organization from './pages/Organization';
+import UserManagement from './pages/UserManagement';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30000 } } });
 const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -26,6 +28,8 @@ const App: React.FC = () => (
             <Route index element={<Dashboard />} />
             <Route path="import" element={<DataImport />} />
             <Route path="bill" element={<BillManagement />} />
+            <Route path="org" element={<Organization />} />
+            <Route path="settings" element={<UserManagement />} />
           </Route>
         </Routes>
       </BrowserRouter>
