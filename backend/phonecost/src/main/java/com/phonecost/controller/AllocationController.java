@@ -5,9 +5,12 @@ import com.phonecost.domain.BillBatch;
 import com.phonecost.dto.ApiResponse;
 import com.phonecost.repository.AllocationResultRepository;
 import com.phonecost.repository.BillBatchRepository;
+import com.phonecost.repository.SysUserRepository;
 import com.phonecost.service.AllocationConfirmService;
 import com.phonecost.service.AllocationExportService;
 import com.phonecost.service.AllocationService;
+import com.phonecost.service.DataScope;
+import com.phonecost.service.DataScopeService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -21,6 +24,7 @@ import java.util.Map;
 /**
  * 费用分摊Controller
  * 分摊计算 + 确认/撤回 + 导出
+ * 支持按角色数据范围过滤
  */
 @RestController
 @RequestMapping("/allocation")
@@ -32,6 +36,8 @@ public class AllocationController {
     private final AllocationExportService exportService;
     private final AllocationResultRepository resultRepository;
     private final BillBatchRepository billBatchRepository;
+    private final DataScopeService dataScopeService;
+    private final SysUserRepository userRepository;
 
     // ==================== 分摊计算 ====================
 
@@ -54,13 +60,23 @@ public class AllocationController {
 
     @GetMapping("/results/{batchId}")
     public ResponseEntity<ApiResponse<List<AllocationResult>>> getResults(
-            @PathVariable Long batchId) {
-        return ResponseEntity.ok(ApiResponse.ok(
-                resultRepository.findByBatchIdAndDeletedAtIsNull(batchId)));
+            @PathVariable Long batchId,
+            @RequestAttribute("userId") Long userId) {
+        DataScope scope = dataScopeService.getDataScope(userId);
+        List<AllocationResult> all = resultRepository.findByBatchIdAndDeletedAtIsNull(batchId);
+        List<AllocationResult> filtered = scope.filterByOrgId(all, AllocationResult::getOrgId);
+        return ResponseEntity.ok(ApiResponse.ok(filtered));
     }
 
     @GetMapping("/batches")
-    public ResponseEntity<ApiResponse<List<BillBatch>>> listBatches() {
+    public ResponseEntity<ApiResponse<List<BillBatch>>> listBatches(
+            @RequestAttribute("userId") Long userId) {
+        // 账单批次不按组织过滤（批次是全局的），但分行管理员只能看到相关批次
+        DataScope scope = dataScopeService.getDataScope(userId);
+        if (scope.isAllScope()) {
+            return ResponseEntity.ok(ApiResponse.ok(billBatchRepository.findAll()));
+        }
+        // 非管理员：返回所有批次（批次本身不归属组织，但分摊结果按组织过滤）
         return ResponseEntity.ok(ApiResponse.ok(billBatchRepository.findAll()));
     }
 
@@ -76,6 +92,13 @@ public class AllocationController {
         if (batchId == null || orgId == null) {
             throw new IllegalArgumentException("batch_id 和 org_id 不能为空");
         }
+
+        // 校验数据范围：分行管理员只能确认自己管辖范围内的组织
+        DataScope scope = dataScopeService.getDataScope(userId);
+        if (!scope.canOperateOrg(scope, orgId)) {
+            throw new IllegalArgumentException("无权操作该组织的分摊数据");
+        }
+
         AllocationResult result = confirmService.confirm(batchId, orgId, userId);
         return ResponseEntity.ok(ApiResponse.ok(Map.of(
                 "org_id", result.getOrgId(),
@@ -92,7 +115,10 @@ public class AllocationController {
         if (batchId == null) {
             throw new IllegalArgumentException("batch_id 不能为空");
         }
-        int count = confirmService.confirmAll(batchId, userId);
+
+        // 分行管理员只确认自己范围内的
+        DataScope scope = dataScopeService.getDataScope(userId);
+        int count = confirmService.confirmAllInScope(batchId, userId, scope);
         return ResponseEntity.ok(ApiResponse.ok(Map.of("confirmed_count", count)));
     }
 
@@ -107,6 +133,13 @@ public class AllocationController {
         if (batchId == null || orgId == null) {
             throw new IllegalArgumentException("batch_id 和 org_id 不能为空");
         }
+
+        // 校验数据范围：分行管理员只能撤回自己管辖范围内的组织
+        DataScope scope = dataScopeService.getDataScope(userId);
+        if (!scope.canOperateOrg(scope, orgId)) {
+            throw new IllegalArgumentException("无权操作该组织的分摊数据");
+        }
+
         List<AllocationResult> results = confirmService.withdraw(batchId, orgId, userId, reason);
         return ResponseEntity.ok(ApiResponse.ok(Map.of(
                 "org_id", orgId,
@@ -119,8 +152,27 @@ public class AllocationController {
     @GetMapping("/export/summary")
     public ResponseEntity<byte[]> exportSummary(
             @RequestParam Long batchId,
-            @RequestParam(required = false) Long branchOrgId) throws Exception {
-        byte[] data = exportService.exportSummary(batchId, branchOrgId);
+            @RequestParam(required = false) Long branchOrgId,
+            @RequestAttribute("userId") Long userId) throws Exception {
+        DataScope scope = dataScopeService.getDataScope(userId);
+
+        // 非管理员强制使用自己的组织范围
+        Long effectiveBranchOrgId = branchOrgId;
+        if (!scope.isAllScope()) {
+            // 分行/部门用户：忽略客户端传入的 branchOrgId，使用自己的
+            if (scope.getSingleOrgId() != null) {
+                effectiveBranchOrgId = scope.getSingleOrgId();
+            } else if (scope.getPathPrefix() != null) {
+                // BRANCH: pathPrefix 对应的 orgId 需要从 path 推算
+                // 取 pathPrefix 中最后一个 ID
+                String path = scope.getPathPrefix();
+                String trimmed = path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
+                int lastSlash = trimmed.lastIndexOf('/');
+                effectiveBranchOrgId = Long.parseLong(trimmed.substring(lastSlash + 1));
+            }
+        }
+
+        byte[] data = exportService.exportSummary(batchId, effectiveBranchOrgId);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         "attachment; filename=\"分行费用分摊汇总.xlsx\"")
@@ -132,8 +184,23 @@ public class AllocationController {
     @GetMapping("/export/detail")
     public ResponseEntity<byte[]> exportDetail(
             @RequestParam Long batchId,
-            @RequestParam(required = false) Long branchOrgId) throws Exception {
-        byte[] data = exportService.exportDetail(batchId, branchOrgId);
+            @RequestParam(required = false) Long branchOrgId,
+            @RequestAttribute("userId") Long userId) throws Exception {
+        DataScope scope = dataScopeService.getDataScope(userId);
+
+        Long effectiveBranchOrgId = branchOrgId;
+        if (!scope.isAllScope()) {
+            if (scope.getSingleOrgId() != null) {
+                effectiveBranchOrgId = scope.getSingleOrgId();
+            } else if (scope.getPathPrefix() != null) {
+                String path = scope.getPathPrefix();
+                String trimmed = path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
+                int lastSlash = trimmed.lastIndexOf('/');
+                effectiveBranchOrgId = Long.parseLong(trimmed.substring(lastSlash + 1));
+            }
+        }
+
+        byte[] data = exportService.exportDetail(batchId, effectiveBranchOrgId);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         "attachment; filename=\"分行费用分摊明细.xlsx\"")

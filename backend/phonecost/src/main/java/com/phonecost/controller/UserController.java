@@ -2,6 +2,8 @@ package com.phonecost.controller;
 
 import com.phonecost.domain.SysUser;
 import com.phonecost.dto.ApiResponse;
+import com.phonecost.service.DataScope;
+import com.phonecost.service.DataScopeService;
 import com.phonecost.service.UserService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -20,15 +22,29 @@ import java.util.Map;
 public class UserController {
 
     private final UserService userService;
+    private final DataScopeService dataScopeService;
 
     @GetMapping
-    public ResponseEntity<ApiResponse<List<SysUser>>> list() {
-        return ResponseEntity.ok(ApiResponse.ok(userService.list()));
+    public ResponseEntity<ApiResponse<List<SysUser>>> list(
+            @RequestAttribute("userId") Long userId) {
+        DataScope scope = dataScopeService.getDataScope(userId);
+        List<SysUser> allUsers = userService.list();
+        List<SysUser> filtered = scope.filterByOrgId(
+                allUsers.stream().filter(u -> u.getDeletedAt() == null).toList(),
+                SysUser::getOrgId);
+        return ResponseEntity.ok(ApiResponse.ok(filtered));
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<ApiResponse<SysUser>> getById(@PathVariable Long id) {
-        return ResponseEntity.ok(ApiResponse.ok(userService.getById(id)));
+    public ResponseEntity<ApiResponse<SysUser>> getById(
+            @PathVariable Long id,
+            @RequestAttribute("userId") Long currentUserId) {
+        SysUser target = userService.getById(id);
+        DataScope scope = dataScopeService.getDataScope(currentUserId);
+        if (!scope.isOrgVisible(target.getOrgId())) {
+            throw new IllegalArgumentException("无权访问该用户数据");
+        }
+        return ResponseEntity.ok(ApiResponse.ok(target));
     }
 
     @PostMapping

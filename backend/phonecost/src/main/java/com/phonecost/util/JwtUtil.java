@@ -24,11 +24,12 @@ public class JwtUtil {
         return Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 
-    public String generateAccessToken(Long userId, String username, Byte role) {
+    public String generateAccessToken(Long userId, String username, Byte role, Long orgId) {
         return Jwts.builder()
             .subject(userId.toString())
             .claim("username", username)
             .claim("role", role)
+            .claim("orgId", orgId != null ? orgId : 0)
             .issuedAt(new Date())
             .expiration(new Date(System.currentTimeMillis() + accessTokenExpiration))
             .signWith(getSigningKey())
@@ -71,6 +72,10 @@ public class JwtUtil {
 
     public Byte getRole(String token) {
         return parseToken(token).get("role", Byte.class);
+    }
+
+    public Long getOrgId(String token) {
+        return parseToken(token).get("orgId", Long.class);
     }
 
     public String mapRoleToName(Byte role) {

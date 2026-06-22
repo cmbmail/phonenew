@@ -4,6 +4,8 @@ import com.phonecost.domain.*;
 import com.phonecost.dto.ApiResponse;
 import com.phonecost.repository.*;
 import com.phonecost.service.BillImportService;
+import com.phonecost.service.DataScope;
+import com.phonecost.service.DataScopeService;
 import com.phonecost.service.DirectoryImportService;
 import com.phonecost.service.OwnershipMatchService;
 import com.phonecost.service.PhoneOwnershipImportService;
@@ -29,6 +31,7 @@ public class DataImportController {
     private final DirectoryImportService directoryImportService;
     private final BillImportService billImportService;
     private final OwnershipMatchService ownershipMatchService;
+    private final DataScopeService dataScopeService;
 
     private final PhoneOwnershipBatchRepository ownershipBatchRepository;
     private final PhoneOwnershipEntryRepository ownershipEntryRepository;
@@ -59,16 +62,20 @@ public class DataImportController {
     }
 
     @GetMapping("/ownership/batches")
-    public ResponseEntity<ApiResponse<List<PhoneOwnershipBatch>>> listOwnershipBatches() {
-        return ResponseEntity.ok(ApiResponse.ok(
-                ownershipBatchRepository.findAll()));
+    public ResponseEntity<ApiResponse<List<PhoneOwnershipBatch>>> listOwnershipBatches(
+            @RequestAttribute("userId") Long userId) {
+        // 归属批次是全局的，所有用户可见（不按组织过滤）
+        return ResponseEntity.ok(ApiResponse.ok(ownershipBatchRepository.findAll()));
     }
 
     @GetMapping("/ownership/entries/{batchId}")
     public ResponseEntity<ApiResponse<List<PhoneOwnershipEntry>>> listOwnershipEntries(
-            @PathVariable Long batchId) {
-        return ResponseEntity.ok(ApiResponse.ok(
-                ownershipEntryRepository.findByBatchIdAndDeletedAtIsNull(batchId)));
+            @PathVariable Long batchId,
+            @RequestAttribute("userId") Long userId) {
+        DataScope scope = dataScopeService.getDataScope(userId);
+        List<PhoneOwnershipEntry> all = ownershipEntryRepository.findByBatchIdAndDeletedAtIsNull(batchId);
+        List<PhoneOwnershipEntry> filtered = scope.filterByOrgId(all, PhoneOwnershipEntry::getOrgId);
+        return ResponseEntity.ok(ApiResponse.ok(filtered));
     }
 
     // ==================== 通讯录导入 ====================
@@ -93,16 +100,19 @@ public class DataImportController {
     }
 
     @GetMapping("/directory/batches")
-    public ResponseEntity<ApiResponse<List<DirectoryBatch>>> listDirectoryBatches() {
-        return ResponseEntity.ok(ApiResponse.ok(
-                directoryBatchRepository.findAll()));
+    public ResponseEntity<ApiResponse<List<DirectoryBatch>>> listDirectoryBatches(
+            @RequestAttribute("userId") Long userId) {
+        return ResponseEntity.ok(ApiResponse.ok(directoryBatchRepository.findAll()));
     }
 
     @GetMapping("/directory/entries/{batchId}")
     public ResponseEntity<ApiResponse<List<DirectoryEntry>>> listDirectoryEntries(
-            @PathVariable Long batchId) {
-        return ResponseEntity.ok(ApiResponse.ok(
-                directoryEntryRepository.findByBatchIdAndDeletedAtIsNull(batchId)));
+            @PathVariable Long batchId,
+            @RequestAttribute("userId") Long userId) {
+        DataScope scope = dataScopeService.getDataScope(userId);
+        List<DirectoryEntry> all = directoryEntryRepository.findByBatchIdAndDeletedAtIsNull(batchId);
+        List<DirectoryEntry> filtered = scope.filterByOrgId(all, DirectoryEntry::getOrgId);
+        return ResponseEntity.ok(ApiResponse.ok(filtered));
     }
 
     // ==================== 电信账单导入 ====================
@@ -128,16 +138,19 @@ public class DataImportController {
     }
 
     @GetMapping("/bill/batches")
-    public ResponseEntity<ApiResponse<List<BillBatch>>> listBillBatches() {
-        return ResponseEntity.ok(ApiResponse.ok(
-                billBatchRepository.findAll()));
+    public ResponseEntity<ApiResponse<List<BillBatch>>> listBillBatches(
+            @RequestAttribute("userId") Long userId) {
+        return ResponseEntity.ok(ApiResponse.ok(billBatchRepository.findAll()));
     }
 
     @GetMapping("/bill/details/{batchId}")
     public ResponseEntity<ApiResponse<List<BillDetail>>> listBillDetails(
-            @PathVariable Long batchId) {
-        return ResponseEntity.ok(ApiResponse.ok(
-                billDetailRepository.findByBatchIdAndDeletedAtIsNull(batchId)));
+            @PathVariable Long batchId,
+            @RequestAttribute("userId") Long userId) {
+        DataScope scope = dataScopeService.getDataScope(userId);
+        List<BillDetail> all = billDetailRepository.findByBatchIdAndDeletedAtIsNull(batchId);
+        List<BillDetail> filtered = scope.filterByOrgId(all, BillDetail::getOrgId);
+        return ResponseEntity.ok(ApiResponse.ok(filtered));
     }
 
     // ==================== 归属匹配 ====================

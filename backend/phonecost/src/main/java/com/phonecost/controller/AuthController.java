@@ -38,7 +38,7 @@ public class AuthController {
             throw new IllegalArgumentException("账号已被停用");
         }
 
-        String accessToken = jwtUtil.generateAccessToken(user.getId(), user.getUsername(), user.getRole());
+        String accessToken = jwtUtil.generateAccessToken(user.getId(), user.getUsername(), user.getRole(), user.getOrgId());
         String refreshToken = jwtUtil.generateRefreshToken(user.getId());
 
         return ResponseEntity.ok(ApiResponse.ok(Map.of(
@@ -76,7 +76,7 @@ public class AuthController {
         Long userId = jwtUtil.getUserId(refreshToken);
         var user = userRepository.findById(userId)
             .orElseThrow(() -> new IllegalArgumentException("用户不存在"));
-        String newAccessToken = jwtUtil.generateAccessToken(user.getId(), user.getUsername(), user.getRole());
+        String newAccessToken = jwtUtil.generateAccessToken(user.getId(), user.getUsername(), user.getRole(), user.getOrgId());
         return ResponseEntity.ok(ApiResponse.ok(Map.of("access_token", newAccessToken)));
     }
 

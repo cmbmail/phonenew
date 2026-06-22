@@ -11,5 +11,6 @@ import java.util.Optional;
 public interface SysUserRepository extends JpaRepository<SysUser, Long> {
     Optional<SysUser> findByUsernameAndDeletedAtIsNull(String username);
     List<SysUser> findByOrgIdAndDeletedAtIsNull(Long orgId);
+    List<SysUser> findByOrgIdInAndDeletedAtIsNull(List<Long> orgIds);
     boolean existsByUsernameAndDeletedAtIsNull(String username);
 }

@@ -12,4 +12,5 @@ public interface AllocationResultRepository extends JpaRepository<AllocationResu
     List<AllocationResult> findByBatchIdAndDeletedAtIsNull(Long batchId);
     Optional<AllocationResult> findByBatchIdAndOrgIdAndDeletedAtIsNull(Long batchId, Long orgId);
     List<AllocationResult> findByBatchIdAndConfirmStatusAndDeletedAtIsNull(Long batchId, Byte confirmStatus);
+    List<AllocationResult> findByBatchIdAndOrgIdInAndDeletedAtIsNull(Long batchId, List<Long> orgIds);
 }

@@ -2,6 +2,8 @@ package com.phonecost.controller;
 
 import com.phonecost.domain.SysOrganization;
 import com.phonecost.dto.ApiResponse;
+import com.phonecost.service.DataScope;
+import com.phonecost.service.DataScopeService;
 import com.phonecost.service.OrganizationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -18,14 +20,27 @@ import java.util.Map;
 public class OrganizationController {
 
     private final OrganizationService organizationService;
+    private final DataScopeService dataScopeService;
 
     @GetMapping("/tree")
-    public ResponseEntity<ApiResponse<List<SysOrganization>>> getTree() {
-        return ResponseEntity.ok(ApiResponse.ok(organizationService.getTree()));
+    public ResponseEntity<ApiResponse<List<SysOrganization>>> getTree(
+            @RequestAttribute("userId") Long userId) {
+        DataScope scope = dataScopeService.getDataScope(userId);
+        List<SysOrganization> allOrgs = organizationService.getTree();
+        List<SysOrganization> filtered = scope.filterByOrgId(
+                allOrgs.stream().filter(o -> o.getDeletedAt() == null).toList(),
+                SysOrganization::getId);
+        return ResponseEntity.ok(ApiResponse.ok(filtered));
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<ApiResponse<SysOrganization>> getById(@PathVariable Long id) {
+    public ResponseEntity<ApiResponse<SysOrganization>> getById(
+            @PathVariable Long id,
+            @RequestAttribute("userId") Long userId) {
+        DataScope scope = dataScopeService.getDataScope(userId);
+        if (!scope.isOrgVisible(id)) {
+            throw new IllegalArgumentException("无权访问该组织数据");
+        }
         return ResponseEntity.ok(ApiResponse.ok(organizationService.getById(id)));
     }
 
@@ -38,7 +53,7 @@ public class OrganizationController {
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<ApiResponse<SysOrganization>> update(@PathVariable Long id,
-                                                                @RequestBody SysOrganization org) {
+                                                                 @RequestBody SysOrganization org) {
         return ResponseEntity.ok(ApiResponse.ok(organizationService.update(id, org)));
     }
 

@@ -36,6 +36,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     Long userId = jwtUtil.getUserId(token);
                     String username = jwtUtil.getUsername(token);
                     Byte role = jwtUtil.getRole(token);
+                    Long orgId = jwtUtil.getOrgId(token);
                     String roleName = jwtUtil.mapRoleToName(role);
 
                     var auth = new UsernamePasswordAuthenticationToken(
@@ -46,6 +47,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     request.setAttribute("userId", userId);
                     request.setAttribute("username", username);
                     request.setAttribute("role", role);
+                    request.setAttribute("orgId", orgId);
                 } catch (Exception e) {
                     log.debug("JWT parsing failed: {}", e.getMessage());
                 }

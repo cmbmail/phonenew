@@ -141,4 +141,38 @@ public class AllocationConfirmService {
         log.info("Batch confirm: batch={}, count={}, by={}", batchId, count, userId);
         return count;
     }
+
+    /**
+     * Batch confirm results within a data scope
+     * 分行管理员只确认自己范围内的待确认结果
+     */
+    @Transactional
+    public int confirmAllInScope(Long batchId, Long userId, DataScope scope) {
+        if (scope.isAllScope()) {
+            return confirmAll(batchId, userId);
+        }
+
+        List<Long> visibleOrgIds = scope.getVisibleOrgIds();
+        if (visibleOrgIds == null || visibleOrgIds.isEmpty()) {
+            return 0;
+        }
+
+        List<AllocationResult> results = resultRepository.findByBatchIdAndConfirmStatusAndDeletedAtIsNull(
+                batchId, (byte) 0);
+
+        int count = 0;
+        for (AllocationResult r : results) {
+            // 只确认可见范围内的组织（sentinel orgId=-1 不自动确认）
+            if (visibleOrgIds.contains(r.getOrgId())) {
+                r.setConfirmStatus((byte) 1);
+                r.setConfirmedAt(LocalDateTime.now());
+                r.setConfirmedBy(userId);
+                resultRepository.save(r);
+                count++;
+            }
+        }
+
+        log.info("Scoped batch confirm: batch={}, count={}, by={}", batchId, count, userId);
+        return count;
+    }
 }
