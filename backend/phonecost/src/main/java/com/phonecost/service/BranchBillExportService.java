@@ -675,8 +675,7 @@ public class BranchBillExportService {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("id", d.getId());
             row.put("phone_number", d.getPhoneNumber());
-            row.put("org_name", d.getOrgId() != null && orgMap.containsKey(d.getOrgId())
-                    ? orgMap.get(d.getOrgId()).getName() : "");
+            row.put("org_name", buildFullNamePath(d.getOrgId(), orgMap));
             row.put("ownership_source", d.getOwnershipSource() != null ? d.getOwnershipSource() : "");
 
             String raw = d.getRawData();
