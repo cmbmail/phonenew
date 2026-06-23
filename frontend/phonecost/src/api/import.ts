@@ -35,6 +35,9 @@ export const importBill = (file: File) => {
 export const getBillBatches = () =>
   apiGet<BillBatch[]>('/import/bill/batches');
 
+export const getActiveImportTemplate = () =>
+  apiGet<{ id: number; name: string; operator: string }>('/templates/active');
+
 // ==================== Match ====================
 
 export const matchOwnership = (params: {

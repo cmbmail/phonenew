@@ -28,6 +28,7 @@ import {
   getDirectoryBatches,
   getBillBatches,
   matchOwnership,
+  getActiveImportTemplate,
 } from '../api/import';
 import type {
   OwnershipBatch,
@@ -125,6 +126,7 @@ export default function DataImport() {
   const [billUploading, setBillUploading] = useState(false);
   const [billBatches, setBillBatches] = useState<BillBatch[]>([]);
   const [billLoading, setBillLoading] = useState(false);
+  const [activeTemplate, setActiveTemplate] = useState<{ id: number; name: string; operator: string } | null>(null);
 
   // Match state
   const [matchBillBatchId, setMatchBillBatchId] = useState<number | null>(null);
@@ -158,6 +160,8 @@ export default function DataImport() {
     try {
       const data = await getBillBatches();
       setBillBatches(data);
+      // Also fetch active template
+      try { setActiveTemplate(await getActiveImportTemplate()); } catch { /* ignore */ }
     } catch {
       message.error('获取批次列表失败');
     } finally {
@@ -356,6 +360,14 @@ export default function DataImport() {
                     billUploading,
                     handleBillUpload,
                     '.xlsx,.xls',
+                  )}
+                  {activeTemplate && (
+                    <Alert
+                      message={`当前使用模板：${activeTemplate.name}（${activeTemplate.operator}）`}
+                      type="success"
+                      showIcon
+                      style={{ marginBottom: 16 }}
+                    />
                   )}
                   <div style={{ marginTop: 24 }}>
                     <Button

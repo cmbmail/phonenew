@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Layout, Menu, Avatar, Dropdown, Typography, Popconfirm, Modal, Form, Input, message } from 'antd';
-import { DashboardOutlined, FileTextOutlined, PhoneOutlined, TeamOutlined, SettingOutlined, LogoutOutlined, ImportOutlined } from '@ant-design/icons';
+import { DashboardOutlined, FileTextOutlined, PhoneOutlined, TeamOutlined, SettingOutlined, LogoutOutlined, ImportOutlined, ToolOutlined } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
 import { apiPost } from '../lib/request';
@@ -21,6 +21,7 @@ const allMenuItems: MenuItemDef[] = [
   { key: '/allocation', icon: <PhoneOutlined />, label: '费用分摊' },
   { key: '/org', icon: <TeamOutlined />, label: '组织架构' },
   { key: '/settings', icon: <SettingOutlined />, label: '系统管理', roles: [1] },
+  { key: '/templates', icon: <ToolOutlined />, label: '模板管理', roles: [1] },
 ];
 
 const AppLayout: React.FC = () => {

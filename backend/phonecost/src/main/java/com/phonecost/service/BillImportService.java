@@ -1,11 +1,9 @@
 package com.phonecost.service;
 
-import com.phonecost.domain.BillBatch;
-import com.phonecost.domain.BillDetail;
-import com.phonecost.domain.BillTemplate;
-import com.phonecost.repository.BillBatchRepository;
-import com.phonecost.repository.BillDetailRepository;
-import com.phonecost.repository.BillTemplateRepository;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.phonecost.domain.*;
+import com.phonecost.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
@@ -19,18 +17,30 @@ import java.io.InputStream;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 电信账单导入服务
- * 解析账单.xlsx：4个Sheet
- * - 按号码费用(9列): 号码,平台使用费,码号月租费,外呼时长,转接外呼时长,国内费用,国际时长,国际费用,费用小计
- * - 录音(4列): 分机号,外线号码,录音目录,费用小计
- * - 彩铃(3列): 分机号,号码,费用
- * - 闪信(4列): 号码,月份,下发量,金额
+ * 电信账单导入服务（模板驱动）
+ * 根据活跃的 bill_template.sheet_configs JSON 动态解析 Excel
+ *
+ * 模板 JSON 结构:
+ * {
+ *   "monthPattern": "(\\d{4})年(\\d{1,2})月",
+ *   "sheets": [
+ *     {
+ *       "sheetNamePattern": "按号码费用",
+ *       "sheetType": "CALL",
+ *       "phoneColumn": 0,
+ *       "extensionColumn": null,
+ *       "skipRows": 1,
+ *       "isQuarterly": false,
+ *       "columns": [{"index": 0, "field": "phoneNumber", "type": "STRING"}, ...],
+ *       "computedFields": {"monthlyRent": ["platformFee", "monthlyRentCode"], ...}
+ *     }
+ *   ]
+ * }
  */
 @Slf4j
 @Service
@@ -41,27 +51,30 @@ public class BillImportService {
     private final BillDetailRepository detailRepository;
     private final BillTemplateRepository templateRepository;
 
-    // Pattern to extract billing month from sheet name, e.g. "2026年3月按号码费用"
-    private static final Pattern MONTH_PATTERN = Pattern.compile("(\\d{4})年(\\d{1,2})月");
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final DateTimeFormatter DTF = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+
+    // Fallback default pattern when template has none
+    private static final Pattern FALLBACK_MONTH_PATTERN = Pattern.compile("(\\d{4})年(\\d{1,2})月");
 
     @Transactional
     public BillBatch importBill(MultipartFile file, Long userId) throws IOException {
-        String batchNo = "BIL-" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
+        String batchNo = "BIL-" + LocalDateTime.now().format(DTF);
         String fileName = file.getOriginalFilename();
 
-        // Get or create default template
+        // Load active template
         BillTemplate template = templateRepository.findByIsActiveAndDeletedAtIsNull((byte) 1)
                 .orElseThrow(() -> new IllegalArgumentException("未找到活跃的账单模板"));
 
-        // Extract billing month from first sheet name
-        String billingMonth = "unknown";
+        // Parse template config
+        TemplateConfig config = parseTemplateConfig(template);
 
         BillBatch batch = BillBatch.builder()
                 .batchNo(batchNo)
-                .billingMonth(billingMonth)
+                .billingMonth("unknown")
                 .fileName(fileName != null ? fileName : "")
                 .templateId(template.getId())
-                .status((byte) 0) // DRAFT
+                .status((byte) 0)
                 .totalAmount(BigDecimal.ZERO)
                 .totalCount(0)
                 .importStatus((byte) 0)
@@ -80,34 +93,23 @@ public class BillImportService {
                 Sheet sheet = wb.getSheetAt(s);
                 String sheetName = sheet.getSheetName();
 
-                // Extract billing month from sheet name on first sheet
-                if (s == 0 && "unknown".equals(billingMonth)) {
-                    Matcher m = MONTH_PATTERN.matcher(sheetName);
-                    if (m.find()) {
-                        int year = Integer.parseInt(m.group(1));
-                        int month = Integer.parseInt(m.group(2));
-                        billingMonth = String.format("%d-%02d", year, month);
+                // Extract billing month from first sheet
+                if (s == 0 && "unknown".equals(batch.getBillingMonth())) {
+                    String month = extractMonth(sheetName, config.monthPattern);
+                    if (!month.isEmpty()) {
+                        batch.setBillingMonth(month);
                     }
                 }
 
-                // Determine sheet type by name
-                String sheetType;
-                if (sheetName.contains("按号码费用") || sheetName.contains("号码费用")) {
-                    sheetType = "CALL";
-                    parseCallSheet(sheet, batch.getId(), allDetails);
-                } else if (sheetName.contains("录音")) {
-                    sheetType = "RECORDING";
-                    parseRecordingSheet(sheet, batch.getId(), allDetails);
-                } else if (sheetName.contains("彩铃")) {
-                    sheetType = "CRBT";
-                    parseCrbtSheet(sheet, batch.getId(), allDetails);
-                } else if (sheetName.contains("闪信")) {
-                    sheetType = "FLASH_MSG";
-                    parseFlashMsgSheet(sheet, batch.getId(), allDetails);
-                } else {
-                    log.warn("Unknown sheet type: {}, skipping", sheetName);
+                // Match sheet against template configs
+                SheetConfig matchedConfig = matchSheetConfig(sheetName, config.sheets);
+                if (matchedConfig == null) {
+                    log.warn("No matching template config for sheet: {}, skipping", sheetName);
                     continue;
                 }
+
+                log.debug("Parsing sheet '{}' with config type={}", sheetName, matchedConfig.sheetType);
+                parseSheetWithConfig(sheet, batch.getId(), allDetails, matchedConfig);
 
                 // Batch save periodically
                 if (allDetails.size() >= 500) {
@@ -124,21 +126,17 @@ public class BillImportService {
             // Calculate totals
             List<BillDetail> allSaved = detailRepository.findByBatchIdAndDeletedAtIsNull(batch.getId());
             for (BillDetail d : allSaved) {
-                totalAmount = totalAmount.add(d.getTotalFee());
+                totalAmount = totalAmount.add(d.getTotalFee() != null ? d.getTotalFee() : BigDecimal.ZERO);
                 totalCount++;
             }
 
-            // Update billing month
-            if (!billingMonth.isEmpty()) {
-                batch.setBillingMonth(billingMonth);
-            }
             batch.setTotalAmount(totalAmount);
             batch.setTotalCount(totalCount);
             batch.setImportStatus((byte) 1);
             batch = batchRepository.save(batch);
 
-            log.info("Bill import completed: batch={}, month={}, total={}, amount={}",
-                    batchNo, billingMonth, totalCount, totalAmount);
+            log.info("Bill import completed: batch={}, month={}, total={}, amount={}, template={}",
+                    batchNo, batch.getBillingMonth(), totalCount, totalAmount, template.getName());
 
         } catch (Exception e) {
             batch.setImportStatus((byte) 2);
@@ -151,144 +149,266 @@ public class BillImportService {
         return batch;
     }
 
-    /**
-     * Parse 按号码费用 sheet: 号码(A), 平台使用费(B), 码号月租费(C), 外呼时长(D), 转接外呼时长(E), 国内费用(F), 国际时长(G), 国际费用(H), 费用小计(I)
-     * monthly_rent = B + C (平台使用费 + 码号月租费)
-     * call_fee = F + H (国内费用 + 国际费用)
-     * total_fee = I (费用小计)
-     */
-    private void parseCallSheet(Sheet sheet, Long batchId, List<BillDetail> details) {
-        for (int i = 1; i <= sheet.getLastRowNum(); i++) {
-            Row row = sheet.getRow(i);
-            if (row == null) continue;
+    // ==================== Template Config Parsing ====================
 
-            String phoneNumber = getCellStringValue(row, 0);
-            if (phoneNumber == null || phoneNumber.isEmpty() || phoneNumber.startsWith("AIGC:")) continue;
+    private TemplateConfig parseTemplateConfig(BillTemplate template) {
+        TemplateConfig config = new TemplateConfig();
 
-            BigDecimal platformFee = getCellBigDecimal(row, 1);
-            BigDecimal monthlyRentFee = getCellBigDecimal(row, 2);
-            BigDecimal domesticFee = getCellBigDecimal(row, 5);
-            BigDecimal internationalFee = getCellBigDecimal(row, 7);
-            BigDecimal totalFee = getCellBigDecimal(row, 8);
-
-            BigDecimal monthlyRent = platformFee.add(monthlyRentFee);
-            BigDecimal callFee = domesticFee.add(internationalFee);
-
-            BillDetail detail = BillDetail.builder()
-                    .batchId(batchId)
-                    .phoneNumber(phoneNumber.trim())
-                    .extension("")
-                    .sheetType("CALL")
-                    .monthlyRent(monthlyRent)
-                    .callFee(callFee)
-                    .recordingFee(BigDecimal.ZERO)
-                    .crbtFee(BigDecimal.ZERO)
-                    .flashMsgFee(BigDecimal.ZERO)
-                    .flashMonth("")
-                    .totalFee(totalFee)
-                    .build();
-            details.add(fillDefaults(detail));
+        // Month pattern
+        if (template.getMonthPattern() != null && !template.getMonthPattern().isBlank()) {
+            config.monthPattern = Pattern.compile(template.getMonthPattern());
+        } else {
+            config.monthPattern = FALLBACK_MONTH_PATTERN;
         }
-    }
 
-    /**
-     * Parse 录音 sheet: 分机号(A), 外线号码(B), 录音目录(C), 费用小计(D)
-     */
-    private void parseRecordingSheet(Sheet sheet, Long batchId, List<BillDetail> details) {
-        for (int i = 1; i <= sheet.getLastRowNum(); i++) {
-            Row row = sheet.getRow(i);
-            if (row == null) continue;
+        // Parse sheets array
+        try {
+            List<Map<String, Object>> sheetsJson = MAPPER.readValue(template.getSheetConfigs(),
+                    new TypeReference<List<Map<String, Object>>>() {});
 
-            String extension = getCellStringValue(row, 0);
-            String phoneNumber = getCellStringValue(row, 1);
-            if (phoneNumber == null || phoneNumber.isEmpty() || phoneNumber.startsWith("AIGC:")) continue;
+            for (Map<String, Object> sheetMap : sheetsJson) {
+                SheetConfig sc = new SheetConfig();
+                sc.sheetNamePattern = (String) sheetMap.get("sheetNamePattern");
+                sc.sheetType = (String) sheetMap.get("sheetType");
+                sc.phoneColumn = toInt(sheetMap.get("phoneColumn"));
+                sc.extensionColumn = sheetMap.containsKey("extensionColumn") ? toIntNullable(sheetMap.get("extensionColumn")) : null;
+                sc.skipRows = sheetMap.containsKey("skipRows") ? toInt(sheetMap.get("skipRows")) : 1;
+                sc.isQuarterly = Boolean.TRUE.equals(sheetMap.get("isQuarterly"));
 
-            BigDecimal fee = getCellBigDecimal(row, 3);
+                // Parse columns
+                if (sheetMap.containsKey("columns")) {
+                    List<Map<String, Object>> cols = (List<Map<String, Object>>) sheetMap.get("columns");
+                    for (Map<String, Object> col : cols) {
+                        ColumnConfig cc = new ColumnConfig();
+                        cc.index = toInt(col.get("index"));
+                        cc.field = (String) col.get("field");
+                        cc.type = (String) col.getOrDefault("type", "STRING");
+                        sc.columns.add(cc);
+                    }
+                }
 
-            BillDetail detail = BillDetail.builder()
-                    .batchId(batchId)
-                    .phoneNumber(phoneNumber.trim())
-                    .extension(extension != null ? extension.trim() : "")
-                    .sheetType("RECORDING")
-                    .monthlyRent(BigDecimal.ZERO)
-                    .callFee(BigDecimal.ZERO)
-                    .recordingFee(fee)
-                    .crbtFee(BigDecimal.ZERO)
-                    .flashMsgFee(BigDecimal.ZERO)
-                    .flashMonth("")
-                    .totalFee(fee)
-                    .build();
-            details.add(fillDefaults(detail));
-        }
-    }
+                // Parse legacy feeMappings (convert to columns format)
+                if (sc.columns.isEmpty() && sheetMap.containsKey("feeMappings")) {
+                    convertLegacyFeeMappings(sc, (Map<String, String>) sheetMap.get("feeMappings"));
+                }
 
-    /**
-     * Parse 彩铃 sheet: 分机号(A), 号码(B), 费用(C)
-     */
-    private void parseCrbtSheet(Sheet sheet, Long batchId, List<BillDetail> details) {
-        for (int i = 1; i <= sheet.getLastRowNum(); i++) {
-            Row row = sheet.getRow(i);
-            if (row == null) continue;
+                // Parse computed fields
+                if (sheetMap.containsKey("computedFields")) {
+                    Map<String, Object> cf = (Map<String, Object>) sheetMap.get("computedFields");
+                    for (Map.Entry<String, Object> entry : cf.entrySet()) {
+                        if (entry.getValue() instanceof List) {
+                            sc.computedFields.put(entry.getKey(), (List<String>) entry.getValue());
+                        }
+                    }
+                }
 
-            String extension = getCellStringValue(row, 0);
-            String phoneNumber = getCellStringValue(row, 1);
-            if (phoneNumber == null || phoneNumber.isEmpty() || phoneNumber.startsWith("AIGC:")) continue;
-
-            BigDecimal fee = getCellBigDecimal(row, 2);
-
-            BillDetail detail = BillDetail.builder()
-                    .batchId(batchId)
-                    .phoneNumber(phoneNumber.trim())
-                    .extension(extension != null ? extension.trim() : "")
-                    .sheetType("CRBT")
-                    .monthlyRent(BigDecimal.ZERO)
-                    .callFee(BigDecimal.ZERO)
-                    .recordingFee(BigDecimal.ZERO)
-                    .crbtFee(fee)
-                    .flashMsgFee(BigDecimal.ZERO)
-                    .flashMonth("")
-                    .totalFee(fee)
-                    .build();
-            details.add(fillDefaults(detail));
-        }
-    }
-
-    /**
-     * Parse 闪信 sheet: 号码(A), 月份(B), 下发量(C), 金额(D)
-     * Flash messages are quarterly-settled but count toward current month total
-     */
-    private void parseFlashMsgSheet(Sheet sheet, Long batchId, List<BillDetail> details) {
-        for (int i = 1; i <= sheet.getLastRowNum(); i++) {
-            Row row = sheet.getRow(i);
-            if (row == null) continue;
-
-            String phoneNumber = getCellStringValue(row, 0);
-            if (phoneNumber == null || phoneNumber.isEmpty() || phoneNumber.startsWith("AIGC:")) continue;
-
-            String flashMonth = getCellStringValue(row, 1);
-            BigDecimal fee = getCellBigDecimal(row, 3);
-
-            // Format flash month: 202601 -> 2026-01
-            String formattedMonth = flashMonth;
-            if (flashMonth != null && flashMonth.matches("\\d{6}")) {
-                formattedMonth = flashMonth.substring(0, 4) + "-" + flashMonth.substring(4, 6);
+                config.sheets.add(sc);
             }
 
-            BillDetail detail = BillDetail.builder()
+            log.debug("Parsed template '{}': {} sheet configs", template.getName(), config.sheets.size());
+
+        } catch (Exception e) {
+            log.error("Failed to parse template config, using fallback hardcoded logic", e);
+            config.sheets.addAll(getFallbackSheetConfigs());
+        }
+
+        return config;
+    }
+
+    /**
+     * Convert legacy letter-based feeMappings (A=col0, B=col1...) to column index format
+     */
+    private void convertLegacyFeeMappings(SheetConfig sc, Map<String, String> feeMappings) {
+        // Add phone column as first STRING column
+        sc.columns.add(new ColumnConfig(sc.phoneColumn, "phoneNumber", "STRING"));
+        if (sc.extensionColumn != null) {
+            sc.columns.add(new ColumnConfig(sc.extensionColumn, "extension", "STRING"));
+        }
+
+        // Convert letter mappings to numeric indices
+        for (Map.Entry<String, String> entry : feeMappings.entrySet()) {
+            int colIndex = letterToIndex(entry.getKey());
+            String fieldName = entry.getValue();
+            sc.columns.add(new ColumnConfig(colIndex, fieldName, "DECIMAL"));
+        }
+
+        // Set up default computed fields based on field names
+        if ("CALL".equals(sc.sheetType)) {
+            boolean hasPlatform = sc.columns.stream().anyMatch(c -> "platformFee".equals(c.field));
+            boolean hasMonthlyRentCode = sc.columns.stream().anyMatch(c -> "monthlyRentCode".equals(c.field));
+            boolean hasDomestic = sc.columns.stream().anyMatch(c -> "domesticFee".equals(c.field));
+            boolean hasInternational = sc.columns.stream().anyMatch(c -> "internationalFee".equals(c.field));
+
+            if (hasPlatform && hasMonthlyRentCode) {
+                sc.computedFields.put("monthlyRent", List.of("platformFee", "monthlyRentCode"));
+            }
+            if (hasDomestic && hasInternational) {
+                sc.computedFields.put("callFee", List.of("domesticFee", "internationalFee"));
+            }
+        }
+    }
+
+    private int letterToIndex(String letter) {
+        if (letter == null || letter.isBlank()) return 0;
+        char c = letter.toUpperCase().charAt(0);
+        if (c >= 'A' && c <= 'Z') return c - 'A';
+        try { return Integer.parseInt(letter); } catch (Exception e) { return 0; }
+    }
+
+    // ==================== Sheet Matching & Parsing ====================
+
+    private SheetConfig matchSheetConfig(String sheetName, List<SheetConfig> configs) {
+        for (SheetConfig sc : configs) {
+            if (sc.sheetNamePattern != null && sheetName.matches(".*" + sc.sheetNamePattern + ".*")) {
+                return sc;
+            }
+        }
+        return null;
+    }
+
+    private void parseSheetWithConfig(Sheet sheet, Long batchId, List<BillDetail> details, SheetConfig config) {
+        int skipRows = config.skipRows > 0 ? config.skipRows : 1;
+
+        for (int i = skipRows; i <= sheet.getLastRowNum(); i++) {
+            Row row = sheet.getRow(i);
+            if (row == null) continue;
+
+            // Extract values by column config
+            Map<String, Object> values = new LinkedHashMap<>();
+            for (ColumnConfig col : config.columns) {
+                Object val = getCellValue(row, col.index, col.type);
+                values.put(col.field, val);
+            }
+
+            // Get phone number (required)
+            String phoneNumber = getStringValue(values, "phoneNumber");
+            if (phoneNumber == null || phoneNumber.isEmpty() || phoneNumber.startsWith("AIGC:")) continue;
+
+            // Build BillDetail from extracted values
+            BillDetail.BillDetailBuilder builder = BillDetail.builder()
                     .batchId(batchId)
                     .phoneNumber(phoneNumber.trim())
-                    .extension("")
-                    .sheetType("FLASH_MSG")
-                    .monthlyRent(BigDecimal.ZERO)
-                    .callFee(BigDecimal.ZERO)
-                    .recordingFee(BigDecimal.ZERO)
-                    .crbtFee(BigDecimal.ZERO)
-                    .flashMsgFee(fee)
-                    .totalFee(fee)
-                    .flashMonth(formattedMonth != null ? formattedMonth : "")
-                    .build();
-            details.add(fillDefaults(detail));
+                    .sheetType(config.sheetType)
+                    .extension(getStringValue(values, "extension") != null ? getStringValue(values, "extension").trim() : "")
+                    .flashMonth("");
+
+            // Map extracted values to BillDetail fields
+            builder.monthlyRent(getBigDecimalValue(values, "monthlyRent"));
+            builder.callFee(getBigDecimalValue(values, "callFee"));
+            builder.recordingFee(getBigDecimalValue(values, "recordingFee"));
+            builder.crbtFee(getBigDecimalValue(values, "crbtFee"));
+            builder.flashMsgFee(getBigDecimalValue(values, "flashMsgFee"));
+
+            // Apply computed fields
+            applyComputedFields(builder, values, config.computedFields);
+
+            // Set totalFee if not already set
+            BigDecimal total = builder.build().getTotalFee();
+            if (total == null || total.compareTo(BigDecimal.ZERO) == 0) {
+                // Sum all fee fields
+                BigDecimal sum = BigDecimal.ZERO;
+                sum = safeAdd(sum, builder.build().getMonthlyRent());
+                sum = safeAdd(sum, builder.build().getCallFee());
+                sum = safeAdd(sum, builder.build().getRecordingFee());
+                sum = safeAdd(sum, builder.build().getCrbtFee());
+                sum = safeAdd(sum, builder.build().getFlashMsgFee());
+                builder.totalFee(sum);
+            } else {
+                builder.totalFee(total);
+            }
+
+            // Handle flash month for FLASH_MSG type
+            if ("FLASH_MSG".equals(config.sheetType)) {
+                String rawMonth = getStringValue(values, "flashMonth");
+                if (rawMonth != null && rawMonth.matches("\\d{6}")) {
+                    builder.flashMonth(rawMonth.substring(0, 4) + "-" + rawMonth.substring(4, 6));
+                } else if (rawMonth != null) {
+                    builder.flashMonth(rawMonth);
+                }
+            }
+
+            details.add(fillDefaults(builder.build()));
         }
+    }
+
+    private void applyComputedFields(BillDetail.BillDetailBuilder builder,
+                                      Map<String, Object> values,
+                                      Map<String, List<String>> computedFields) {
+        for (Map.Entry<String, List<String>> entry : computedFields.entrySet()) {
+            String targetField = entry.getKey();
+            List<String> sourceFields = entry.getValue();
+
+            BigDecimal sum = BigDecimal.ZERO;
+            for (String src : sourceFields) {
+                BigDecimal val = getBigDecimalValue(values, src);
+                sum = sum.add(val != null ? val : BigDecimal.ZERO);
+            }
+
+            switch (targetField) {
+                case "monthlyRent" -> builder.monthlyRent(sum);
+                case "callFee" -> builder.callFee(sum);
+                case "recordingFee" -> builder.recordingFee(sum);
+                case "crbtFee" -> builder.crbtFee(sum);
+                case "flashMsgFee" -> builder.flashMsgFee(sum);
+                case "totalFee" -> builder.totalFee(sum);
+            }
+        }
+    }
+
+    // ==================== Cell Value Helpers ====================
+
+    private Object getCellValue(Row row, int colIndex, String type) {
+        Cell cell = row.getCell(colIndex);
+        if (cell == null) return null;
+
+        if ("DECIMAL".equalsIgnoreCase(type)) {
+            return switch (cell.getCellType()) {
+                case NUMERIC -> BigDecimal.valueOf(cell.getNumericCellValue());
+                case STRING -> {
+                    try { yield new BigDecimal(cell.getStringCellValue().trim()); }
+                    catch (NumberFormatException e) { yield BigDecimal.ZERO; }
+                }
+                case FORMULA -> {
+                    try { yield BigDecimal.valueOf(cell.getNumericCellValue()); }
+                    catch (Exception e) { yield BigDecimal.ZERO; }
+                }
+                default -> BigDecimal.ZERO;
+            };
+        } else {
+            // Default: STRING
+            return switch (cell.getCellType()) {
+                case STRING -> cell.getStringCellValue().trim();
+                case NUMERIC -> {
+                    double val = cell.getNumericCellValue();
+                    if (val == Math.floor(val) && !Double.isInfinite(val)) {
+                        yield String.valueOf((long) val);
+                    } else {
+                        yield String.valueOf(val);
+                    }
+                }
+                case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
+                case FORMULA -> {
+                    try { yield cell.getStringCellValue(); }
+                    catch (Exception ex) { yield String.valueOf(cell.getNumericCellValue()); }
+                }
+                default -> null;
+            };
+        }
+    }
+
+    private String getStringValue(Map<String, Object> values, String key) {
+        Object val = values.get(key);
+        return val != null ? val.toString() : null;
+    }
+
+    private BigDecimal getBigDecimalValue(Map<String, Object> values, String key) {
+        Object val = values.get(key);
+        if (val instanceof BigDecimal bd) return bd;
+        if (val instanceof Number n) return BigDecimal.valueOf(n.doubleValue());
+        if (val instanceof String s) {
+            try { return new BigDecimal(s); } catch (Exception e) { return null; }
+        }
+        return null;
     }
 
     private BillDetail fillDefaults(BillDetail detail) {
@@ -306,42 +426,131 @@ public class BillImportService {
         return detail;
     }
 
-    private String getCellStringValue(Row row, int colIndex) {
-        Cell cell = row.getCell(colIndex);
-        if (cell == null) return null;
-        return switch (cell.getCellType()) {
-            case STRING -> cell.getStringCellValue().trim();
-            case NUMERIC -> {
-                double val = cell.getNumericCellValue();
-                if (val == Math.floor(val) && !Double.isInfinite(val)) {
-                    yield String.valueOf((long) val);
-                } else {
-                    yield String.valueOf(val);
-                }
-            }
-            case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
-            case FORMULA -> {
-                try { yield cell.getStringCellValue(); }
-                catch (Exception ex) { yield String.valueOf(cell.getNumericCellValue()); }
-            }
-            default -> null;
-        };
+    private String extractMonth(String sheetName, Pattern pattern) {
+        Matcher m = pattern.matcher(sheetName);
+        if (m.find()) {
+            int year = Integer.parseInt(m.group(1));
+            int month = Integer.parseInt(m.group(2));
+            return String.format("%d-%02d", year, month);
+        }
+        return "";
     }
 
-    private BigDecimal getCellBigDecimal(Row row, int colIndex) {
-        Cell cell = row.getCell(colIndex);
-        if (cell == null) return BigDecimal.ZERO;
-        return switch (cell.getCellType()) {
-            case NUMERIC -> BigDecimal.valueOf(cell.getNumericCellValue());
-            case STRING -> {
-                try { yield new BigDecimal(cell.getStringCellValue().trim()); }
-                catch (NumberFormatException e) { yield BigDecimal.ZERO; }
-            }
-            case FORMULA -> {
-                try { yield BigDecimal.valueOf(cell.getNumericCellValue()); }
-                catch (Exception e) { yield BigDecimal.ZERO; }
-            }
-            default -> BigDecimal.ZERO;
-        };
+    private static BigDecimal safeAdd(BigDecimal a, BigDecimal b) {
+        return (a != null ? a : BigDecimal.ZERO).add(b != null ? b : BigDecimal.ZERO);
+    }
+
+    private static int toInt(Object val) {
+        if (val == null) return 0;
+        if (val instanceof Number n) return n.intValue();
+        try { return Integer.parseInt(val.toString()); } catch (Exception e) { return 0; }
+    }
+
+    private static Integer toIntNullable(Object val) {
+        if (val == null) return null;
+        if (val instanceof Number n) return n.intValue();
+        try { return Integer.parseInt(val.toString()); } catch (Exception e) { return null; }
+    }
+
+    // ==================== Fallback Hardcoded Configs ====================
+    // Used when template JSON is missing or unparseable
+
+    private List<SheetConfig> getFallbackSheetConfigs() {
+        List<SheetConfig> fallbacks = new ArrayList<>();
+
+        // CALL sheet
+        SheetConfig call = new SheetConfig();
+        call.sheetNamePattern = "按号码费用|号码费用";
+        call.sheetType = "CALL";
+        call.phoneColumn = 0;
+        call.skipRows = 1;
+        call.isQuarterly = false;
+        call.columns = Arrays.asList(
+                new ColumnConfig(0, "phoneNumber", "STRING"),
+                new ColumnConfig(1, "platformFee", "DECIMAL"),
+                new ColumnConfig(2, "monthlyRentCode", "DECIMAL"),
+                new ColumnConfig(5, "domesticFee", "DECIMAL"),
+                new ColumnConfig(7, "internationalFee", "DECIMAL"),
+                new ColumnConfig(8, "totalFee", "DECIMAL")
+        );
+        call.computedFields.put("monthlyRent", List.of("platformFee", "monthlyRentCode"));
+        call.computedFields.put("callFee", List.of("domesticFee", "internationalFee"));
+        fallbacks.add(call);
+
+        // RECORDING sheet
+        SheetConfig rec = new SheetConfig();
+        rec.sheetNamePattern = "录音";
+        rec.sheetType = "RECORDING";
+        rec.phoneColumn = 1;
+        rec.extensionColumn = 0;
+        rec.skipRows = 1;
+        rec.isQuarterly = false;
+        rec.columns = Arrays.asList(
+                new ColumnConfig(0, "extension", "STRING"),
+                new ColumnConfig(1, "phoneNumber", "STRING"),
+                new ColumnConfig(3, "recordingFee", "DECIMAL")
+        );
+        fallbacks.add(rec);
+
+        // CRBT sheet
+        SheetConfig crbt = new SheetConfig();
+        crbt.sheetNamePattern = "彩铃";
+        crbt.sheetType = "CRBT";
+        crbt.phoneColumn = 1;
+        crbt.extensionColumn = 0;
+        crbt.skipRows = 1;
+        crbt.isQuarterly = false;
+        crbt.columns = Arrays.asList(
+                new ColumnConfig(0, "extension", "STRING"),
+                new ColumnConfig(1, "phoneNumber", "STRING"),
+                new ColumnConfig(2, "crbtFee", "DECIMAL")
+        );
+        fallbacks.add(crbt);
+
+        // FLASH_MSG sheet
+        SheetConfig flash = new SheetConfig();
+        flash.sheetNamePattern = "闪信";
+        flash.sheetType = "FLASH_MSG";
+        flash.phoneColumn = 0;
+        flash.skipRows = 1;
+        flash.isQuarterly = true;
+        flash.columns = Arrays.asList(
+                new ColumnConfig(0, "phoneNumber", "STRING"),
+                new ColumnConfig(1, "flashMonth", "STRING"),
+                new ColumnConfig(3, "flashMsgFee", "DECIMAL")
+        );
+        fallbacks.add(flash);
+
+        return fallbacks;
+    }
+
+    // ==================== Inner Config Classes ====================
+
+    private static class TemplateConfig {
+        Pattern monthPattern;
+        List<SheetConfig> sheets = new ArrayList<>();
+    }
+
+    private static class SheetConfig {
+        String sheetNamePattern;
+        String sheetType;
+        int phoneColumn;
+        Integer extensionColumn;
+        int skipRows;
+        boolean isQuarterly;
+        List<ColumnConfig> columns = new ArrayList<>();
+        Map<String, List<String>> computedFields = new LinkedHashMap<>();
+    }
+
+    private static class ColumnConfig {
+        int index;
+        String field;
+        String type;
+
+        ColumnConfig(int index, String field, String type) {
+            this.index = index;
+            this.field = field;
+            this.type = type;
+        }
     }
 }

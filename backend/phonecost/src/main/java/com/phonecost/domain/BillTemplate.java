@@ -19,8 +19,14 @@ public class BillTemplate extends BaseEntity {
     @ColumnDefault("'CHINA_TELECOM'")
     private String operator;
 
+    @Column(name = "month_pattern")
+    private String monthPattern;
+
     @Column(name = "sheet_configs", nullable = false, columnDefinition = "JSON")
     private String sheetConfigs;
+
+    @Column(name = "description")
+    private String description;
 
     @Column(name = "is_active")
     @ColumnDefault("1")

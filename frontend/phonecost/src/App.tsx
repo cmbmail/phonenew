@@ -12,6 +12,7 @@ import BillManagement from './pages/BillManagement';
 import AllocationPage from './pages/AllocationPage';
 import Organization from './pages/Organization';
 import UserManagement from './pages/UserManagement';
+import TemplateManagement from './pages/TemplateManagement';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30000 } } });
 const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -32,6 +33,7 @@ const App: React.FC = () => (
             <Route path="allocation" element={<AllocationPage />} />
             <Route path="org" element={<Organization />} />
             <Route path="settings" element={<UserManagement />} />
+            <Route path="templates" element={<TemplateManagement />} />
           </Route>
         </Routes>
       </BrowserRouter>
