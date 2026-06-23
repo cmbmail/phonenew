@@ -7,6 +7,7 @@ import { BILL_STATUS_LABELS, BILL_STATUS_COLORS } from '../types/bill';
 import { CONFIRM_STATUS_MAP } from '../types/allocation';
 import {
   getBillBatches,
+  getAllocationResults,
   calculateAllocation,
   confirmAllocation,
   confirmAllAllocation,

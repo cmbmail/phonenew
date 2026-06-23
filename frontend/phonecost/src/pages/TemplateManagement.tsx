@@ -16,6 +16,7 @@ import {
   Alert,
   Empty,
 } from 'antd';
+import { getErrorMessage } from '../types/api';
 import {
   PlusOutlined,
   EditOutlined,
@@ -193,9 +194,9 @@ export default function TemplateManagement() {
 
       setModalOpen(false);
       fetchTemplates();
-    } catch (err: ApiError) {
-      if (err?.errorFields) return; // form validation error
-      message.error(err?.response?.data?.message || t('common.failed'));
+    } catch (err) {
+      if (err instanceof Error && 'errorFields' in err) return; // form validation error
+      message.error(getErrorMessage(err, t('common.failed')));
     } finally {
       setSaving(false);
     }
@@ -208,8 +209,8 @@ export default function TemplateManagement() {
       await activateTemplate(id);
       message.success(t('template.activateSuccess'));
       fetchTemplates();
-    } catch (err: ApiError) {
-      message.error(err?.response?.data?.message || t('template.activateFailed'));
+    } catch (err) {
+      message.error(getErrorMessage(err, t('template.activateFailed')));
     }
   };
 
@@ -218,8 +219,8 @@ export default function TemplateManagement() {
       await deleteTemplate(id);
       message.success(t('template.deleteSuccess'));
       fetchTemplates();
-    } catch (err: ApiError) {
-      message.error(err?.response?.data?.message || t('template.deleteFailed'));
+    } catch (err) {
+      message.error(getErrorMessage(err, t('template.deleteFailed')));
     }
   };
 

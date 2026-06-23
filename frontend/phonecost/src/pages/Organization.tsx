@@ -18,6 +18,7 @@ import {
   Tag,
   Descriptions,
 } from 'antd';
+import { getErrorMessage } from '../types/api';
 import {
   UploadOutlined,
   PlusOutlined,
@@ -106,8 +107,9 @@ export default function OrganizationPage() {
       setAddModalOpen(false);
       addForm.resetFields();
       fetchOrgTree();
-    } catch (err: ApiError) {
-      if (err?.response?.data?.message) message.error(err.response.data.message);
+    } catch (err) {
+      const msg = getErrorMessage(err, '操作失败');
+      message.error(msg);
     }
   };
 
@@ -122,8 +124,9 @@ export default function OrganizationPage() {
       });
       message.success(t('org.updateSuccess'));
       fetchOrgTree();
-    } catch (err: ApiError) {
-      if (err?.response?.data?.message) message.error(err.response.data.message);
+    } catch (err) {
+      const msg = getErrorMessage(err, '操作失败');
+      message.error(msg);
     }
   };
 
@@ -133,8 +136,8 @@ export default function OrganizationPage() {
       message.success(t('org.deleteSuccess'));
       if (selectedOrg?.id === id) setSelectedOrg(null);
       fetchOrgTree();
-    } catch (err: ApiError) {
-      message.error(err?.response?.data?.message || t('org.deleteFailed'));
+    } catch (err) {
+      message.error(getErrorMessage(err, t('org.deleteFailed')));
     }
   };
 
@@ -150,8 +153,8 @@ export default function OrganizationPage() {
       message.success(t('org.importSuccess', { total: result.total, created: result.created, skipped: result.skipped }));
       setImportFileList([]);
       fetchOrgTree();
-    } catch (err: ApiError) {
-      message.error(err?.response?.data?.message || t('org.importFailed'));
+    } catch (err) {
+      message.error(getErrorMessage(err, t('org.importFailed')));
     } finally {
       setImporting(false);
     }
@@ -163,8 +166,8 @@ export default function OrganizationPage() {
       await rebuildOrgPaths();
       message.success(t('org.rebuildSuccess'));
       fetchOrgTree();
-    } catch (err: ApiError) {
-      message.error(err?.response?.data?.message || t('org.rebuildFailed'));
+    } catch (err) {
+      message.error(getErrorMessage(err, t('org.rebuildFailed')));
     } finally {
       setRebuilding(false);
     }

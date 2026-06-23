@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+/// <reference types="vitest" />
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import Login from '../pages/Login';
@@ -30,9 +31,9 @@ vi.mock('../api/auth', () => ({
 describe('Login', () => {
   it('renders login form with username and password fields', () => {
     render(<Login />);
-    expect(screen.getByPlaceholderText(/username/i || /用户名/i)).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/password/i || /密码/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /login/i || /登录/i })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/username|用户名/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/password|密码/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /login|登录/i })).toBeInTheDocument();
   });
 
   it('shows title text', () => {
@@ -47,8 +48,8 @@ describe('Login', () => {
     const user = userEvent.setup();
     render(<Login />);
 
-    const usernameInput = screen.getByPlaceholderText(/username/i || /用户名/i);
-    const passwordInput = screen.getByPlaceholderText(/password/i || /密码/i);
+    const usernameInput = screen.getByPlaceholderText(/username|用户名/i);
+    const passwordInput = screen.getByPlaceholderText(/password|密码/i);
 
     await user.type(usernameInput, 'admin');
     await user.type(passwordInput, 'password123');

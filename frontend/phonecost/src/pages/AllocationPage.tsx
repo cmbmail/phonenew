@@ -7,6 +7,7 @@ import type { AllocationResult, AllocationAdjustment } from '../types/allocation
 import { CONFIRM_STATUS_MAP } from '../types/allocation';
 import type { Organization } from '../types/organization';
 import type { TreeNode } from '../types/api';
+import { getErrorMessage } from '../types/api';
 import {
   getBillBatches,
   getAllocationResults,
@@ -137,8 +138,8 @@ export default function AllocationPage() {
       await confirmAllocation(batchId, orgId);
       message.success(t('allocation.confirmSuccessMsg'));
       fetchResults(batchId);
-    } catch (err: ApiError) {
-      message.error(err?.response?.data?.message || t('allocation.confirmFailedMsg'));
+    } catch (err) {
+      message.error(getErrorMessage(err, t('allocation.confirmFailedMsg')));
     }
   };
 
@@ -148,8 +149,8 @@ export default function AllocationPage() {
       const res = await confirmAllAllocation(selectedBatchId);
       message.success(t('allocation.confirmAllSuccessMsg', { count: res.confirmed_count }));
       fetchResults(selectedBatchId);
-    } catch (err: ApiError) {
-      message.error(err?.response?.data?.message || t('allocation.confirmAllFailedMsg'));
+    } catch (err) {
+      message.error(getErrorMessage(err, t('allocation.confirmAllFailedMsg')));
     }
   };
 
@@ -164,8 +165,8 @@ export default function AllocationPage() {
       setWithdrawModal({ open: false });
       setWithdrawReason('');
       fetchResults(withdrawModal.result.batch_id);
-    } catch (err: ApiError) {
-      message.error(err?.response?.data?.message || t('allocation.withdrawFailedMsg'));
+    } catch (err) {
+      message.error(getErrorMessage(err, t('allocation.withdrawFailedMsg')));
     }
   };
 
@@ -189,9 +190,9 @@ export default function AllocationPage() {
       adjustForm.resetFields();
       fetchResults(selectedBatchId!);
       if (activeTab === 'adjustments') fetchAdjustments(selectedBatchId!);
-    } catch (err: ApiError) {
-      if (err?.errorFields) return; // form validation error
-      message.error(err?.response?.data?.message || t('allocation.adjustFailed'));
+    } catch (err) {
+      if (err instanceof Error && 'errorFields' in err) return; // form validation error
+      message.error(getErrorMessage(err, t('allocation.adjustFailed')));
     } finally {
       setAdjustSubmitting(false);
     }

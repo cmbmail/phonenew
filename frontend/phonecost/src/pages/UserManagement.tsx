@@ -13,6 +13,7 @@ import {
   message,
   Popconfirm,
 } from 'antd';
+import { getErrorMessage } from '../types/api';
 import {
   PlusOutlined,
   EditOutlined,
@@ -72,8 +73,8 @@ export default function UserManagement() {
       setAddModalOpen(false);
       addForm.resetFields();
       fetchUsers();
-    } catch (err: ApiError) {
-      if (err?.response?.data?.message) message.error(err.response.data.message);
+    } catch (err) {
+      message.error(getErrorMessage(err, '操作失败'));
     }
   };
 
@@ -87,8 +88,8 @@ export default function UserManagement() {
       setEditingUser(null);
       editForm.resetFields();
       fetchUsers();
-    } catch (err: ApiError) {
-      if (err?.response?.data?.message) message.error(err.response.data.message);
+    } catch (err) {
+      message.error(getErrorMessage(err, '操作失败'));
     }
   };
 
@@ -97,8 +98,8 @@ export default function UserManagement() {
       await deleteUser(id);
       message.success(t('user.deleteSuccess'));
       fetchUsers();
-    } catch (err: ApiError) {
-      message.error(err?.response?.data?.message || t('user.deleteFailed'));
+    } catch (err) {
+      message.error(getErrorMessage(err, t('user.deleteFailed')));
     }
   };
 
@@ -111,8 +112,8 @@ export default function UserManagement() {
       setResetModalOpen(false);
       setEditingUser(null);
       resetForm.resetFields();
-    } catch (err: ApiError) {
-      if (err?.response?.data?.message) message.error(err.response.data.message);
+    } catch (err) {
+      message.error(getErrorMessage(err, '操作失败'));
     }
   };
 
