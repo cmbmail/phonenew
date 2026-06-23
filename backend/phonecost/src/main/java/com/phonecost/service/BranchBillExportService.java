@@ -701,6 +701,7 @@ public class BranchBillExportService {
                     row.put("crbt_fee", getRawDecimalOrZero(raw, "crbtFee"));
                 }
                 case "FLASH_MSG" -> {
+                    row.put("extension", d.getExtension() != null ? d.getExtension() : "");
                     row.put("flash_month", d.getFlashMonth() != null ? d.getFlashMonth() : "");
                     row.put("flash_count", getRawDecimalOrZero(raw, "flashCount"));
                     row.put("flash_msg_fee", getRawDecimalOrZero(raw, "flashMsgFee"));
