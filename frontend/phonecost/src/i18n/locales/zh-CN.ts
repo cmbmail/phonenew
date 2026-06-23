@@ -244,7 +244,7 @@ export default {
     intlFeeCol: '国际费用',
     totalFeeCol: '费用小计',
     // RECORDING columns
-    recordingDirCol: '录音方向',
+    recordingDirCol: '录音目录',
     recordingFeeCol: '录音费用',
     // CRBT columns
     crbtFeeCol: '彩铃费用',
