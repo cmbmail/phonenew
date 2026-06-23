@@ -70,6 +70,13 @@ export default {
   // ==================== Bill Management ====================
   bill: {
     viewAllocation: 'View Allocation',
+    batchNo: 'Batch No.',
+    month: 'Month',
+    fileName: 'File Name',
+    count: 'Records',
+    totalAmountCol: 'Total Amount',
+    status: 'Status',
+    importTime: 'Import Time',
     calculateAllocation: 'Calculate',
     exportSummaryTooltip: 'Export Summary Excel',
     exportDetailTooltip: 'Export Detail Excel',
@@ -337,6 +344,8 @@ export default {
 
   // ==================== Common / Shared ====================
   common: {
+    status: 'Status',
+    actions: 'Actions',
     langSwitch: 'Language',
     langZh: '中文',
     langEn: 'English',

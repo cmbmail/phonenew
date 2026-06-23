@@ -75,6 +75,13 @@ export default {
   // ==================== Bill Management ====================
   bill: {
     viewAllocation: '查看分摊',
+    batchNo: '批次号',
+    month: '月份',
+    fileName: '文件名',
+    count: '条数',
+    totalAmountCol: '总金额',
+    status: '状态',
+    importTime: '导入时间',
     calculateAllocation: '分摊计算',
     exportSummaryTooltip: '导出汇总Excel',
     exportDetailTooltip: '导出明细Excel',
@@ -362,6 +369,8 @@ export default {
 
   // ==================== Common / Shared ====================
   common: {
+    status: '状态',
+    actions: '操作',
     langSwitch: '语言',
     langZh: '中文',
     langEn: 'English',

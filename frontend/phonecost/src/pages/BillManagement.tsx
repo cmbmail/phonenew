@@ -142,11 +142,11 @@ export default function BillManagement() {
           )}
           {record.status >= 1 && (
             <>
-              <Tooltip title="导出汇总Excel">
+              <Tooltip title={t('bill.exportSummaryTooltip')}>
                 <Button size="small" icon={<DownloadOutlined />}
                   onClick={() => handleExport(getExportSummaryUrl(record.id))} />
               </Tooltip>
-              <Tooltip title="导出明细Excel">
+              <Tooltip title={t('bill.exportDetailTooltip')}>
                 <Button size="small" icon={<DownloadOutlined />}
                   onClick={() => handleExport(getExportDetailUrl(record.id))} />
               </Tooltip>
