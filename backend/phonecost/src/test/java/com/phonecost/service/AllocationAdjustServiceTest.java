@@ -11,7 +11,6 @@ import org.mockito.*;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -46,35 +45,39 @@ class AllocationAdjustServiceTest {
     @BeforeEach
     void setUp() {
         fromOrg = SysOrganization.builder()
-                .id(FROM_ORG_ID).name("北京分行").parentId(5L)
-                .path("/5/10/").build();
+                .name("北京分行").parentId(5L).path("/5/10/").build();
+        fromOrg.setId(FROM_ORG_ID);
+
         toOrg = SysOrganization.builder()
-                .id(TO_ORG_ID).name("上海分行").parentId(5L)
-                .path("/5/20/").build();
+                .name("上海分行").parentId(5L).path("/5/20/").build();
+        toOrg.setId(TO_ORG_ID);
 
         detail = BillDetail.builder()
-                .id(1L).batchId(BATCH_ID).phoneNumber(PHONE)
+                .batchId(BATCH_ID).phoneNumber(PHONE)
                 .sheetType("CALL").monthlyRent(BigDecimal.TEN)
                 .callFee(BigDecimal.valueOf(5)).recordingFee(BigDecimal.ZERO)
                 .crbtFee(BigDecimal.ZERO).flashMsgFee(BigDecimal.ZERO)
                 .totalFee(BigDecimal.valueOf(15)).orgId(FROM_ORG_ID)
                 .build();
+        detail.setId(1L);
 
         fromResult = AllocationResult.builder()
-                .id(1L).batchId(BATCH_ID).orgId(FROM_ORG_ID).orgName("北京分行")
+                .batchId(BATCH_ID).orgId(FROM_ORG_ID).orgName("北京分行")
                 .monthlyRent(BigDecimal.valueOf(100)).callFee(BigDecimal.valueOf(50))
                 .recordingFee(BigDecimal.ZERO).crbtFee(BigDecimal.ZERO)
                 .flashMsgFee(BigDecimal.ZERO).totalFee(BigDecimal.valueOf(150))
                 .phoneCount(10).confirmStatus((byte) 0).version(0)
                 .build();
+        fromResult.setId(1L);
 
         toResult = AllocationResult.builder()
-                .id(2L).batchId(BATCH_ID).orgId(TO_ORG_ID).orgName("上海分行")
+                .batchId(BATCH_ID).orgId(TO_ORG_ID).orgName("上海分行")
                 .monthlyRent(BigDecimal.valueOf(200)).callFee(BigDecimal.valueOf(80))
                 .recordingFee(BigDecimal.ZERO).crbtFee(BigDecimal.ZERO)
                 .flashMsgFee(BigDecimal.ZERO).totalFee(BigDecimal.valueOf(280))
                 .phoneCount(15).confirmStatus((byte) 0).version(0)
                 .build();
+        toResult.setId(2L);
     }
 
     @Nested
@@ -126,7 +129,7 @@ class AllocationAdjustServiceTest {
         @DisplayName("Phone belongs to different org should throw")
         void wrongOrgOwnership() {
             BillDetail wrongOrgDetail = BillDetail.builder()
-                    .id(1L).phoneNumber(PHONE).orgId(99L).totalFee(BigDecimal.TEN)
+                    .phoneNumber(PHONE).orgId(99L).totalFee(BigDecimal.TEN)
                     .sheetType("CALL").build();
             when(billDetailRepository.findByPhoneNumberAndBatchIdAndDeletedAtIsNull(PHONE, BATCH_ID))
                     .thenReturn(List.of(wrongOrgDetail));
@@ -150,7 +153,8 @@ class AllocationAdjustServiceTest {
             when(resultRepository.findByBatchIdAndOrgIdAndDeletedAtIsNull(BATCH_ID, TO_ORG_ID))
                     .thenReturn(Optional.of(toResult));
             // Parent cascade: root org
-            SysOrganization rootOrg = SysOrganization.builder().id(5L).name("招商银行").parentId(null).path("/5/").build();
+            SysOrganization rootOrg = SysOrganization.builder().name("招商银行").parentId(null).path("/5/").build();
+            rootOrg.setId(5L);
             when(orgRepository.findById(5L)).thenReturn(Optional.of(rootOrg));
             when(adjustmentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         }
@@ -163,9 +167,7 @@ class AllocationAdjustServiceTest {
 
             adjustService.adjust(BATCH_ID, PHONE, FROM_ORG_ID, TO_ORG_ID, "号码调拨", USER_ID);
 
-            // From org should have subtracted the detail's total fee
             assertEquals(fromTotalBefore.subtract(detail.getTotalFee()), fromResult.getTotalFee());
-            // To org should have added the detail's total fee
             assertEquals(toTotalBefore.add(detail.getTotalFee()), toResult.getTotalFee());
         }
 
@@ -228,7 +230,8 @@ class AllocationAdjustServiceTest {
                     .thenReturn(Optional.of(fromResult));
             when(resultRepository.findByBatchIdAndOrgIdAndDeletedAtIsNull(BATCH_ID, TO_ORG_ID))
                     .thenReturn(Optional.empty());
-            SysOrganization rootOrg = SysOrganization.builder().id(5L).name("招商银行").parentId(null).path("/5/").build();
+            SysOrganization rootOrg = SysOrganization.builder().name("招商银行").parentId(null).path("/5/").build();
+            rootOrg.setId(5L);
             when(orgRepository.findById(5L)).thenReturn(Optional.of(rootOrg));
             when(adjustmentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         }
@@ -236,13 +239,11 @@ class AllocationAdjustServiceTest {
         @Test
         @DisplayName("Creates new AllocationResult for target org when none exists")
         void createsNewResult() {
-            // Save is called twice: for fromResult and the new toResult
             when(resultRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             AllocationAdjustment adj = adjustService.adjust(BATCH_ID, PHONE, FROM_ORG_ID, TO_ORG_ID, "号码调拨", USER_ID);
 
             assertNotNull(adj);
-            // resultRepository.save should have been called for fromResult and new toResult
             verify(resultRepository, atLeast(2)).save(any(AllocationResult.class));
         }
     }
@@ -255,7 +256,7 @@ class AllocationAdjustServiceTest {
         @DisplayName("Returns adjustments for a batch")
         void listByBatch() {
             AllocationAdjustment adj1 = AllocationAdjustment.builder()
-                    .id(1L).batchId(BATCH_ID).phoneNumber("0101111").build();
+                    .batchId(BATCH_ID).phoneNumber("0101111").build();
             when(adjustmentRepository.findByBatchIdAndDeletedAtIsNull(BATCH_ID))
                     .thenReturn(List.of(adj1));
 

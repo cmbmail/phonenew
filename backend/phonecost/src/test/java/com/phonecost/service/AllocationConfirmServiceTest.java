@@ -2,7 +2,6 @@ package com.phonecost.service;
 
 import com.phonecost.domain.*;
 import com.phonecost.repository.*;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -10,7 +9,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.*;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -41,8 +39,9 @@ class AllocationConfirmServiceTest {
         @DisplayName("Confirm pending result successfully")
         void confirmPending() {
             AllocationResult result = AllocationResult.builder()
-                    .id(1L).batchId(BATCH_ID).orgId(ORG_ID)
+                    .batchId(BATCH_ID).orgId(ORG_ID)
                     .confirmStatus((byte) 0).version(0).build();
+            result.setId(1L);
 
             when(resultRepository.findByBatchIdAndOrgIdAndDeletedAtIsNull(BATCH_ID, ORG_ID))
                     .thenReturn(Optional.of(result));
@@ -100,10 +99,12 @@ class AllocationConfirmServiceTest {
         @DisplayName("Withdraw confirmed result successfully")
         void withdrawConfirmed() {
             AllocationResult result = AllocationResult.builder()
-                    .id(1L).batchId(BATCH_ID).orgId(ORG_ID)
+                    .batchId(BATCH_ID).orgId(ORG_ID)
                     .confirmStatus((byte) 1).version(0).build();
+            result.setId(1L);
             SysOrganization org = SysOrganization.builder()
-                    .id(ORG_ID).name("北京分行").path("/5/10/").parentId(5L).build();
+                    .name("北京分行").path("/5/10/").parentId(5L).build();
+            org.setId(ORG_ID);
 
             when(resultRepository.findByBatchIdAndOrgIdAndDeletedAtIsNull(BATCH_ID, ORG_ID))
                     .thenReturn(Optional.of(result));
@@ -144,16 +145,20 @@ class AllocationConfirmServiceTest {
         @DisplayName("Withdraw cascades to descendant orgs")
         void withdrawCascades() {
             AllocationResult parentResult = AllocationResult.builder()
-                    .id(1L).batchId(BATCH_ID).orgId(ORG_ID)
+                    .batchId(BATCH_ID).orgId(ORG_ID)
                     .confirmStatus((byte) 1).version(0).build();
+            parentResult.setId(1L);
             AllocationResult childResult = AllocationResult.builder()
-                    .id(2L).batchId(BATCH_ID).orgId(11L)
+                    .batchId(BATCH_ID).orgId(11L)
                     .confirmStatus((byte) 1).version(0).build();
+            childResult.setId(2L);
 
             SysOrganization parentOrg = SysOrganization.builder()
-                    .id(ORG_ID).name("北京分行").path("/5/10/").parentId(5L).build();
+                    .name("北京分行").path("/5/10/").parentId(5L).build();
+            parentOrg.setId(ORG_ID);
             SysOrganization childOrg = SysOrganization.builder()
-                    .id(11L).name("部门A").path("/5/10/11/").parentId(ORG_ID).build();
+                    .name("部门A").path("/5/10/11/").parentId(ORG_ID).build();
+            childOrg.setId(11L);
 
             when(resultRepository.findByBatchIdAndOrgIdAndDeletedAtIsNull(BATCH_ID, ORG_ID))
                     .thenReturn(Optional.of(parentResult));
@@ -174,16 +179,20 @@ class AllocationConfirmServiceTest {
         @DisplayName("Withdraw does NOT cascade to non-descendant orgs")
         void withdrawNoCascadeToUnrelated() {
             AllocationResult target = AllocationResult.builder()
-                    .id(1L).batchId(BATCH_ID).orgId(ORG_ID)
+                    .batchId(BATCH_ID).orgId(ORG_ID)
                     .confirmStatus((byte) 1).version(0).build();
+            target.setId(1L);
             AllocationResult other = AllocationResult.builder()
-                    .id(2L).batchId(BATCH_ID).orgId(20L)
+                    .batchId(BATCH_ID).orgId(20L)
                     .confirmStatus((byte) 1).version(0).build();
+            other.setId(2L);
 
             SysOrganization targetOrg = SysOrganization.builder()
-                    .id(ORG_ID).name("北京分行").path("/5/10/").parentId(5L).build();
+                    .name("北京分行").path("/5/10/").parentId(5L).build();
+            targetOrg.setId(ORG_ID);
             SysOrganization otherOrg = SysOrganization.builder()
-                    .id(20L).name("上海分行").path("/5/20/").parentId(5L).build();
+                    .name("上海分行").path("/5/20/").parentId(5L).build();
+            otherOrg.setId(20L);
 
             when(resultRepository.findByBatchIdAndOrgIdAndDeletedAtIsNull(BATCH_ID, ORG_ID))
                     .thenReturn(Optional.of(target));
@@ -207,10 +216,12 @@ class AllocationConfirmServiceTest {
         @Test
         @DisplayName("Confirms all pending results in allScope")
         void confirmAllAdmin() {
-            AllocationResult r1 = AllocationResult.builder().id(1L).batchId(BATCH_ID).orgId(10L)
+            AllocationResult r1 = AllocationResult.builder().batchId(BATCH_ID).orgId(10L)
                     .confirmStatus((byte) 0).version(0).build();
-            AllocationResult r2 = AllocationResult.builder().id(2L).batchId(BATCH_ID).orgId(20L)
+            r1.setId(1L);
+            AllocationResult r2 = AllocationResult.builder().batchId(BATCH_ID).orgId(20L)
                     .confirmStatus((byte) 0).version(0).build();
+            r2.setId(2L);
 
             when(resultRepository.findByBatchIdAndConfirmStatusAndDeletedAtIsNull(BATCH_ID, (byte) 0))
                     .thenReturn(List.of(r1, r2));
@@ -226,21 +237,22 @@ class AllocationConfirmServiceTest {
         @Test
         @DisplayName("Branch admin only confirms visible orgs")
         void branchScopedConfirm() {
-            AllocationResult r1 = AllocationResult.builder().id(1L).batchId(BATCH_ID).orgId(10L)
+            AllocationResult r1 = AllocationResult.builder().batchId(BATCH_ID).orgId(10L)
                     .confirmStatus((byte) 0).version(0).build();
-            AllocationResult r2 = AllocationResult.builder().id(2L).batchId(BATCH_ID).orgId(20L)
+            r1.setId(1L);
+            AllocationResult r2 = AllocationResult.builder().batchId(BATCH_ID).orgId(20L)
                     .confirmStatus((byte) 0).version(0).build();
+            r2.setId(2L);
 
             when(resultRepository.findByBatchIdAndConfirmStatusAndDeletedAtIsNull(BATCH_ID, (byte) 0))
                     .thenReturn(List.of(r1, r2));
 
-            // Branch scope only sees org 10
             DataScope branchScope = DataScope.subtreeScope("/5/10/", List.of(10L));
             int count = confirmService.confirmAllInScope(BATCH_ID, USER_ID, branchScope);
 
             assertEquals(1, count);
             assertEquals((byte) 1, r1.getConfirmStatus());
-            assertEquals((byte) 0, r2.getConfirmStatus()); // Still pending
+            assertEquals((byte) 0, r2.getConfirmStatus());
         }
     }
 }
