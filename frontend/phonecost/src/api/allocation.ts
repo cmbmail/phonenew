@@ -60,3 +60,10 @@ export const getExportDetailUrl = (batchId: number, branchOrgId?: number) => {
   if (branchOrgId) url += `&branchOrgId=${branchOrgId}`;
   return url;
 };
+
+export const getBranchBillUrl = (batchId: number, branchOrgId?: number) => {
+  const token = useAuthStore.getState().token;
+  let url = `/api/allocation/export/branch-bill?batchId=${batchId}&token=${token}`;
+  if (branchOrgId) url += `&branchOrgId=${branchOrgId}`;
+  return url;
+};

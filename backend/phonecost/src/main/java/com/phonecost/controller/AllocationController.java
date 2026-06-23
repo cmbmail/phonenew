@@ -11,6 +11,7 @@ import com.phonecost.service.AllocationAdjustService;
 import com.phonecost.service.AllocationConfirmService;
 import com.phonecost.service.AllocationExportService;
 import com.phonecost.service.AllocationService;
+import com.phonecost.service.BranchBillExportService;
 import com.phonecost.service.DataScope;
 import com.phonecost.service.DataScopeService;
 import lombok.RequiredArgsConstructor;
@@ -36,6 +37,7 @@ public class AllocationController {
     private final AllocationService allocationService;
     private final AllocationConfirmService confirmService;
     private final AllocationExportService exportService;
+    private final BranchBillExportService branchBillExportService;
     private final AllocationAdjustService adjustService;
     private final AllocationResultRepository resultRepository;
     private final BillBatchRepository billBatchRepository;
@@ -244,6 +246,39 @@ public class AllocationController {
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         "attachment; filename=\"分行费用分摊明细.xlsx\"")
+                .contentType(MediaType.parseMediaType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(data);
+    }
+
+    // ==================== 分行账单导出（5-Sheet完整账单） ====================
+
+    @GetMapping("/export/branch-bill")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_FINANCE', 'ROLE_BRANCH')")
+    public ResponseEntity<byte[]> exportBranchBill(
+            @RequestParam Long batchId,
+            @RequestParam(required = false) Long branchOrgId,
+            @RequestAttribute("userId") Long userId) throws Exception {
+        DataScope scope = dataScopeService.getDataScope(userId);
+
+        // Non-admin: force own org range
+        Long effectiveBranchOrgId = branchOrgId;
+        if (!scope.isAllScope()) {
+            if (scope.getSingleOrgId() != null) {
+                effectiveBranchOrgId = scope.getSingleOrgId();
+            } else if (scope.getPathPrefix() != null) {
+                String path = scope.getPathPrefix();
+                String trimmed = path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
+                int lastSlash = trimmed.lastIndexOf('/');
+                effectiveBranchOrgId = Long.parseLong(trimmed.substring(lastSlash + 1));
+            }
+        }
+
+        byte[] data = branchBillExportService.exportBranchBill(batchId, effectiveBranchOrgId, userId);
+        String filename = java.net.URLEncoder.encode(
+                "分行电话费用账单_" + batchId + ".xlsx", "UTF-8");
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
                 .contentType(MediaType.parseMediaType(
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
                 .body(data);

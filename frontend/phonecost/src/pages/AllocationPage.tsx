@@ -13,6 +13,7 @@ import {
   withdrawAllocation,
   getExportSummaryUrl,
   getExportDetailUrl,
+  getBranchBillUrl,
   adjustAllocation,
   getAdjustments,
 } from '../api/allocation';
@@ -316,6 +317,10 @@ export default function AllocationPage() {
               <Button icon={<DownloadOutlined />}
                 onClick={() => handleExport(getExportDetailUrl(selectedBatchId))}>
                 导出明细
+              </Button>
+              <Button type="primary" icon={<DownloadOutlined />}
+                onClick={() => handleExport(getBranchBillUrl(selectedBatchId))}>
+                分行账单
               </Button>
             </>
           )}
