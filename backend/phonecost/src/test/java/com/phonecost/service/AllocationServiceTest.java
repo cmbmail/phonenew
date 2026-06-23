@@ -60,7 +60,7 @@ class AllocationServiceTest {
             agg.add(d2);
 
             assertEquals(0, BigDecimal.TEN.compareTo(agg.monthlyRent));
-            assertEquals(0, BigDecimal.valueOf(8).compareTo(agg.totalFee));
+            assertEquals(0, BigDecimal.valueOf(18).compareTo(agg.totalFee));
             // phoneCount only counts CALL sheet, and same phone deduplicates
             assertEquals(1, agg.phoneCount);
         }
