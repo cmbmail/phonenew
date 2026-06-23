@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Layout, Menu, Avatar, Dropdown, Typography, Popconfirm, Modal, Form, Input, message } from 'antd';
-import { DashboardOutlined, FileTextOutlined, PhoneOutlined, TeamOutlined, SettingOutlined, LogoutOutlined, ImportOutlined, ToolOutlined, GlobalOutlined } from '@ant-design/icons';
+import { DashboardOutlined, FileTextOutlined, PhoneOutlined, TeamOutlined, SettingOutlined, LogoutOutlined, ImportOutlined, ToolOutlined, GlobalOutlined, BankOutlined, BranchesOutlined } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
 import { getErrorMessage } from '../types/api';
@@ -14,13 +14,23 @@ interface MenuItemDef {
   icon: React.ReactNode;
   label: string;
   roles?: number[]; // undefined = all roles, otherwise only listed roles can see
+  children?: MenuItemDef[];
 }
 
 const allMenuItems: MenuItemDef[] = [
   { key: '/', icon: <DashboardOutlined />, label: '系统看板' },
   { key: '/bill', icon: <FileTextOutlined />, label: '账单管理' },
   { key: '/import', icon: <ImportOutlined />, label: '数据导入', roles: [1, 2, 4] },
-  { key: '/allocation', icon: <PhoneOutlined />, label: '费用分摊' },
+  {
+    key: '/allocation-group',
+    icon: <PhoneOutlined />,
+    label: '费用分摊',
+    children: [
+      { key: '/allocation', icon: <PhoneOutlined />, label: '分摊汇总' },
+      { key: '/allocation/branch', icon: <BankOutlined />, label: '一级分行' },
+      { key: '/allocation/sub-branch', icon: <BranchesOutlined />, label: '二级分行' },
+    ],
+  },
   { key: '/org', icon: <TeamOutlined />, label: '组织架构' },
   { key: '/settings', icon: <SettingOutlined />, label: '系统管理', roles: [1] },
   { key: '/templates', icon: <ToolOutlined />, label: '模板管理', roles: [1] },
@@ -38,10 +48,18 @@ const AppLayout: React.FC = () => {
 
   // Filter menu items by role
   const menuItems = useMemo(() => {
-    if (!role) return allMenuItems.map(({ key, icon, label }) => ({ key, icon, label }));
+    if (!role) return allMenuItems.map(({ key, icon, label, children }) => ({ key, icon, label, children }));
     return allMenuItems
       .filter(item => !item.roles || item.roles.includes(role))
-      .map(({ key, icon, label }) => ({ key, icon, label }));
+      .map(({ key, icon, label, children }) => {
+        if (children) {
+          const filteredChildren = children
+            .filter(c => !c.roles || c.roles.includes(role))
+            .map(({ key, icon, label }) => ({ key, icon, label }));
+          return { key, icon, label, children: filteredChildren };
+        }
+        return { key, icon, label };
+      });
   }, [role]);
 
   const handleChangePwd = async () => {
@@ -77,7 +95,7 @@ const AppLayout: React.FC = () => {
         <div style={{ height: 32, margin: 16, background: 'rgba(255,255,255,0.2)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <Text style={{ color: '#fff', fontSize: collapsed ? 14 : 16, fontWeight: 'bold' }}>{collapsed ? 'PC' : '费用分摊'}</Text>
         </div>
-        <Menu theme="dark" mode="inline" selectedKeys={[location.pathname]} items={menuItems} onClick={({ key }) => navigate(key)} />
+        <Menu theme="dark" mode="inline" selectedKeys={[location.pathname]} defaultOpenKeys={['/allocation-group']} items={menuItems} onClick={({ key }) => navigate(key)} />
       </Sider>
       <Layout style={{ marginLeft: collapsed ? 80 : 200, transition: 'margin-left 0.2s' }}>
         <Header style={{ padding: '0 24px', background: '#fff', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', borderBottom: '1px solid #f0f0f0', gap: 16 }}>

@@ -12,6 +12,9 @@ import Dashboard from './pages/Dashboard';
 import DataImport from './pages/DataImport';
 import BillManagement from './pages/BillManagement';
 import AllocationPage from './pages/AllocationPage';
+import L1SummaryPage from './pages/L1SummaryPage';
+import L2BranchPage from './pages/L2BranchPage';
+import L3SubBranchPage from './pages/L3SubBranchPage';
 import Organization from './pages/Organization';
 import UserManagement from './pages/UserManagement';
 import TemplateManagement from './pages/TemplateManagement';
@@ -39,7 +42,11 @@ const App: React.FC = () => (
             <Route index element={<Dashboard />} />
             <Route path="import" element={<DataImport />} />
             <Route path="bill" element={<BillManagement />} />
-            <Route path="allocation" element={<AllocationPage />} />
+            <Route path="allocation" element={<L1SummaryPage />} />
+            <Route path="allocation/results" element={<AllocationPage />} />
+            <Route path="allocation/summary" element={<L1SummaryPage />} />
+            <Route path="allocation/branch" element={<L2BranchPage />} />
+            <Route path="allocation/sub-branch" element={<L3SubBranchPage />} />
             <Route path="org" element={<Organization />} />
             <Route path="settings" element={<UserManagement />} />
             <Route path="templates" element={<TemplateManagement />} />
