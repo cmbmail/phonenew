@@ -354,7 +354,7 @@ public class BranchBillExportService {
     private void writeL3SummarySheet(XSSFWorkbook wb, String monthLabel,
                                      String parentBranchName, String subBranchName,
                                      List<SysOrganization> children,
-                                     List<AllocationResult> allResults,
+                                     List<AllocationResult> allResults, Long batchId,
                                      Map<Long, SysOrganization> orgMap,
                                      CellStyle headerStyle, CellStyle numberStyle,
                                      CellStyle boldStyle) {
