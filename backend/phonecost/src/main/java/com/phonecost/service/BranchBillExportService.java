@@ -120,16 +120,16 @@ public class BranchBillExportService {
         row = createTitleRow(sheet, row, "银行电话费用分摊账单", titleStyle, wb);
         row++;
 
-        row = createLabelValue(sheet, row, "分行名称", branchName, labelStyle, wb);
-        row = createLabelValue(sheet, row, "账单月份", batch.getBillingMonth(), labelStyle, wb);
-        row = createLabelValue(sheet, row, "批次号", batch.getBatchNo(), labelStyle, wb);
-        row = createLabelValue(sheet, row, "导出时间", LocalDateTime.now().format(DTF), labelStyle, wb);
+        row = createLabelValue(sheet, row, "分行名称", branchName, labelStyle);
+        row = createLabelValue(sheet, row, "账单月份", batch.getBillingMonth(), labelStyle);
+        row = createLabelValue(sheet, row, "批次号", batch.getBatchNo(), labelStyle);
+        row = createLabelValue(sheet, row, "导出时间", LocalDateTime.now().format(DTF), labelStyle);
         row++;
-        row = createLabelValue(sheet, row, "组织数量", String.valueOf(results.size()), labelStyle, wb);
-        row = createLabelValue(sheet, row, "号码数量", String.valueOf(phoneCount), labelStyle, wb);
-        row = createLabelValue(sheet, row, "费用合计", "¥" + totalFee.setScale(2).toPlainString(), labelStyle, wb);
-        row = createLabelValue(sheet, row, "已确认组织", String.valueOf(confirmedCount) + "/" + results.size(), labelStyle, wb);
-        row = createLabelValue(sheet, row, "调整次数", String.valueOf(adjustments.size()), labelStyle, wb);
+        row = createLabelValue(sheet, row, "组织数量", String.valueOf(results.size()), labelStyle);
+        row = createLabelValue(sheet, row, "号码数量", String.valueOf(phoneCount), labelStyle);
+        row = createLabelValue(sheet, row, "费用合计", "¥" + totalFee.setScale(2).toPlainString(), labelStyle);
+        row = createLabelValue(sheet, row, "已确认组织", String.valueOf(confirmedCount) + "/" + results.size(), labelStyle);
+        row = createLabelValue(sheet, row, "调整次数", String.valueOf(adjustments.size()), labelStyle);
 
         sheet.setColumnWidth(0, 5000);
         sheet.setColumnWidth(1, 8000);
@@ -182,8 +182,9 @@ public class BranchBillExportService {
             Row totalRow = sheet.createRow(rowIdx++);
             totalRow.createCell(0).setCellValue("合计");
             CellStyle boldStyle = wb.createCellStyle();
-            boldStyle.setFont(wb.createFont());
-            ((Font) boldStyle.getFont()).setBold(true);
+            Font boldFont = wb.createFont();
+            boldFont.setBold(true);
+            boldStyle.setFont(boldFont);
             totalRow.getCell(0).setCellStyle(boldStyle);
 
             BigDecimal sumMonthlyRent = BigDecimal.ZERO, sumCall = BigDecimal.ZERO;
@@ -446,12 +447,12 @@ public class BranchBillExportService {
         cell.setCellValue(text);
         cell.setCellStyle(style);
         // Merge columns A-B for title
-        sheet.addMergedRegion(new org.apache.poi.util.CellRangeAddress(startRow, startRow, 0, 1));
+        sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(startRow, startRow, 0, 1));
         return startRow;
     }
 
     private static int createLabelValue(Sheet sheet, int rowIdx, String label, String value,
-                                          CellStyle labelStyle, Workbook wb) {
+                                          CellStyle labelStyle) {
         Row row = sheet.createRow(rowIdx);
         Cell labelCell = row.createCell(0);
         labelCell.setCellValue(label + ":");
