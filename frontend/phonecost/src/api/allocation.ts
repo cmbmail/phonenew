@@ -1,7 +1,7 @@
 import { apiGet, apiPost } from '../lib/request';
 import { useAuthStore } from '../store/auth';
 import type { BillBatch, BillDetail } from '../types/bill';
-import type { AllocationResult, AllocationAdjustment } from '../types/allocation';
+import type { AllocationResult, AllocationAdjustment, L1SummaryRow } from '../types/allocation';
 
 // ==================== Bill ====================
 
@@ -39,6 +39,9 @@ export const adjustAllocation = (batchId: number, phoneNumber: string, fromOrgId
 
 export const getAdjustments = (batchId: number) =>
   apiGet<AllocationAdjustment[]>(`/allocation/adjustments/${batchId}`);
+
+export const getL1SummaryData = (batchId: number) =>
+  apiGet<L1SummaryRow[]>(`/allocation/l1-summary-data?batchId=${batchId}`);
 
 // ==================== Export URLs ====================
 

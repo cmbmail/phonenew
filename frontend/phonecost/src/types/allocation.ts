@@ -37,6 +37,25 @@ export interface AllocationAdjustment {
   created_at: string;
 }
 
+export interface L1SummaryRow {
+  branch_name: string;
+  platform_fee: number;
+  monthly_rent_code: number;
+  domestic_duration: number;
+  transfer_duration: number;
+  domestic_fee: number;
+  international_duration: number;
+  international_fee: number;
+  call_subtotal: number;
+  recording_fee: number;
+  crbt_fee: number;
+  flash_fee: number;
+  total_fee: number;
+  phone_count: number;
+  confirmed: number;
+  pending: number;
+}
+
 export const CONFIRM_STATUS_MAP: Record<number, { label: string; color: string }> = {
   0: { label: '待确认', color: 'default' },
   1: { label: '已确认', color: 'success' },

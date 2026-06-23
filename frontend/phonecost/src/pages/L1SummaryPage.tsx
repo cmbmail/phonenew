@@ -1,23 +1,19 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Card, Table, Select, Button, Descriptions, Statistic, Row, Col, message, Empty } from 'antd';
+import { Card, Table, Select, Button, Descriptions, Row, Col, message, Empty } from 'antd';
 import { DownloadOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import type { BillBatch } from '../types/bill';
-import type { AllocationResult } from '../types/allocation';
-import { CONFIRM_STATUS_MAP } from '../types/allocation';
-import { getBillBatches, getAllocationResults, getL1SummaryUrl } from '../api/allocation';
-import { getOrgTree } from '../api/org';
-import type { Organization } from '../types/organization';
+import type { L1SummaryRow } from '../types/allocation';
+import { getBillBatches, getL1SummaryData, getL1SummaryUrl } from '../api/allocation';
 
 export default function L1SummaryPage() {
   const { t } = useTranslation();
 
   const [batches, setBatches] = useState<BillBatch[]>([]);
   const [selectedBatchId, setSelectedBatchId] = useState<number | null>(null);
-  const [results, setResults] = useState<AllocationResult[]>([]);
-  const [orgList, setOrgList] = useState<Organization[]>([]);
+  const [rows, setRows] = useState<L1SummaryRow[]>([]);
   const [loading, setLoading] = useState(false);
-  const [resultsLoading, setResultsLoading] = useState(false);
+  const [rowsLoading, setRowsLoading] = useState(false);
 
   const fetchBatches = useCallback(async () => {
     setLoading(true);
@@ -31,11 +27,7 @@ export default function L1SummaryPage() {
     }
   }, [t]);
 
-  const fetchOrgs = useCallback(async () => {
-    try { setOrgList(await getOrgTree()); } catch { /* silent */ }
-  }, []);
-
-  useEffect(() => { fetchBatches(); fetchOrgs(); }, [fetchBatches, fetchOrgs]);
+  useEffect(() => { fetchBatches(); }, [fetchBatches]);
 
   // 自动选择最近月份
   useEffect(() => {
@@ -47,84 +39,71 @@ export default function L1SummaryPage() {
 
   useEffect(() => {
     if (selectedBatchId) {
-      setResultsLoading(true);
-      getAllocationResults(selectedBatchId)
-        .then(setResults)
+      setRowsLoading(true);
+      getL1SummaryData(selectedBatchId)
+        .then(setRows)
         .catch(() => message.error(t('l1Summary.fetchFailed')))
-        .finally(() => setResultsLoading(false));
+        .finally(() => setRowsLoading(false));
     }
   }, [selectedBatchId, t]);
-
-  const orgMap = useMemo(() => {
-    const m = new Map<number, Organization>();
-    orgList.forEach(o => m.set(o.id, o));
-    return m;
-  }, [orgList]);
-
-  // 找出所有一级分行 (type=2)
-  const branches = useMemo(() => {
-    return orgList.filter(o => o.type === 2).sort((a, b) => (a.code || '').localeCompare(b.code || ''));
-  }, [orgList]);
-
-  // 按一级分行聚合结果
-  const branchSummary = useMemo(() => {
-    return branches.map(branch => {
-      const branchPath = branch.path;
-      const childResults = results.filter(r => {
-        if (r.org_id == null || r.org_id === -1) return false;
-        const rOrg = orgMap.get(r.org_id);
-        return rOrg && rOrg.path && rOrg.path.startsWith(branchPath);
-      });
-      const totalFee = childResults.reduce((s, r) => s + (r.total_fee || 0), 0);
-      const phoneCount = childResults.reduce((s, r) => s + (r.phone_count || 0), 0);
-      const confirmed = childResults.filter(r => r.confirm_status === 1).length;
-      const pending = childResults.filter(r => r.confirm_status === 0).length;
-      return { branch, totalFee, phoneCount, childCount: childResults.length, confirmed, pending };
-    });
-  }, [branches, results, orgMap]);
-
-  const grandTotal = results.reduce((s, r) => s + (r.total_fee || 0), 0);
-  const totalPhones = results.reduce((s, r) => s + (r.phone_count || 0), 0);
 
   const selectedBatch = batches.find(b => b.id === selectedBatchId);
 
   const money = (v: number) => v ? `¥${v.toFixed(2)}` : '-';
+  const dur = (v: number) => v ? v.toFixed(1) : '-';
+
+  // 合计行
+  const grandTotal = useMemo(() => {
+    if (rows.length === 0) return null;
+    const init: L1SummaryRow = {
+      branch_name: '', platform_fee: 0, monthly_rent_code: 0,
+      domestic_duration: 0, transfer_duration: 0, domestic_fee: 0,
+      international_duration: 0, international_fee: 0, call_subtotal: 0,
+      recording_fee: 0, crbt_fee: 0, flash_fee: 0, total_fee: 0,
+      phone_count: 0, confirmed: 0, pending: 0,
+    };
+    return rows.reduce((acc, r) => {
+      acc.platform_fee += r.platform_fee;
+      acc.monthly_rent_code += r.monthly_rent_code;
+      acc.domestic_duration += r.domestic_duration;
+      acc.transfer_duration += r.transfer_duration;
+      acc.domestic_fee += r.domestic_fee;
+      acc.international_duration += r.international_duration;
+      acc.international_fee += r.international_fee;
+      acc.call_subtotal += r.call_subtotal;
+      acc.recording_fee += r.recording_fee;
+      acc.crbt_fee += r.crbt_fee;
+      acc.flash_fee += r.flash_fee;
+      acc.total_fee += r.total_fee;
+      acc.phone_count += r.phone_count;
+      acc.confirmed += r.confirmed;
+      acc.pending += r.pending;
+      return acc;
+    }, init);
+  }, [rows]);
 
   const columns = [
-    { title: t('l1Summary.branchCol'), dataIndex: 'branchName', key: 'branchName', width: 140 },
-    { title: t('l1Summary.monthlyRentCodeCol'), dataIndex: 'monthlyRent', key: 'monthlyRent', width: 100, render: money },
-    { title: t('l1Summary.callFeeCol'), dataIndex: 'callFee', key: 'callFee', width: 100, render: money },
-    { title: t('l1Summary.recordingFeeCol'), dataIndex: 'recordingFee', key: 'recordingFee', width: 100, render: money },
-    { title: t('l1Summary.crbtFeeCol'), dataIndex: 'crbtFee', key: 'crbtFee', width: 90, render: money },
-    { title: t('l1Summary.flashFeeCol'), dataIndex: 'flashFee', key: 'flashFee', width: 90, render: money },
-    { title: t('l1Summary.totalCol'), dataIndex: 'totalFee', key: 'totalFee', width: 120,
+    { title: t('l1Summary.branchCol'), dataIndex: 'branch_name', key: 'branch_name', width: 120, fixed: 'left' as const },
+    { title: t('l1Summary.platformFeeCol'), dataIndex: 'platform_fee', key: 'platform_fee', width: 100, align: 'right' as const, render: money },
+    { title: t('l1Summary.monthlyRentCodeCol'), dataIndex: 'monthly_rent_code', key: 'monthly_rent_code', width: 100, align: 'right' as const, render: money },
+    { title: t('l1Summary.domesticDurationCol'), dataIndex: 'domestic_duration', key: 'domestic_duration', width: 110, align: 'right' as const, render: dur },
+    { title: t('l1Summary.transferDurationCol'), dataIndex: 'transfer_duration', key: 'transfer_duration', width: 110, align: 'right' as const, render: dur },
+    { title: t('l1Summary.domesticFeeCol'), dataIndex: 'domestic_fee', key: 'domestic_fee', width: 100, align: 'right' as const, render: money },
+    { title: t('l1Summary.intlDurationCol'), dataIndex: 'international_duration', key: 'international_duration', width: 100, align: 'right' as const, render: dur },
+    { title: t('l1Summary.intlFeeCol'), dataIndex: 'international_fee', key: 'international_fee', width: 90, align: 'right' as const, render: money },
+    { title: t('l1Summary.callSubtotalCol'), dataIndex: 'call_subtotal', key: 'call_subtotal', width: 100, align: 'right' as const, render: money },
+    { title: t('l1Summary.recordingFeeCol'), dataIndex: 'recording_fee', key: 'recording_fee', width: 90, align: 'right' as const, render: money },
+    { title: t('l1Summary.crbtFeeCol'), dataIndex: 'crbt_fee', key: 'crbt_fee', width: 80, align: 'right' as const, render: money },
+    { title: t('l1Summary.flashFeeCol'), dataIndex: 'flash_fee', key: 'flash_fee', width: 80, align: 'right' as const, render: money },
+    { title: t('l1Summary.totalCol'), dataIndex: 'total_fee', key: 'total_fee', width: 110, align: 'right' as const,
       render: (v: number) => <strong>{money(v)}</strong>,
     },
-    { title: t('l1Summary.phoneCountCol'), dataIndex: 'phoneCount', key: 'phoneCount', width: 70 },
-    { title: t('l1Summary.confirmedCol'), dataIndex: 'confirmed', key: 'confirmed', width: 70 },
-    { title: t('l1Summary.pendingCol'), dataIndex: 'pending', key: 'pending', width: 70 },
+    { title: t('l1Summary.phoneCountCol'), dataIndex: 'phone_count', key: 'phone_count', width: 70, align: 'right' as const },
+    { title: t('l1Summary.confirmedCol'), dataIndex: 'confirmed', key: 'confirmed', width: 70, align: 'right' as const },
+    { title: t('l1Summary.pendingCol'), dataIndex: 'pending', key: 'pending', width: 70, align: 'right' as const },
   ];
 
-  const dataSource = branchSummary.map(({ branch, totalFee, phoneCount, confirmed, pending }) => {
-    // 聚合该分行下各类费用
-    const branchPath = branch.path;
-    const childResults = results.filter(r => {
-      if (r.org_id == null || r.org_id === -1) return false;
-      const rOrg = orgMap.get(r.org_id);
-      return rOrg && rOrg.path && rOrg.path.startsWith(branchPath);
-    });
-    const monthlyRent = childResults.reduce((s, r) => s + (r.monthly_rent || 0), 0);
-    const callFee = childResults.reduce((s, r) => s + (r.call_fee || 0), 0);
-    const recordingFee = childResults.reduce((s, r) => s + (r.recording_fee || 0), 0);
-    const crbtFee = childResults.reduce((s, r) => s + (r.crbt_fee || 0), 0);
-    const flashFee = childResults.reduce((s, r) => s + (r.flash_msg_fee || 0), 0);
-    return {
-      key: branch.id,
-      branchName: branch.name,
-      monthlyRent, callFee, recordingFee, crbtFee, flashFee,
-      totalFee, phoneCount, confirmed, pending,
-    };
-  });
+  const dataSource = rows.map((r, i) => ({ ...r, key: i }));
 
   return (
     <div>
@@ -153,40 +132,47 @@ export default function L1SummaryPage() {
           </Col>
         </Row>
 
-        {selectedBatchId && results.length > 0 && (
+        {selectedBatchId && rows.length > 0 && grandTotal && (
           <Descriptions size="small" column={4} style={{ marginBottom: 16 }}>
             <Descriptions.Item label={t('l1Summary.descMonth')}>{selectedBatch?.billing_month}</Descriptions.Item>
-            <Descriptions.Item label={t('l1Summary.descTotalFee')}>¥{grandTotal.toFixed(2)}</Descriptions.Item>
-            <Descriptions.Item label={t('l1Summary.descTotalPhones')}>{totalPhones}</Descriptions.Item>
-            <Descriptions.Item label={t('l1Summary.descBranchCount')}>{branches.length}</Descriptions.Item>
+            <Descriptions.Item label={t('l1Summary.descTotalFee')}>¥{grandTotal.total_fee.toFixed(2)}</Descriptions.Item>
+            <Descriptions.Item label={t('l1Summary.descTotalPhones')}>{grandTotal.phone_count}</Descriptions.Item>
+            <Descriptions.Item label={t('l1Summary.descBranchCount')}>{rows.length}</Descriptions.Item>
           </Descriptions>
         )}
 
-        {selectedBatchId && results.length > 0 ? (
+        {selectedBatchId && rows.length > 0 ? (
           <Table
             columns={columns}
             dataSource={dataSource}
             rowKey="key"
             size="small"
-            loading={resultsLoading}
+            loading={rowsLoading}
             pagination={false}
-            summary={() => (
+            scroll={{ x: 1700 }}
+            summary={() => grandTotal ? (
               <Table.Summary.Row>
                 <Table.Summary.Cell index={0}><strong>{t('l1Summary.grandTotalRow')}</strong></Table.Summary.Cell>
-                <Table.Summary.Cell index={1} />
-                <Table.Summary.Cell index={2} />
-                <Table.Summary.Cell index={3} />
-                <Table.Summary.Cell index={4} />
-                <Table.Summary.Cell index={5} />
-                <Table.Summary.Cell index={6}><strong>¥{grandTotal.toFixed(2)}</strong></Table.Summary.Cell>
-                <Table.Summary.Cell index={7}><strong>{totalPhones}</strong></Table.Summary.Cell>
-                <Table.Summary.Cell index={8} />
-                <Table.Summary.Cell index={9} />
+                <Table.Summary.Cell index={1} align="right">{money(grandTotal.platform_fee)}</Table.Summary.Cell>
+                <Table.Summary.Cell index={2} align="right">{money(grandTotal.monthly_rent_code)}</Table.Summary.Cell>
+                <Table.Summary.Cell index={3} align="right">{dur(grandTotal.domestic_duration)}</Table.Summary.Cell>
+                <Table.Summary.Cell index={4} align="right">{dur(grandTotal.transfer_duration)}</Table.Summary.Cell>
+                <Table.Summary.Cell index={5} align="right">{money(grandTotal.domestic_fee)}</Table.Summary.Cell>
+                <Table.Summary.Cell index={6} align="right">{dur(grandTotal.international_duration)}</Table.Summary.Cell>
+                <Table.Summary.Cell index={7} align="right">{money(grandTotal.international_fee)}</Table.Summary.Cell>
+                <Table.Summary.Cell index={8} align="right">{money(grandTotal.call_subtotal)}</Table.Summary.Cell>
+                <Table.Summary.Cell index={9} align="right">{money(grandTotal.recording_fee)}</Table.Summary.Cell>
+                <Table.Summary.Cell index={10} align="right">{money(grandTotal.crbt_fee)}</Table.Summary.Cell>
+                <Table.Summary.Cell index={11} align="right">{money(grandTotal.flash_fee)}</Table.Summary.Cell>
+                <Table.Summary.Cell index={12} align="right"><strong>¥{grandTotal.total_fee.toFixed(2)}</strong></Table.Summary.Cell>
+                <Table.Summary.Cell index={13} align="right"><strong>{grandTotal.phone_count}</strong></Table.Summary.Cell>
+                <Table.Summary.Cell index={14} align="right">{grandTotal.confirmed}</Table.Summary.Cell>
+                <Table.Summary.Cell index={15} align="right">{grandTotal.pending}</Table.Summary.Cell>
               </Table.Summary.Row>
-            )}
+            ) : null}
           />
         ) : (
-          !resultsLoading && <Empty description={t('l1Summary.noData')} />
+          !rowsLoading && <Empty description={t('l1Summary.noData')} />
         )}
       </Card>
     </div>
