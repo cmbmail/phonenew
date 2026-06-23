@@ -3,9 +3,11 @@ package com.phonecost.controller;
 import com.phonecost.domain.AllocationAdjustment;
 import com.phonecost.domain.AllocationResult;
 import com.phonecost.domain.BillBatch;
+import com.phonecost.domain.SysOrganization;
 import com.phonecost.dto.ApiResponse;
 import com.phonecost.repository.AllocationResultRepository;
 import com.phonecost.repository.BillBatchRepository;
+import com.phonecost.repository.SysOrganizationRepository;
 import com.phonecost.repository.SysUserRepository;
 import com.phonecost.service.AllocationAdjustService;
 import com.phonecost.service.AllocationConfirmService;
@@ -43,6 +45,7 @@ public class AllocationController {
     private final BillBatchRepository billBatchRepository;
     private final DataScopeService dataScopeService;
     private final SysUserRepository userRepository;
+    private final SysOrganizationRepository orgRepository;
 
     // ==================== 分摊计算 ====================
 
@@ -256,6 +259,70 @@ public class AllocationController {
         byte[] data = branchBillExportService.exportCostCenterMapping(batchId, effectiveBranchOrgId, userId);
         String filename = java.net.URLEncoder.encode(
                 "分行成本中心对照表_" + batchId + ".xlsx", "UTF-8");
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                .contentType(MediaType.parseMediaType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(data);
+    }
+
+    // ==================== 三级分摊导出 ====================
+
+    /**
+     * L1 分摊汇总：集团 → 一级分行
+     * 每个一级分行一行，汇总其所有下属费用
+     */
+    @GetMapping("/export/l1-summary")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_FINANCE', 'ROLE_BRANCH')")
+    public ResponseEntity<byte[]> exportL1Summary(
+            @RequestParam Long batchId,
+            @RequestAttribute("userId") Long userId) throws Exception {
+        byte[] data = branchBillExportService.exportLevel1Summary(batchId, userId);
+        String filename = java.net.URLEncoder.encode(
+                "集团分摊汇总_" + batchId + ".xlsx", "UTF-8");
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                .contentType(MediaType.parseMediaType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(data);
+    }
+
+    /**
+     * L2 一级分行明细：一级分行 → 直属下级（二级分行+部门+支行）
+     */
+    @GetMapping("/export/l2-branch-detail")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_FINANCE', 'ROLE_BRANCH')")
+    public ResponseEntity<byte[]> exportL2BranchDetail(
+            @RequestParam Long batchId,
+            @RequestParam Long branchOrgId,
+            @RequestAttribute("userId") Long userId) throws Exception {
+        Long effectiveBranchOrgId = resolveEffectiveBranchOrgId(branchOrgId, userId);
+        byte[] data = branchBillExportService.exportLevel2BranchDetail(batchId, effectiveBranchOrgId, userId);
+        SysOrganization org = orgRepository.findById(effectiveBranchOrgId).orElse(null);
+        String name = org != null ? org.getName() : "branch";
+        String filename = java.net.URLEncoder.encode(
+                name + "_分摊明细_" + batchId + ".xlsx", "UTF-8");
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                .contentType(MediaType.parseMediaType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(data);
+    }
+
+    /**
+     * L3 二级分行明细：二级分行 → 下属部门+支行
+     */
+    @GetMapping("/export/l3-sub-branch-detail")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_FINANCE', 'ROLE_BRANCH')")
+    public ResponseEntity<byte[]> exportL3SubBranchDetail(
+            @RequestParam Long batchId,
+            @RequestParam Long subBranchOrgId,
+            @RequestAttribute("userId") Long userId) throws Exception {
+        byte[] data = branchBillExportService.exportLevel3SubBranchDetail(batchId, subBranchOrgId, userId);
+        SysOrganization org = orgRepository.findById(subBranchOrgId).orElse(null);
+        String name = org != null ? org.getName() : "sub_branch";
+        String filename = java.net.URLEncoder.encode(
+                name + "_下属分摊_" + batchId + ".xlsx", "UTF-8");
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
                 .contentType(MediaType.parseMediaType(
