@@ -4,6 +4,7 @@ import com.phonecost.domain.BillTemplate;
 import com.phonecost.repository.BillTemplateRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,6 +22,7 @@ import java.util.Map;
 public class BillTemplateService {
 
     private final BillTemplateRepository templateRepository;
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     public List<BillTemplate> listTemplates() {
         return templateRepository.findAllByDeletedAtIsNullOrderByCreatedAtDesc();
@@ -44,7 +46,7 @@ public class BillTemplateService {
         String description = (String) body.get("description");
         String sheetConfigs = body.get("sheet_configs") instanceof String
                 ? (String) body.get("sheet_configs")
-                : com.fasterxml.jackson.core.util.DefaultPrettyPrinter.getDefaultInstance().toString(body.get("sheet_configs"));
+                : MAPPER.writeValueAsString(body.get("sheet_configs"));
 
         if (name == null || name.isBlank()) {
             throw new IllegalArgumentException("模板名称不能为空");
@@ -97,7 +99,7 @@ public class BillTemplateService {
         if (body.containsKey("sheet_configs")) {
             String sheetConfigs = body.get("sheet_configs") instanceof String
                     ? (String) body.get("sheet_configs")
-                    : com.fasterxml.jackson.core.util.DefaultPrettyPrinter.getDefaultInstance().toString(body.get("sheet_configs"));
+                    : MAPPER.writeValueAsString(body.get("sheet_configs"));
             if (sheetConfigs == null || sheetConfigs.isBlank()) {
                 throw new IllegalArgumentException("Sheet配置不能为空");
             }

@@ -547,6 +547,8 @@ public class BillImportService {
         String field;
         String type;
 
+        ColumnConfig() {}
+
         ColumnConfig(int index, String field, String type) {
             this.index = index;
             this.field = field;
