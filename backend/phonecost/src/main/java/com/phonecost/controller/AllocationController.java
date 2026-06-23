@@ -226,26 +226,6 @@ public class AllocationController {
                 .body(data);
     }
 
-    // ==================== 分行账单导出（5-Sheet完整账单） ====================
-
-    @GetMapping("/export/branch-bill")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_FINANCE', 'ROLE_BRANCH')")
-    public ResponseEntity<byte[]> exportBranchBill(
-            @RequestParam Long batchId,
-            @RequestParam(required = false) Long branchOrgId,
-            @RequestAttribute("userId") Long userId) throws Exception {
-        Long effectiveBranchOrgId = resolveEffectiveBranchOrgId(branchOrgId, userId);
-
-        byte[] data = branchBillExportService.exportBranchBill(batchId, effectiveBranchOrgId, userId);
-        String filename = java.net.URLEncoder.encode(
-                "分行电话费用账单_" + batchId + ".xlsx", "UTF-8");
-        return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
-                .contentType(MediaType.parseMediaType(
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
-                .body(data);
-    }
-
     // ==================== 分行成本中心对照表导出 ====================
 
     @GetMapping("/export/cost-center-mapping")

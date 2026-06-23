@@ -100,10 +100,10 @@ public class BranchBillExportService {
 
                 setCurrencyCell(row.createCell(2), fees.platformFee, numberStyle);
                 setCurrencyCell(row.createCell(3), fees.monthlyRentCode, numberStyle);
-                row.createCell(4).setValue(fees.domesticDuration.doubleValue());
-                row.createCell(5).setValue(fees.transferDuration.doubleValue());
+                row.createCell(4).setCellValue(fees.domesticDuration.doubleValue());
+                row.createCell(5).setCellValue(fees.transferDuration.doubleValue());
                 setCurrencyCell(row.createCell(6), fees.domesticFee, numberStyle);
-                row.createCell(7).setValue(fees.internationalDuration.doubleValue());
+                row.createCell(7).setCellValue(fees.internationalDuration.doubleValue());
                 setCurrencyCell(row.createCell(8), fees.internationalFee, numberStyle);
 
                 BigDecimal callSubtotal = fees.platformFee.add(fees.monthlyRentCode)
@@ -177,7 +177,7 @@ public class BranchBillExportService {
         List<SysOrganization> directChildren = orgMap.values().stream()
                 .filter(o -> o.getDeletedAt() == null
                         && Objects.equals(o.getParentId(), branchOrgId))
-                .sorted(Comparator.comparingInt(o -> o.getType() != null ? o.getType() : 99)
+                .sorted(Comparator.<SysOrganization>comparingInt(o -> o.getType() != null ? o.getType() : 99)
                         .thenComparing(SysOrganization::getName))
                 .collect(Collectors.toList());
 
@@ -235,7 +235,7 @@ public class BranchBillExportService {
         List<SysOrganization> directChildren = orgMap.values().stream()
                 .filter(o -> o.getDeletedAt() == null
                         && Objects.equals(o.getParentId(), subBranchOrgId))
-                .sorted(Comparator.comparingInt(o -> o.getType() != null ? o.getType() : 99)
+                .sorted(Comparator.<SysOrganization>comparingInt(o -> o.getType() != null ? o.getType() : 99)
                         .thenComparing(SysOrganization::getName))
                 .collect(Collectors.toList());
 
@@ -453,10 +453,10 @@ public class BranchBillExportService {
 
             setCurrencyCell(row.createCell(4), getRawDecimalOrZero(d.getRawData(), "platformFee"), numberStyle);
             setCurrencyCell(row.createCell(5), getRawDecimalOrZero(d.getRawData(), "monthlyRentCode"), numberStyle);
-            row.createCell(6).setValue(getRawDecimalOrZero(d.getRawData(), "domesticDuration").doubleValue());
-            row.createCell(7).setValue(getRawDecimalOrZero(d.getRawData(), "transferDuration").doubleValue());
+            row.createCell(6).setCellValue(getRawDecimalOrZero(d.getRawData(), "domesticDuration").doubleValue());
+            row.createCell(7).setCellValue(getRawDecimalOrZero(d.getRawData(), "transferDuration").doubleValue());
             setCurrencyCell(row.createCell(8), getRawDecimalOrZero(d.getRawData(), "domesticFee"), numberStyle);
-            row.createCell(9).setValue(getRawDecimalOrZero(d.getRawData(), "internationalDuration").doubleValue());
+            row.createCell(9).setCellValue(getRawDecimalOrZero(d.getRawData(), "internationalDuration").doubleValue());
             setCurrencyCell(row.createCell(10), getRawDecimalOrZero(d.getRawData(), "internationalFee"), numberStyle);
 
             BigDecimal subtotal = getRawDecimalOrZero(d.getRawData(), "platformFee")
@@ -526,7 +526,7 @@ public class BranchBillExportService {
             row.createCell(2).setCellValue(org != null ? org.getName() : "");
             row.createCell(3).setCellValue(d.getPhoneNumber());
             row.createCell(4).setCellValue(d.getFlashMonth() != null ? d.getFlashMonth() : "");
-            row.createCell(5).setValue(getRawDecimalOrZero(d.getRawData(), "flashCount").doubleValue());
+            row.createCell(5).setCellValue(getRawDecimalOrZero(d.getRawData(), "flashCount").doubleValue());
             setCurrencyCell(row.createCell(6), d.getFlashMsgFee(), numberStyle);
         }
         autoSizeColumns(sheet, headers.length);
@@ -662,6 +662,14 @@ public class BranchBillExportService {
         if (orgId == null || pathPrefix == null || pathPrefix.isEmpty()) return true; // no filter
         SysOrganization org = orgMap.get(orgId);
         return org != null && org.getPath() != null && org.getPath().startsWith(pathPrefix);
+    }
+
+    private List<BillDetail> filterDetailsByPath(List<BillDetail> details, String pathPrefix,
+                                                  Map<Long, SysOrganization> orgMap) {
+        if (pathPrefix == null || pathPrefix.isEmpty()) return details;
+        return details.stream()
+                .filter(d -> isInPath(d.getOrgId(), pathPrefix, orgMap))
+                .collect(Collectors.toList());
     }
 
     private SysOrganization findBranchOrg(Long orgId, Map<Long, SysOrganization> orgMap) {
