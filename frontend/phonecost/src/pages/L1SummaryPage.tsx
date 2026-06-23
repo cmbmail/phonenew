@@ -193,8 +193,8 @@ export default function L1SummaryPage() {
       callTotal: sum(detailData.CALL, 'total_fee'),
       recCount: detailData.RECORDING.length,
       recTotal: sum(detailData.RECORDING, 'recording_fee'),
-      crbtCount: detailData.CRBt.length,
-      crbtTotal: sum(detailData.CRBt, 'crbt_fee'),
+      crbtCount: detailData["CRBT"].length,
+      crbtTotal: sum(detailData["CRBT"], 'crbt_fee'),
       flashCount: detailData.FLASH_MSG.length,
       flashTotal: sum(detailData.FLASH_MSG, 'flash_msg_fee'),
     };
