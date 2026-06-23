@@ -113,7 +113,7 @@ export default function L3SubBranchPage() {
     { title: t('l3SubBranch.seqCol'), key: 'seq', width: 50, render: (_: unknown, __: unknown, i: number) => i + 1 },
     { title: t('l3SubBranch.orgTypeCol'), key: 'orgType', width: 80, render: (_: unknown, r: typeof childSummary[0]) => orgTypeLabel(r.child.type) },
     { title: t('l3SubBranch.orgNameCol'), key: 'orgName', width: 140, render: (_: unknown, r: typeof childSummary[0]) => r.child.name },
-    { title: t('l3SubBranch.costCenterCol'), key: 'costCenter', width: 90, render: (_: unknown, r: typeof childSummary[0]) => r.child.code || '-' },
+    { title: t('l3SubBranch.costCenterCol'), key: 'costCenter', width: 90, render: (_: unknown, r: typeof childSummary[0]) => (r.child.type === 2 || r.child.type === 3) ? '-' : (r.child.code || '-') },
     { title: t('l3SubBranch.monthlyRentCodeCol'), key: 'monthlyRent', width: 100, dataIndex: 'monthlyRent', render: money },
     { title: t('l3SubBranch.domesticFeeCol'), key: 'callFee', width: 100, dataIndex: 'callFee', render: money },
     { title: t('l3SubBranch.recordingFeeCol'), key: 'recordingFee', width: 100, dataIndex: 'recordingFee', render: money },

@@ -106,7 +106,7 @@ export default function L2BranchPage() {
     { title: t('l2Branch.seqCol'), key: 'seq', width: 50, render: (_: unknown, __: unknown, i: number) => i + 1 },
     { title: t('l2Branch.orgTypeCol'), key: 'orgType', width: 80, render: (_: unknown, r: typeof childSummary[0]) => orgTypeLabel(r.child.type) },
     { title: t('l2Branch.orgNameCol'), key: 'orgName', width: 140, render: (_: unknown, r: typeof childSummary[0]) => r.child.name },
-    { title: t('l2Branch.costCenterCol'), key: 'costCenter', width: 90, render: (_: unknown, r: typeof childSummary[0]) => r.child.code || '-' },
+    { title: t('l2Branch.costCenterCol'), key: 'costCenter', width: 90, render: (_: unknown, r: typeof childSummary[0]) => (r.child.type === 2 || r.child.type === 3) ? '-' : (r.child.code || '-') },
     { title: t('l2Branch.monthlyRentCodeCol'), key: 'monthlyRent', width: 100, dataIndex: 'monthlyRent', render: money },
     { title: t('l2Branch.domesticFeeCol'), key: 'callFee', width: 100, dataIndex: 'callFee', render: money },
     { title: t('l2Branch.recordingFeeCol'), key: 'recordingFee', width: 100, dataIndex: 'recordingFee', render: money },
