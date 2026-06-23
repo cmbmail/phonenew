@@ -37,11 +37,13 @@ import type {
 import type { BillBatch } from '../types/bill';
 import { IMPORT_STATUS_MAP } from '../types/import';
 import dayjs from 'dayjs';
+import { useTranslation } from 'react-i18next';
 
 const { Text } = Typography;
 
 export default function DataImport() {
   const [activeTab, setActiveTab] = useState('ownership');
+  const { t } = useTranslation();
 
   // ==================== Ownership Tab ====================
   const [ownershipFileList, setOwnershipFileList] = useState<UploadFile[]>([]);
@@ -51,20 +53,18 @@ export default function DataImport() {
 
   const handleOwnershipUpload = async () => {
     if (ownershipFileList.length === 0) {
-      message.warning('请先选择文件');
+      message.warning(t('import.selectFileFirst'));
       return;
     }
     setOwnershipUploading(true);
     try {
       const file = ownershipFileList[0].originFileObj!;
       const result = await importOwnership(file);
-      message.success(
-        `号码归属导入成功：${result.total_count} 条，例外 ${result.exception_count ?? 0} 条`
-      );
+      message.success(t('import.ownershipImportSuccess', { total: result.total_count, exceptions: result.exception_count ?? 0 }));
       setOwnershipFileList([]);
       fetchOwnershipBatches();
     } catch (err: any) {
-      message.error(err?.response?.data?.message || '导入失败');
+      message.error(err?.response?.data?.message || t('import.importFailed'));
     } finally {
       setOwnershipUploading(false);
     }
@@ -76,7 +76,7 @@ export default function DataImport() {
       const data = await getOwnershipBatches();
       setOwnershipBatches(data);
     } catch {
-      message.error('获取批次列表失败');
+      message.error(t('import.fetchFailed'));
     } finally {
       setOwnershipLoading(false);
     }
@@ -90,20 +90,18 @@ export default function DataImport() {
 
   const handleDirectoryUpload = async () => {
     if (directoryFileList.length === 0) {
-      message.warning('请先选择文件');
+      message.warning(t('import.selectFileFirst'));
       return;
     }
     setDirectoryUploading(true);
     try {
       const file = directoryFileList[0].originFileObj!;
       const result = await importDirectory(file);
-      message.success(
-        `通讯录导入成功：${result.total_count} 条，借调 ${result.seconded_count ?? 0} 条`
-      );
+      message.success(t('import.directoryImportSuccess', { total: result.total_count, seconded: result.seconded_count ?? 0 }));
       setDirectoryFileList([]);
       fetchDirectoryBatches();
     } catch (err: any) {
-      message.error(err?.response?.data?.message || '导入失败');
+      message.error(err?.response?.data?.message || t('import.importFailed'));
     } finally {
       setDirectoryUploading(false);
     }
@@ -115,7 +113,7 @@ export default function DataImport() {
       const data = await getDirectoryBatches();
       setDirectoryBatches(data);
     } catch {
-      message.error('获取批次列表失败');
+      message.error(t('import.fetchFailed'));
     } finally {
       setDirectoryLoading(false);
     }
@@ -136,20 +134,18 @@ export default function DataImport() {
 
   const handleBillUpload = async () => {
     if (billFileList.length === 0) {
-      message.warning('请先选择文件');
+      message.warning(t('import.selectFileFirst'));
       return;
     }
     setBillUploading(true);
     try {
       const file = billFileList[0].originFileObj!;
       const result = await importBill(file);
-      message.success(
-        `账单导入成功：${result.total_count} 条，金额 ¥${result.total_amount?.toFixed(2)}，月份 ${result.billing_month}`
-      );
+      message.success(t('import.billImportSuccess', { count: result.total_count, amount: (result.total_amount ?? 0).toFixed(2), month: result.billing_month }));
       setBillFileList([]);
       fetchBillBatches();
     } catch (err: any) {
-      message.error(err?.response?.data?.message || '导入失败');
+      message.error(err?.response?.data?.message || t('import.importFailed'));
     } finally {
       setBillUploading(false);
     }
@@ -160,10 +156,9 @@ export default function DataImport() {
     try {
       const data = await getBillBatches();
       setBillBatches(data);
-      // Also fetch active template
       try { setActiveTemplate(await getActiveImportTemplate()); } catch { /* ignore */ }
     } catch {
-      message.error('获取批次列表失败');
+      message.error(t('import.fetchFailed'));
     } finally {
       setBillLoading(false);
     }
@@ -171,7 +166,7 @@ export default function DataImport() {
 
   const handleMatch = async () => {
     if (!matchBillBatchId) {
-      message.warning('请选择账单批次');
+      message.warning(t('import.selectBillBatch'));
       return;
     }
     setMatching(true);
@@ -181,9 +176,9 @@ export default function DataImport() {
         ownership_batch_id: matchOwnershipBatchId ?? undefined,
         directory_batch_id: matchDirectoryBatchId ?? undefined,
       });
-      message.success(`归属匹配完成：${result.matched_count} 条已匹配`);
+      message.success(t('import.matchSuccess', { count: result.matched_count }));
     } catch (err: any) {
-      message.error(err?.response?.data?.message || '匹配失败');
+      message.error(err?.response?.data?.message || t('import.matchFailed'));
     } finally {
       setMatching(false);
     }
@@ -191,46 +186,46 @@ export default function DataImport() {
 
   // ==================== Common render helpers ====================
   const renderImportStatus = (status: number) => {
-    const info = IMPORT_STATUS_MAP[status] || { label: '未知', color: 'default' };
+    const info = IMPORT_STATUS_MAP[status] || { label: t('common.unknown'), color: 'default' };
     return <Tag color={info.color}>{info.label}</Tag>;
   };
 
   const ownershipColumns = [
-    { title: '批次号', dataIndex: 'batch_no', key: 'batch_no' },
-    { title: '文件名', dataIndex: 'file_name', key: 'file_name' },
-    { title: '总条数', dataIndex: 'total_count', key: 'total_count' },
-    { title: '例外数', dataIndex: 'exception_count', key: 'exception_count' },
-    { title: '状态', dataIndex: 'import_status', key: 'import_status', render: renderImportStatus },
+    { title: t('import.batchNo'), dataIndex: 'batch_no', key: 'batch_no' },
+    { title: t('import.fileName'), dataIndex: 'file_name', key: 'file_name' },
+    { title: t('import.totalCount'), dataIndex: 'total_count', key: 'total_count' },
+    { title: t('import.exceptionCount'), dataIndex: 'exception_count', key: 'exception_count' },
+    { title: t('import.status'), dataIndex: 'import_status', key: 'import_status', render: renderImportStatus },
     {
-      title: '导入时间', dataIndex: 'created_at', key: 'created_at',
+      title: t('import.importTime'), dataIndex: 'created_at', key: 'created_at',
       render: (v: string) => dayjs(v).format('YYYY-MM-DD HH:mm'),
     },
   ];
 
   const directoryColumns = [
-    { title: '批次号', dataIndex: 'batch_no', key: 'batch_no' },
-    { title: '文件名', dataIndex: 'file_name', key: 'file_name' },
-    { title: '总条数', dataIndex: 'total_count', key: 'total_count' },
-    { title: '借调数', dataIndex: 'seconded_count', key: 'seconded_count' },
-    { title: '状态', dataIndex: 'import_status', key: 'import_status', render: renderImportStatus },
+    { title: t('import.batchNo'), dataIndex: 'batch_no', key: 'batch_no' },
+    { title: t('import.fileName'), dataIndex: 'file_name', key: 'file_name' },
+    { title: t('import.totalCount'), dataIndex: 'total_count', key: 'total_count' },
+    { title: t('import.secondedCount'), dataIndex: 'seconded_count', key: 'seconded_count' },
+    { title: t('import.status'), dataIndex: 'import_status', key: 'import_status', render: renderImportStatus },
     {
-      title: '导入时间', dataIndex: 'created_at', key: 'created_at',
+      title: t('import.importTime'), dataIndex: 'created_at', key: 'created_at',
       render: (v: string) => dayjs(v).format('YYYY-MM-DD HH:mm'),
     },
   ];
 
   const billColumns = [
-    { title: '批次号', dataIndex: 'batch_no', key: 'batch_no' },
-    { title: '月份', dataIndex: 'billing_month', key: 'billing_month' },
-    { title: '文件名', dataIndex: 'file_name', key: 'file_name' },
-    { title: '条数', dataIndex: 'total_count', key: 'total_count' },
+    { title: t('import.batchNo'), dataIndex: 'batch_no', key: 'batch_no' },
+    { title: t('import.month'), dataIndex: 'billing_month', key: 'billing_month' },
+    { title: t('import.fileName'), dataIndex: 'file_name', key: 'file_name' },
+    { title: t('import.count'), dataIndex: 'total_count', key: 'total_count' },
     {
-      title: '总金额', dataIndex: 'total_amount', key: 'total_amount',
+      title: t('import.totalAmountCol'), dataIndex: 'total_amount', key: 'total_amount',
       render: (v: number) => v != null ? `¥${v.toFixed(2)}` : '-',
     },
-    { title: '状态', dataIndex: 'import_status', key: 'import_status', render: renderImportStatus },
+    { title: t('import.status'), dataIndex: 'import_status', key: 'import_status', render: renderImportStatus },
     {
-      title: '导入时间', dataIndex: 'created_at', key: 'created_at',
+      title: t('import.importTime'), dataIndex: 'created_at', key: 'created_at',
       render: (v: string) => dayjs(v).format('YYYY-MM-DD HH:mm'),
     },
   ];
@@ -251,7 +246,7 @@ export default function DataImport() {
         beforeUpload={() => false}
         onChange={({ fileList: fl }) => setFileList(fl)}
       >
-        <Button icon={<UploadOutlined />}>选择文件</Button>
+        <Button icon={<UploadOutlined />}>{t('import.selectFile')}</Button>
       </Upload>
       <Button
         type="primary"
@@ -259,7 +254,7 @@ export default function DataImport() {
         loading={uploading}
         disabled={fileList.length === 0}
       >
-        开始导入
+        {t('import.startImport')}
       </Button>
     </Space>
   );
@@ -275,7 +270,7 @@ export default function DataImport() {
               key: 'ownership',
               label: (
                 <span>
-                  <PhoneOutlined /> 号码归属
+                  <PhoneOutlined /> {t('import.ownershipTab')}
                 </span>
               ),
               children: (
@@ -294,7 +289,7 @@ export default function DataImport() {
                       loading={ownershipLoading}
                       style={{ marginBottom: 8 }}
                     >
-                      刷新批次列表
+                      {t('import.refreshBatches')}
                     </Button>
                     <Table
                       columns={ownershipColumns}
@@ -312,7 +307,7 @@ export default function DataImport() {
               key: 'directory',
               label: (
                 <span>
-                  <ContactsOutlined /> 通讯录
+                  <ContactsOutlined /> {t('import.directoryTab')}
                 </span>
               ),
               children: (
@@ -331,7 +326,7 @@ export default function DataImport() {
                       loading={directoryLoading}
                       style={{ marginBottom: 8 }}
                     >
-                      刷新批次列表
+                      {t('import.refreshBatches')}
                     </Button>
                     <Table
                       columns={directoryColumns}
@@ -349,7 +344,7 @@ export default function DataImport() {
               key: 'bill',
               label: (
                 <span>
-                  <FileTextOutlined /> 电信账单
+                  <FileTextOutlined /> {t('import.billTab')}
                 </span>
               ),
               children: (
@@ -363,7 +358,7 @@ export default function DataImport() {
                   )}
                   {activeTemplate && (
                     <Alert
-                      message={`当前使用模板：${activeTemplate.name}（${activeTemplate.operator}）`}
+                      message={t('import.activeTemplate', { name: activeTemplate.name, operator: activeTemplate.operator })}
                       type="success"
                       showIcon
                       style={{ marginBottom: 16 }}
@@ -376,7 +371,7 @@ export default function DataImport() {
                       loading={billLoading}
                       style={{ marginBottom: 8 }}
                     >
-                      刷新批次列表
+                      {t('import.refreshBatches')}
                     </Button>
                     <Table
                       columns={billColumns}
@@ -391,25 +386,25 @@ export default function DataImport() {
                   <Card
                     title={
                       <span>
-                        <LinkOutlined /> 归属匹配
+                        <LinkOutlined /> {t('import.matchTitle')}
                       </span>
                     }
                     style={{ marginTop: 24 }}
                     size="small"
                   >
                     <Alert
-                      message="归属优先级：P0 例外标记 > P1 通讯录 > P2 号码归属 > P3 未归属"
+                      message={t('import.matchPriority')}
                       type="info"
                       showIcon
                       style={{ marginBottom: 16 }}
                     />
                     <Space wrap>
                       <div>
-                        <Text type="secondary">账单批次</Text>
+                        <Text type="secondary">{t('import.matchBillBatch')}</Text>
                         <br />
                         <Select
                           style={{ width: 240 }}
-                          placeholder="选择账单批次"
+                          placeholder={t('import.selectBillBatch')}
                           value={matchBillBatchId}
                           onChange={setMatchBillBatchId}
                           options={billBatches.map((b) => ({
@@ -419,11 +414,11 @@ export default function DataImport() {
                         />
                       </div>
                       <div>
-                        <Text type="secondary">号码归属批次</Text>
+                        <Text type="secondary">{t('import.matchOwnershipBatch')}</Text>
                         <br />
                         <Select
                           style={{ width: 240 }}
-                          placeholder="选择归属批次（可选）"
+                          placeholder={t('import.matchOwnershipBatch')}
                           allowClear
                           value={matchOwnershipBatchId}
                           onChange={setMatchOwnershipBatchId}
@@ -434,11 +429,11 @@ export default function DataImport() {
                         />
                       </div>
                       <div>
-                        <Text type="secondary">通讯录批次</Text>
+                        <Text type="secondary">{t('import.matchDirectoryBatch')}</Text>
                         <br />
                         <Select
                           style={{ width: 240 }}
-                          placeholder="选择通讯录批次（可选）"
+                          placeholder={t('import.matchDirectoryBatch')}
                           allowClear
                           value={matchDirectoryBatchId}
                           onChange={setMatchDirectoryBatchId}
@@ -456,7 +451,7 @@ export default function DataImport() {
                         icon={<LinkOutlined />}
                         style={{ marginTop: 22 }}
                       >
-                        执行匹配
+                        {t('import.executeMatch')}
                       </Button>
                     </Space>
                   </Card>

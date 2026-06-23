@@ -1,9 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import { Layout, Menu, Avatar, Dropdown, Typography, Popconfirm, Modal, Form, Input, message } from 'antd';
-import { DashboardOutlined, FileTextOutlined, PhoneOutlined, TeamOutlined, SettingOutlined, LogoutOutlined, ImportOutlined, ToolOutlined } from '@ant-design/icons';
+import { DashboardOutlined, FileTextOutlined, PhoneOutlined, TeamOutlined, SettingOutlined, LogoutOutlined, ImportOutlined, ToolOutlined, GlobalOutlined } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
 import { apiPost } from '../lib/request';
+import { useTranslation } from 'react-i18next';
 const { Sider, Header, Content } = Layout;
 const { Text } = Typography;
 
@@ -32,6 +33,7 @@ const AppLayout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { username, realName, role, mustChangePwd, clearMustChangePwd, logout } = useAuthStore();
+  const { t, i18n } = useTranslation();
 
   // Filter menu items by role
   const menuItems = useMemo(() => {
@@ -63,6 +65,11 @@ const AppLayout: React.FC = () => {
     { key: 'logout', icon: <LogoutOutlined />, label: <Popconfirm title="确定退出登录？" onConfirm={() => { logout(); navigate('/login'); }}>退出登录</Popconfirm> },
   ]};
 
+  const langMenu = { items: [
+    { key: 'zh-CN', label: '中文', onClick: () => i18n.changeLanguage('zh-CN') },
+    { key: 'en-US', label: 'English', onClick: () => i18n.changeLanguage('en-US') },
+  ]};
+
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <Sider collapsible collapsed={collapsed} onCollapse={setCollapsed} style={{ overflow: 'auto', height: '100vh', position: 'fixed', left: 0 }}>
@@ -72,7 +79,8 @@ const AppLayout: React.FC = () => {
         <Menu theme="dark" mode="inline" selectedKeys={[location.pathname]} items={menuItems} onClick={({ key }) => navigate(key)} />
       </Sider>
       <Layout style={{ marginLeft: collapsed ? 80 : 200, transition: 'margin-left 0.2s' }}>
-        <Header style={{ padding: '0 24px', background: '#fff', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', borderBottom: '1px solid #f0f0f0' }}>
+        <Header style={{ padding: '0 24px', background: '#fff', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', borderBottom: '1px solid #f0f0f0', gap: 16 }}>
+          <Dropdown menu={langMenu}><div style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}><GlobalOutlined /><Text>{t('common.langSwitch')}</Text></div></Dropdown>
           <Dropdown menu={userMenu}><div style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}><Avatar size="small">{(realName || username || '?')[0]}</Avatar><Text>{realName || username}</Text></div></Dropdown>
         </Header>
         <Content style={{ margin: 24, padding: 24, background: '#fff', borderRadius: 8, minHeight: 360 }}><Outlet /></Content>

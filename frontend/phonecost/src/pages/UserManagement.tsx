@@ -19,6 +19,7 @@ import {
   DeleteOutlined,
   KeyOutlined,
 } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 import { getUsers, createUser, updateUser, deleteUser, resetPassword } from '../api/user';
 import type { UserItem } from '../api/user';
 import { getOrgTree } from '../api/org';
@@ -27,6 +28,8 @@ import { ROLE_LABELS, ROLE_OPTIONS } from '../types/organization';
 import dayjs from 'dayjs';
 
 export default function UserManagement() {
+  const { t } = useTranslation();
+
   const [users, setUsers] = useState<UserItem[]>([]);
   const [orgList, setOrgList] = useState<Organization[]>([]);
   const [loading, setLoading] = useState(false);
@@ -44,7 +47,7 @@ export default function UserManagement() {
       const data = await getUsers();
       setUsers(data);
     } catch {
-      message.error('获取用户列表失败');
+      message.error(t('user.fetchFailed'));
     } finally {
       setLoading(false);
     }
@@ -65,7 +68,7 @@ export default function UserManagement() {
     try {
       const values = await addForm.validateFields();
       await createUser(values);
-      message.success('用户创建成功');
+      message.success(t('user.createSuccess'));
       setAddModalOpen(false);
       addForm.resetFields();
       fetchUsers();
@@ -79,7 +82,7 @@ export default function UserManagement() {
     try {
       const values = await editForm.validateFields();
       await updateUser(editingUser.id, values);
-      message.success('用户更新成功');
+      message.success(t('user.updateSuccess'));
       setEditModalOpen(false);
       setEditingUser(null);
       editForm.resetFields();
@@ -92,10 +95,10 @@ export default function UserManagement() {
   const handleDelete = async (id: number) => {
     try {
       await deleteUser(id);
-      message.success('删除成功');
+      message.success(t('user.deleteSuccess'));
       fetchUsers();
     } catch (err: any) {
-      message.error(err?.response?.data?.message || '删除失败');
+      message.error(err?.response?.data?.message || t('user.deleteFailed'));
     }
   };
 
@@ -104,7 +107,7 @@ export default function UserManagement() {
     try {
       const values = await resetForm.validateFields();
       await resetPassword(editingUser.id, values.new_password);
-      message.success('密码重置成功');
+      message.success(t('user.resetSuccess'));
       setResetModalOpen(false);
       setEditingUser(null);
       resetForm.resetFields();
@@ -131,35 +134,35 @@ export default function UserManagement() {
   };
 
   const columns = [
-    { title: '用户名', dataIndex: 'username', key: 'username', width: 120 },
-    { title: '姓名', dataIndex: 'real_name', key: 'real_name', width: 100 },
+    { title: t('user.colUsername'), dataIndex: 'username', key: 'username', width: 120 },
+    { title: t('user.colRealName'), dataIndex: 'real_name', key: 'real_name', width: 100 },
     {
-      title: '角色', dataIndex: 'role', key: 'role', width: 110,
-      render: (r: number) => <Tag>{ROLE_LABELS[r] || '未知'}</Tag>,
+      title: t('user.colRole'), dataIndex: 'role', key: 'role', width: 110,
+      render: (r: number) => <Tag>{ROLE_LABELS[r] || t('allocation.unknown')}</Tag>,
     },
     {
-      title: '所属组织', dataIndex: 'org_id', key: 'org_id', width: 150,
+      title: t('user.colOrg'), dataIndex: 'org_id', key: 'org_id', width: 150,
       render: (orgId: number | null) => orgId ? (orgNameMap.get(orgId) || '-') : '-',
     },
     {
-      title: '状态', dataIndex: 'status', key: 'status', width: 80,
-      render: (s: number) => s === 1 ? <Badge status="success" text="启用" /> : <Badge status="error" text="停用" />,
+      title: t('user.colStatus'), dataIndex: 'status', key: 'status', width: 80,
+      render: (s: number) => s === 1 ? <Badge status="success" text={t('user.enabled')} /> : <Badge status="error" text={t('user.disabled')} />,
     },
     {
-      title: '需改密', dataIndex: 'must_change_pwd', key: 'must_change_pwd', width: 80,
-      render: (v: number) => v === 1 ? <Tag color="orange">是</Tag> : <Tag color="default">否</Tag>,
+      title: t('user.colMustChangePwd'), dataIndex: 'must_change_pwd', key: 'must_change_pwd', width: 80,
+      render: (v: number) => v === 1 ? <Tag color="orange">{t('user.yes')}</Tag> : <Tag color="default">{t('user.no')}</Tag>,
     },
     {
-      title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 150,
+      title: t('user.colCreatedAt'), dataIndex: 'created_at', key: 'created_at', width: 150,
       render: (v: string) => dayjs(v).format('YYYY-MM-DD HH:mm'),
     },
     {
-      title: '操作', key: 'actions', width: 180,
+      title: t('user.colActions'), key: 'actions', width: 180,
       render: (_: any, record: UserItem) => (
         <Space size="small">
-          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)}>编辑</Button>
-          <Button size="small" icon={<KeyOutlined />} onClick={() => openReset(record)}>重置密码</Button>
-          <Popconfirm title="确定删除该用户？" onConfirm={() => handleDelete(record.id)}>
+          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)}>{t('user.editBtn')}</Button>
+          <Button size="small" icon={<KeyOutlined />} onClick={() => openReset(record)}>{t('user.resetPwdBtn')}</Button>
+          <Popconfirm title={t('user.deleteConfirm')} onConfirm={() => handleDelete(record.id)}>
             <Button size="small" danger icon={<DeleteOutlined />} />
           </Popconfirm>
         </Space>
@@ -170,10 +173,10 @@ export default function UserManagement() {
   return (
     <div>
       <Card
-        title="用户管理"
+        title={t('user.title')}
         extra={
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setAddModalOpen(true)}>
-            新增用户
+            {t('user.addUser')}
           </Button>
         }
       >
@@ -188,87 +191,87 @@ export default function UserManagement() {
       </Card>
 
       <Modal
-        title="新增用户"
+        title={t('user.addModalTitle')}
         open={addModalOpen}
         onOk={handleAdd}
         onCancel={() => { setAddModalOpen(false); addForm.resetFields(); }}
-        okText="创建"
+        okText={t('user.createBtn')}
       >
         <Form form={addForm} layout="vertical">
-          <Form.Item name="username" label="用户名" rules={[{ required: true, message: '请输入用户名' }]}>
+          <Form.Item name="username" label={t('user.formUsername')} rules={[{ required: true, message: t('user.formUsernameRequired') }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="password" label="密码" rules={[{ required: true, message: '请输入密码' }]}>
+          <Form.Item name="password" label={t('user.formPassword')} rules={[{ required: true, message: t('user.formPasswordRequired') }]}>
             <Input.Password />
           </Form.Item>
-          <Form.Item name="real_name" label="姓名" rules={[{ required: true, message: '请输入姓名' }]}>
+          <Form.Item name="real_name" label={t('user.formRealName')} rules={[{ required: true, message: t('user.formRealNameRequired') }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="role" label="角色" rules={[{ required: true, message: '请选择角色' }]}>
-            <Select options={ROLE_OPTIONS} placeholder="选择角色" />
+          <Form.Item name="role" label={t('user.formRole')} rules={[{ required: true, message: t('user.formRoleRequired') }]}>
+            <Select options={ROLE_OPTIONS} placeholder={t('user.formRoleRequired')} />
           </Form.Item>
-          <Form.Item name="org_id" label="所属组织">
+          <Form.Item name="org_id" label={t('user.formOrgId')}>
             <Select
               allowClear
-              placeholder="选择组织"
+              placeholder={t('user.formOrgIdPlaceholder')}
               options={orgList.map((o) => ({ value: o.id, label: o.name }))}
               showSearch
               optionFilterProp="label"
             />
           </Form.Item>
-          <Form.Item name="status" label="状态" initialValue={1}>
-            <Select options={[{ value: 1, label: '启用' }, { value: 0, label: '停用' }]} />
+          <Form.Item name="status" label={t('user.formStatus')} initialValue={1}>
+            <Select options={[{ value: 1, label: t('user.enabled') }, { value: 0, label: t('user.disabled') }]} />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title="编辑用户"
+        title={t('user.editModalTitle')}
         open={editModalOpen}
         onOk={handleEdit}
         onCancel={() => { setEditModalOpen(false); setEditingUser(null); editForm.resetFields(); }}
-        okText="保存"
+        okText={t('user.saveBtn')}
       >
         <Form form={editForm} layout="vertical">
-          <Form.Item name="real_name" label="姓名" rules={[{ required: true, message: '请输入姓名' }]}>
+          <Form.Item name="real_name" label={t('user.formRealName')} rules={[{ required: true, message: t('user.formRealNameRequired') }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="role" label="角色" rules={[{ required: true, message: '请选择角色' }]}>
+          <Form.Item name="role" label={t('user.formRole')} rules={[{ required: true, message: t('user.formRoleRequired') }]}>
             <Select options={ROLE_OPTIONS} />
           </Form.Item>
-          <Form.Item name="org_id" label="所属组织">
+          <Form.Item name="org_id" label={t('user.formOrgId')}>
             <Select
               allowClear
-              placeholder="选择组织"
+              placeholder={t('user.formOrgIdPlaceholder')}
               options={orgList.map((o) => ({ value: o.id, label: o.name }))}
               showSearch
               optionFilterProp="label"
             />
           </Form.Item>
-          <Form.Item name="status" label="状态" rules={[{ required: true }]}>
-            <Select options={[{ value: 1, label: '启用' }, { value: 0, label: '停用' }]} />
+          <Form.Item name="status" label={t('user.formStatus')} rules={[{ required: true }]}>
+            <Select options={[{ value: 1, label: t('user.enabled') }, { value: 0, label: t('user.disabled') }]} />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title="重置密码"
+        title={t('user.resetModalTitle')}
         open={resetModalOpen}
         onOk={handleReset}
         onCancel={() => { setResetModalOpen(false); setEditingUser(null); resetForm.resetFields(); }}
-        okText="确认重置"
+        okText={t('user.resetOkBtn')}
       >
-        <p>为用户 <strong>{editingUser?.username}</strong> 重置密码：</p>
+        <p>{t('user.resetDesc', { username: editingUser?.username || '' })}</p>
         <Form form={resetForm} layout="vertical">
-          <Form.Item name="new_password" label="新密码" rules={[{ required: true, message: '请输入新密码' }, { min: 6, message: '密码至少6位' }]}>
+          <Form.Item name="new_password" label={t('user.formNewPwd')} rules={[{ required: true, message: t('user.formNewPwdRequired') }, { min: 6, message: t('user.formNewPwdMin6') }]}>
             <Input.Password />
           </Form.Item>
-          <Form.Item name="confirm_password" label="确认密码" dependencies={['new_password']} rules={[
-            { required: true, message: '请确认密码' },
+          <Form.Item name="confirm_password" label={t('user.formConfirmPwd')} dependencies={['new_password']} rules={[
+            { required: true, message: t('user.formConfirmPwdRequired') },
             ({ getFieldValue }) => ({
               validator(_, value) {
                 if (!value || getFieldValue('new_password') === value) return Promise.resolve();
-                return Promise.reject(new Error('两次密码不一致'));
+                return Promise.reject(new Error(t('user.pwdMismatch')));
               },
             }),
           ]}>

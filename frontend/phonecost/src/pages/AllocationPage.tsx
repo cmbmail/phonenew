@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Card, Table, Tag, Button, Space, Modal, Input, Select, message, Descriptions, Tabs, Form, TreeSelect } from 'antd';
 import { CheckOutlined, UndoOutlined, DownloadOutlined, SwapOutlined, HistoryOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 import type { BillBatch } from '../types/bill';
 import type { AllocationResult, AllocationAdjustment } from '../types/allocation';
 import { CONFIRM_STATUS_MAP } from '../types/allocation';
@@ -47,6 +48,7 @@ function buildTreeData(orgs: Organization[]) {
 }
 
 export default function AllocationPage() {
+  const { t } = useTranslation();
   const role = useAuthStore((s) => s.role);
   const isAdminOrFinance = role === 1 || role === 4;
 
@@ -73,7 +75,7 @@ export default function AllocationPage() {
       const data = await getBillBatches();
       setBatches(data);
     } catch {
-      message.error('获取账单列表失败');
+      message.error(t('allocation.fetchBatchesFailed'));
     } finally {
       setLoading(false);
     }
@@ -85,7 +87,7 @@ export default function AllocationPage() {
       const data = await getAllocationResults(batchId);
       setResults(data);
     } catch {
-      message.error('获取分摊结果失败');
+      message.error(t('allocation.fetchResultsFailed'));
     } finally {
       setResultsLoading(false);
     }
@@ -97,7 +99,7 @@ export default function AllocationPage() {
       const data = await getAdjustments(batchId);
       setAdjustments(data);
     } catch {
-      message.error('获取调整记录失败');
+      message.error(t('allocation.fetchAdjustmentsFailed'));
     } finally {
       setAdjustmentsLoading(false);
     }
@@ -132,10 +134,10 @@ export default function AllocationPage() {
   const handleConfirm = async (batchId: number, orgId: number) => {
     try {
       await confirmAllocation(batchId, orgId);
-      message.success('确认成功');
+      message.success(t('allocation.confirmSuccessMsg'));
       fetchResults(batchId);
     } catch (err: any) {
-      message.error(err?.response?.data?.message || '确认失败');
+      message.error(err?.response?.data?.message || t('allocation.confirmFailedMsg'));
     }
   };
 
@@ -143,26 +145,26 @@ export default function AllocationPage() {
     if (!selectedBatchId) return;
     try {
       const res = await confirmAllAllocation(selectedBatchId);
-      message.success(`批量确认完成：${res.confirmed_count} 条`);
+      message.success(t('allocation.confirmAllSuccessMsg', { count: res.confirmed_count }));
       fetchResults(selectedBatchId);
     } catch (err: any) {
-      message.error(err?.response?.data?.message || '批量确认失败');
+      message.error(err?.response?.data?.message || t('allocation.confirmAllFailedMsg'));
     }
   };
 
   const handleWithdraw = async () => {
     if (!withdrawModal.result || !withdrawReason.trim()) {
-      message.warning('请输入撤回原因');
+      message.warning(t('allocation.withdrawReasonRequiredMsg'));
       return;
     }
     try {
       await withdrawAllocation(withdrawModal.result.batch_id, withdrawModal.result.org_id, withdrawReason);
-      message.success('撤回成功');
+      message.success(t('allocation.withdrawSuccessMsg'));
       setWithdrawModal({ open: false });
       setWithdrawReason('');
       fetchResults(withdrawModal.result.batch_id);
     } catch (err: any) {
-      message.error(err?.response?.data?.message || '撤回失败');
+      message.error(err?.response?.data?.message || t('allocation.withdrawFailedMsg'));
     }
   };
 
@@ -181,14 +183,14 @@ export default function AllocationPage() {
         values.to_org_id,
         values.reason,
       );
-      message.success('费用调整成功');
+      message.success(t('allocation.adjustSuccess'));
       setAdjustModalOpen(false);
       adjustForm.resetFields();
       fetchResults(selectedBatchId!);
       if (activeTab === 'adjustments') fetchAdjustments(selectedBatchId!);
     } catch (err: any) {
       if (err?.errorFields) return; // form validation error
-      message.error(err?.response?.data?.message || '调整失败');
+      message.error(err?.response?.data?.message || t('allocation.adjustFailed'));
     } finally {
       setAdjustSubmitting(false);
     }
@@ -201,58 +203,58 @@ export default function AllocationPage() {
 
   const resultColumns = [
     {
-      title: '组织名称', dataIndex: 'org_name', key: 'org_name', width: 180,
+      title: t('allocation.orgName'), dataIndex: 'org_name', key: 'org_name', width: 180,
       render: (name: string, r: AllocationResult) =>
-        r.org_id === -1 ? <Tag color="red">未归属</Tag> : name,
+        r.org_id === -1 ? <Tag color="red">{t('bill.unassigned')}</Tag> : name,
     },
     {
-      title: '月租费', dataIndex: 'monthly_rent', key: 'monthly_rent', width: 100,
+      title: t('allocation.monthlyRentFee'), dataIndex: 'monthly_rent', key: 'monthly_rent', width: 100,
       render: (v: number) => v ? `¥${v.toFixed(2)}` : '-',
     },
     {
-      title: '通话费', dataIndex: 'call_fee', key: 'call_fee', width: 100,
+      title: t('allocation.callFeeCol'), dataIndex: 'call_fee', key: 'call_fee', width: 100,
       render: (v: number) => v ? `¥${v.toFixed(2)}` : '-',
     },
     {
-      title: '录音费', dataIndex: 'recording_fee', key: 'recording_fee', width: 100,
+      title: t('allocation.recordingFeeCol'), dataIndex: 'recording_fee', key: 'recording_fee', width: 100,
       render: (v: number) => v ? `¥${v.toFixed(2)}` : '-',
     },
     {
-      title: '彩铃费', dataIndex: 'crbt_fee', key: 'crbt_fee', width: 100,
+      title: t('allocation.crbtFeeCol'), dataIndex: 'crbt_fee', key: 'crbt_fee', width: 100,
       render: (v: number) => v ? `¥${v.toFixed(2)}` : '-',
     },
     {
-      title: '闪信费', dataIndex: 'flash_msg_fee', key: 'flash_msg_fee', width: 100,
+      title: t('allocation.flashMsgFeeCol'), dataIndex: 'flash_msg_fee', key: 'flash_msg_fee', width: 100,
       render: (v: number) => v ? `¥${v.toFixed(2)}` : '-',
     },
     {
-      title: '合计', dataIndex: 'total_fee', key: 'total_fee', width: 110,
+      title: t('allocation.totalFeeCol'), dataIndex: 'total_fee', key: 'total_fee', width: 110,
       render: (v: number) => <strong>¥{v?.toFixed(2)}</strong>,
     },
     {
-      title: '号码数', dataIndex: 'phone_count', key: 'phone_count', width: 70,
+      title: t('allocation.phoneCountCol'), dataIndex: 'phone_count', key: 'phone_count', width: 70,
     },
     {
-      title: '确认状态', dataIndex: 'confirm_status', key: 'confirm_status', width: 90,
+      title: t('allocation.confirmStatusCol'), dataIndex: 'confirm_status', key: 'confirm_status', width: 90,
       render: (s: number) => {
-        const info = CONFIRM_STATUS_MAP[s] || { label: '未知', color: 'default' };
+        const info = CONFIRM_STATUS_MAP[s] || { label: t('allocation.unknown'), color: 'default' };
         return <Tag color={info.color}>{info.label}</Tag>;
       },
     },
     {
-      title: '操作', key: 'actions', width: 140,
+      title: t('common.actions'), key: 'actions', width: 140,
       render: (_: any, record: AllocationResult) => (
         <Space size="small">
           {record.confirm_status === 0 && (
             <Button size="small" type="primary" icon={<CheckOutlined />}
               onClick={() => handleConfirm(record.batch_id, record.org_id)}>
-              确认
+              {t('bill.confirmBtn')}
             </Button>
           )}
           {record.confirm_status === 1 && (
             <Button size="small" danger icon={<UndoOutlined />}
               onClick={() => setWithdrawModal({ open: true, result: record })}>
-              撤回
+              {t('bill.withdrawBtn')}
             </Button>
           )}
         </Space>
@@ -262,24 +264,24 @@ export default function AllocationPage() {
 
   const adjustmentColumns = [
     {
-      title: '号码', dataIndex: 'phone_number', key: 'phone_number', width: 120,
+      title: t('allocation.phoneNum'), dataIndex: 'phone_number', key: 'phone_number', width: 120,
     },
     {
-      title: '原组织', dataIndex: 'from_org_name', key: 'from_org_name', width: 160,
+      title: t('allocation.fromOrg'), dataIndex: 'from_org_name', key: 'from_org_name', width: 160,
     },
     {
-      title: '目标组织', dataIndex: 'to_org_name', key: 'to_org_name', width: 160,
+      title: t('allocation.toOrg'), dataIndex: 'to_org_name', key: 'to_org_name', width: 160,
     },
     {
-      title: '调整金额', dataIndex: 'amount', key: 'amount', width: 110,
+      title: t('allocation.adjustAmount'), dataIndex: 'amount', key: 'amount', width: 110,
       render: (v: number) => <strong>¥{v?.toFixed(2)}</strong>,
     },
     {
-      title: '原因', dataIndex: 'reason', key: 'reason', width: 200,
+      title: t('allocation.adjustReason'), dataIndex: 'reason', key: 'reason', width: 200,
       ellipsis: true,
     },
     {
-      title: '调整时间', dataIndex: 'created_at', key: 'created_at', width: 160,
+      title: t('allocation.adjustTime'), dataIndex: 'created_at', key: 'created_at', width: 160,
     },
   ];
 
@@ -291,10 +293,10 @@ export default function AllocationPage() {
     <div>
       <Card>
         <Space style={{ marginBottom: 16 }}>
-          <span>选择账单批次：</span>
+          <span>{t('allocation.selectBatch')}</span>
           <Select
             style={{ width: 300 }}
-            placeholder="请选择批次"
+            placeholder={t('allocation.selectBatchPlaceholder')}
             loading={loading}
             value={selectedBatchId}
             onChange={setSelectedBatchId}
@@ -303,24 +305,24 @@ export default function AllocationPage() {
           {selectedBatchId && results.length > 0 && (
             <>
               <Button type="primary" icon={<CheckOutlined />} onClick={handleConfirmAll}>
-                批量确认
+                {t('allocation.batchConfirmAll')}
               </Button>
               {isAdminOrFinance && (
                 <Button icon={<SwapOutlined />} onClick={openAdjustModal}>
-                  费用调整
+                  {t('allocation.feeAdjustment')}
                 </Button>
               )}
               <Button icon={<DownloadOutlined />}
                 onClick={() => handleExport(getExportSummaryUrl(selectedBatchId))}>
-                导出汇总
+                {t('allocation.exportSummary')}
               </Button>
               <Button icon={<DownloadOutlined />}
                 onClick={() => handleExport(getExportDetailUrl(selectedBatchId))}>
-                导出明细
+                {t('allocation.exportDetail')}
               </Button>
               <Button type="primary" icon={<DownloadOutlined />}
                 onClick={() => handleExport(getBranchBillUrl(selectedBatchId))}>
-                分行账单
+                {t('allocation.branchBill')}
               </Button>
             </>
           )}
@@ -329,16 +331,16 @@ export default function AllocationPage() {
         {selectedBatchId && (
           <>
             <Descriptions size="small" column={4} style={{ marginBottom: 16 }}>
-              <Descriptions.Item label="组织数">{results.length}</Descriptions.Item>
-              <Descriptions.Item label="总费用">¥{totalFee.toFixed(2)}</Descriptions.Item>
-              <Descriptions.Item label="已确认">{confirmedCount}</Descriptions.Item>
-              <Descriptions.Item label="待确认">{pendingCount}</Descriptions.Item>
+              <Descriptions.Item label={t('allocation.statsOrgs')}>{results.length}</Descriptions.Item>
+              <Descriptions.Item label={t('allocation.statsTotalFee')}>¥{totalFee.toFixed(2)}</Descriptions.Item>
+              <Descriptions.Item label={t('allocation.statsConfirmed')}>{confirmedCount}</Descriptions.Item>
+              <Descriptions.Item label={t('allocation.statsPending')}>{pendingCount}</Descriptions.Item>
             </Descriptions>
 
             <Tabs activeKey={activeTab} onChange={setActiveTab} items={[
               {
                 key: 'results',
-                label: '分摊结果',
+                label: t('allocation.resultsTab'),
                 children: (
                   <Table
                     columns={resultColumns}
@@ -352,7 +354,7 @@ export default function AllocationPage() {
               },
               {
                 key: 'adjustments',
-                label: <span><HistoryOutlined /> 调整记录</span>,
+                label: <span><HistoryOutlined /> {t('allocation.adjustmentsTab')}</span>,
                 children: (
                   <Table
                     columns={adjustmentColumns}
@@ -361,7 +363,7 @@ export default function AllocationPage() {
                     size="small"
                     loading={adjustmentsLoading}
                     pagination={{ pageSize: 20 }}
-                    locale={{ emptyText: '暂无调整记录' }}
+                    locale={{ emptyText: t('allocation.noAdjustments') }}
                   />
                 ),
               },
@@ -372,17 +374,17 @@ export default function AllocationPage() {
 
       {/* 撤回弹窗 */}
       <Modal
-        title="撤回确认"
+        title={t('allocation.withdrawTitle')}
         open={withdrawModal.open}
         onOk={handleWithdraw}
         onCancel={() => { setWithdrawModal({ open: false }); setWithdrawReason(''); }}
-        okText="确认撤回"
+        okText={t('allocation.withdrawOkText')}
         okButtonProps={{ danger: true }}
       >
-        <p>撤回后该组织的分摊结果将变为"已撤回"状态，如需重新确认请再次操作。</p>
+        <p>{t('allocation.withdrawDesc')}</p>
         <Input.TextArea
           rows={3}
-          placeholder="请输入撤回原因（必填）"
+          placeholder={t('allocation.withdrawReasonPlaceholder')}
           value={withdrawReason}
           onChange={(e) => setWithdrawReason(e.target.value)}
         />
@@ -390,30 +392,30 @@ export default function AllocationPage() {
 
       {/* 费用调整弹窗 */}
       <Modal
-        title="费用调整"
+        title={t('allocation.adjustTitle')}
         open={adjustModalOpen}
         onOk={handleAdjust}
         onCancel={() => { setAdjustModalOpen(false); adjustForm.resetFields(); }}
-        okText="确认调整"
+        okText={t('allocation.adjustOkText')}
         confirmLoading={adjustSubmitting}
         width={520}
       >
         <Form form={adjustForm} layout="vertical">
           <Form.Item
             name="phone_number"
-            label="号码"
-            rules={[{ required: true, message: '请输入要调整的号码' }]}
+            label={t('allocation.phoneNumberLabel')}
+            rules={[{ required: true, message: t('allocation.phoneNumberRequired') }]}
           >
-            <Input placeholder="输入外线号码，如 01088881234" />
+            <Input placeholder={t('allocation.phoneNumberPlaceholder')} />
           </Form.Item>
           <Form.Item
             name="from_org_id"
-            label="原组织"
-            rules={[{ required: true, message: '请选择原组织' }]}
+            label={t('allocation.fromOrgLabel')}
+            rules={[{ required: true, message: t('allocation.fromOrgRequired') }]}
           >
             <TreeSelect
               treeData={treeData}
-              placeholder="选择号码当前归属的组织"
+              placeholder={t('allocation.fromOrgPlaceholder')}
               showSearch
               treeNodeFilterProp="title"
               style={{ width: '100%' }}
@@ -422,12 +424,12 @@ export default function AllocationPage() {
           </Form.Item>
           <Form.Item
             name="to_org_id"
-            label="目标组织"
-            rules={[{ required: true, message: '请选择目标组织' }]}
+            label={t('allocation.toOrgLabel')}
+            rules={[{ required: true, message: t('allocation.toOrgRequired') }]}
           >
             <TreeSelect
               treeData={treeData}
-              placeholder="选择将号码调整到的目标组织"
+              placeholder={t('allocation.toOrgPlaceholder')}
               showSearch
               treeNodeFilterProp="title"
               style={{ width: '100%' }}
@@ -436,10 +438,10 @@ export default function AllocationPage() {
           </Form.Item>
           <Form.Item
             name="reason"
-            label="调整原因"
-            rules={[{ required: true, message: '请输入调整原因' }]}
+            label={t('allocation.reasonLabel')}
+            rules={[{ required: true, message: t('allocation.reasonRequired') }]}
           >
-            <Input.TextArea rows={3} placeholder="说明调整原因，如：该号码已调拨至XX支行" />
+            <Input.TextArea rows={3} placeholder={t('allocation.reasonPlaceholder')} />
           </Form.Item>
         </Form>
       </Modal>

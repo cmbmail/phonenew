@@ -15,9 +15,11 @@ import {
   getExportSummaryUrl,
   getExportDetailUrl,
 } from '../api/allocation';
+import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
 
 export default function BillManagement() {
+  const { t } = useTranslation();
   const [batches, setBatches] = useState<BillBatch[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedBatch, setSelectedBatch] = useState<BillBatch | null>(null);
@@ -33,7 +35,7 @@ export default function BillManagement() {
       const data = await getBillBatches();
       setBatches(data);
     } catch {
-      message.error('获取账单列表失败');
+      message.error(t('bill.fetchBatchesFailed'));
     } finally {
       setLoading(false);
     }
@@ -45,7 +47,7 @@ export default function BillManagement() {
       const data = await getAllocationResults(batchId);
       setResults(data);
     } catch {
-      message.error('获取分摊结果失败');
+      message.error(t('bill.fetchResultsFailed'));
     } finally {
       setResultsLoading(false);
     }
@@ -57,11 +59,11 @@ export default function BillManagement() {
     setCalculating(true);
     try {
       const res = await calculateAllocation(batchId);
-      message.success(`分摊计算完成：${res.org_count} 个组织`);
+      message.success(t('bill.calculateSuccess', { orgCount: res.org_count }));
       fetchBatches();
       fetchResults(batchId);
     } catch (err: any) {
-      message.error(err?.response?.data?.message || '分摊计算失败');
+      message.error(err?.response?.data?.message || t('bill.calcFailed'));
     } finally {
       setCalculating(false);
     }
@@ -70,36 +72,36 @@ export default function BillManagement() {
   const handleConfirm = async (batchId: number, orgId: number) => {
     try {
       await confirmAllocation(batchId, orgId);
-      message.success('确认成功');
+      message.success(t('bill.confirmSuccess'));
       fetchResults(batchId);
     } catch (err: any) {
-      message.error(err?.response?.data?.message || '确认失败');
+      message.error(err?.response?.data?.message || t('bill.confirmFailed'));
     }
   };
 
   const handleConfirmAll = async (batchId: number) => {
     try {
       const res = await confirmAllAllocation(batchId);
-      message.success(`批量确认完成：${res.confirmed_count} 条`);
+      message.success(t('bill.confirmAllSuccess', { count: res.confirmed_count }));
       fetchResults(batchId);
     } catch (err: any) {
-      message.error(err?.response?.data?.message || '批量确认失败');
+      message.error(err?.response?.data?.message || t('bill.confirmAllFailed'));
     }
   };
 
   const handleWithdraw = async () => {
     if (!withdrawModal.result || !withdrawReason.trim()) {
-      message.warning('请输入撤回原因');
+      message.warning(t('bill.withdrawReasonRequired'));
       return;
     }
     try {
       await withdrawAllocation(withdrawModal.result.batch_id, withdrawModal.result.org_id, withdrawReason);
-      message.success('撤回成功');
+      message.success(t('bill.withdrawSuccess'));
       setWithdrawModal({ open: false });
       setWithdrawReason('');
       fetchResults(withdrawModal.result.batch_id);
     } catch (err: any) {
-      message.error(err?.response?.data?.message || '撤回失败');
+      message.error(err?.response?.data?.message || t('bill.withdrawFailed'));
     }
   };
 
@@ -108,33 +110,33 @@ export default function BillManagement() {
   };
 
   const batchColumns = [
-    { title: '批次号', dataIndex: 'batch_no', key: 'batch_no', width: 200 },
-    { title: '月份', dataIndex: 'billing_month', key: 'billing_month', width: 90 },
-    { title: '文件名', dataIndex: 'file_name', key: 'file_name', ellipsis: true },
-    { title: '条数', dataIndex: 'total_count', key: 'total_count', width: 70 },
+    { title: t('bill.batchNo'), dataIndex: 'batch_no', key: 'batch_no', width: 200 },
+    { title: t('bill.month'), dataIndex: 'billing_month', key: 'billing_month', width: 90 },
+    { title: t('bill.fileName'), dataIndex: 'file_name', key: 'file_name', ellipsis: true },
+    { title: t('bill.count'), dataIndex: 'total_count', key: 'total_count', width: 70 },
     {
-      title: '总金额', dataIndex: 'total_amount', key: 'total_amount', width: 110,
+      title: t('bill.totalAmountCol'), dataIndex: 'total_amount', key: 'total_amount', width: 110,
       render: (v: number) => v != null ? `¥${v.toFixed(2)}` : '-',
     },
     {
-      title: '状态', dataIndex: 'status', key: 'status', width: 90,
-      render: (s: number) => <Tag color={BILL_STATUS_COLORS[s] || 'default'}>{BILL_STATUS_LABELS[s] || '未知'}</Tag>,
+      title: t('bill.status'), dataIndex: 'status', key: 'status', width: 90,
+      render: (s: number) => <Tag color={BILL_STATUS_COLORS[s] || 'default'}>{BILL_STATUS_LABELS[s] || t('bill.unknown')}</Tag>,
     },
     {
-      title: '导入时间', dataIndex: 'created_at', key: 'created_at', width: 150,
+      title: t('bill.importTime'), dataIndex: 'created_at', key: 'created_at', width: 150,
       render: (v: string) => dayjs(v).format('MM-DD HH:mm'),
     },
     {
-      title: '操作', key: 'actions', width: 280,
+      title: t('bill.actions'), key: 'actions', width: 280,
       render: (_: any, record: BillBatch) => (
         <Space size="small">
           <Button size="small" onClick={() => { setSelectedBatch(record); fetchResults(record.id); }}>
-            查看分摊
+            {t('bill.viewAllocation')}
           </Button>
           {record.status === 0 && (
             <Button size="small" type="primary" icon={<CalculatorOutlined />}
               onClick={() => handleCalculate(record.id)} loading={calculating}>
-              分摊计算
+              {t('bill.calculateAllocation')}
             </Button>
           )}
           {record.status >= 1 && (
@@ -156,56 +158,56 @@ export default function BillManagement() {
 
   const resultColumns = [
     {
-      title: '组织', dataIndex: 'org_name', key: 'org_name', width: 180,
+      title: t('bill.orgLabel'), dataIndex: 'org_name', key: 'org_name', width: 180,
       render: (name: string, r: AllocationResult) =>
-        r.org_id === -1 ? <Tag color="red">未归属</Tag> : name,
+        r.org_id === -1 ? <Tag color="red">{t('bill.unassigned')}</Tag> : name,
     },
-    { title: '号码数', dataIndex: 'phone_count', key: 'phone_count', width: 80 },
+    { title: t('bill.phoneCount'), dataIndex: 'phone_count', key: 'phone_count', width: 80 },
     {
-      title: '月租', dataIndex: 'monthly_rent', key: 'monthly_rent', width: 90,
+      title: t('bill.monthlyRent'), dataIndex: 'monthly_rent', key: 'monthly_rent', width: 90,
       render: (v: number) => v ? `¥${v.toFixed(2)}` : '-',
     },
     {
-      title: '通话费', dataIndex: 'call_fee', key: 'call_fee', width: 90,
+      title: t('bill.callFee'), dataIndex: 'call_fee', key: 'call_fee', width: 90,
       render: (v: number) => v ? `¥${v.toFixed(2)}` : '-',
     },
     {
-      title: '录音费', dataIndex: 'recording_fee', key: 'recording_fee', width: 90,
+      title: t('bill.recordingFee'), dataIndex: 'recording_fee', key: 'recording_fee', width: 90,
       render: (v: number) => v ? `¥${v.toFixed(2)}` : '-',
     },
     {
-      title: '彩铃费', dataIndex: 'crbt_fee', key: 'crbt_fee', width: 90,
+      title: t('bill.crbtFee'), dataIndex: 'crbt_fee', key: 'crbt_fee', width: 90,
       render: (v: number) => v ? `¥${v.toFixed(2)}` : '-',
     },
     {
-      title: '闪信费', dataIndex: 'flash_msg_fee', key: 'flash_msg_fee', width: 90,
+      title: t('bill.flashMsgFee'), dataIndex: 'flash_msg_fee', key: 'flash_msg_fee', width: 90,
       render: (v: number) => v ? `¥${v.toFixed(2)}` : '-',
     },
     {
-      title: '总费用', dataIndex: 'total_fee', key: 'total_fee', width: 100,
+      title: t('bill.totalFee'), dataIndex: 'total_fee', key: 'total_fee', width: 100,
       render: (v: number) => <strong>¥{v?.toFixed(2)}</strong>,
     },
     {
-      title: '确认状态', dataIndex: 'confirm_status', key: 'confirm_status', width: 90,
+      title: t('bill.confirmStatus'), dataIndex: 'confirm_status', key: 'confirm_status', width: 90,
       render: (s: number) => {
-        const info = CONFIRM_STATUS_MAP[s] || { label: '未知', color: 'default' };
+        const info = CONFIRM_STATUS_MAP[s] || { label: t('bill.unknown'), color: 'default' };
         return <Tag color={info.color}>{info.label}</Tag>;
       },
     },
     {
-      title: '操作', key: 'actions', width: 140,
+      title: t('bill.actions'), key: 'actions', width: 140,
       render: (_: any, record: AllocationResult) => (
         <Space size="small">
           {record.confirm_status === 0 && (
             <Button size="small" type="primary" icon={<CheckOutlined />}
               onClick={() => handleConfirm(record.batch_id, record.org_id)}>
-              确认
+              {t('bill.confirmBtn')}
             </Button>
           )}
           {record.confirm_status === 1 && (
             <Button size="small" danger icon={<UndoOutlined />}
               onClick={() => setWithdrawModal({ open: true, result: record })}>
-              撤回
+              {t('bill.withdrawBtn')}
             </Button>
           )}
         </Space>
@@ -213,7 +215,6 @@ export default function BillManagement() {
     },
   ];
 
-  // Sum totals
   const totalFee = results.reduce((sum, r) => sum + (r.total_fee || 0), 0);
   const totalPhones = results.reduce((sum, r) => sum + (r.phone_count || 0), 0);
   const confirmedCount = results.filter(r => r.confirm_status === 1).length;
@@ -237,24 +238,24 @@ export default function BillManagement() {
 
       {selectedBatch && (
         <Card
-          title={`分摊结果 — ${selectedBatch.batch_no} (${selectedBatch.billing_month})`}
+          title={t('bill.allocationResultTitle', { batchNo: selectedBatch.batch_no, month: selectedBatch.billing_month })}
           style={{ marginTop: 16 }}
           extra={
             <Space>
               {results.length > 0 && (
                 <Button onClick={() => handleConfirmAll(selectedBatch.id)} icon={<CheckOutlined />}>
-                  全部确认
+                  {t('bill.confirmAll')}
                 </Button>
               )}
-              <Button onClick={() => fetchResults(selectedBatch.id)}>刷新</Button>
+              <Button onClick={() => fetchResults(selectedBatch.id)}>{t('bill.refresh')}</Button>
             </Space>
           }
         >
           <Descriptions size="small" column={4} style={{ marginBottom: 16 }}>
-            <Descriptions.Item label="组织数">{results.length}</Descriptions.Item>
-            <Descriptions.Item label="号码总数">{totalPhones}</Descriptions.Item>
-            <Descriptions.Item label="总费用">¥{totalFee.toFixed(2)}</Descriptions.Item>
-            <Descriptions.Item label="已确认">{confirmedCount}/{results.length}</Descriptions.Item>
+            <Descriptions.Item label={t('bill.statsOrgs')}>{results.length}</Descriptions.Item>
+            <Descriptions.Item label={t('bill.statsPhones')}>{totalPhones}</Descriptions.Item>
+            <Descriptions.Item label={t('bill.statsTotalFee')}>¥{totalFee.toFixed(2)}</Descriptions.Item>
+            <Descriptions.Item label={t('bill.statsConfirmed')}>{confirmedCount}/{results.length}</Descriptions.Item>
           </Descriptions>
 
           <Table
@@ -269,17 +270,17 @@ export default function BillManagement() {
       )}
 
       <Modal
-        title="撤回确认"
+        title={t('bill.confirmWithdraw')}
         open={withdrawModal.open}
         onOk={handleWithdraw}
         onCancel={() => { setWithdrawModal({ open: false }); setWithdrawReason(''); }}
-        okText="确认撤回"
+        okText={t('bill.withdrawOkText')}
         okButtonProps={{ danger: true }}
       >
-        <p>撤回后该组织的分摊结果将变为"已撤回"状态，如需重新确认请再次操作。</p>
+        <p>{t('bill.withdrawDesc')}</p>
         <Input.TextArea
           rows={3}
-          placeholder="请输入撤回原因（必填）"
+          placeholder={t('bill.withdrawReasonPlaceholder')}
           value={withdrawReason}
           onChange={(e) => setWithdrawReason(e.target.value)}
         />

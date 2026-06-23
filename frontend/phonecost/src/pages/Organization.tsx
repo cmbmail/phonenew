@@ -31,6 +31,7 @@ import type { TreeDataNode } from 'antd';
 import type { Organization } from '../types/organization';
 import { ORG_TYPE_LABELS, ORG_TYPE_OPTIONS } from '../types/organization';
 import { getOrgTree, createOrg, updateOrg, deleteOrg, importOrg, rebuildOrgPaths } from '../api/org';
+import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
 
 function buildTree(list: Organization[]): TreeDataNode[] {
@@ -55,6 +56,7 @@ function buildTree(list: Organization[]): TreeDataNode[] {
 }
 
 export default function OrganizationPage() {
+  const { t } = useTranslation();
   const [orgList, setOrgList] = useState<Organization[]>([]);
   const [treeData, setTreeData] = useState<TreeDataNode[]>([]);
   const [selectedOrg, setSelectedOrg] = useState<Organization | null>(null);
@@ -71,7 +73,7 @@ export default function OrganizationPage() {
       setOrgList(data);
       setTreeData(buildTree(data));
     } catch {
-      message.error('获取组织架构失败');
+      message.error(t('org.fetchFailed'));
     }
   };
 
@@ -100,7 +102,7 @@ export default function OrganizationPage() {
         parent_id: values.parent_id || null,
         sort_order: values.sort_order || 0,
       });
-      message.success('创建成功');
+      message.success(t('org.createSuccess'));
       setAddModalOpen(false);
       addForm.resetFields();
       fetchOrgTree();
@@ -118,7 +120,7 @@ export default function OrganizationPage() {
         code: values.code,
         is_active: values.is_active ? 1 : 0,
       });
-      message.success('更新成功');
+      message.success(t('org.updateSuccess'));
       fetchOrgTree();
     } catch (err: any) {
       if (err?.response?.data?.message) message.error(err.response.data.message);
@@ -128,28 +130,28 @@ export default function OrganizationPage() {
   const handleDelete = async (id: number) => {
     try {
       await deleteOrg(id);
-      message.success('删除成功');
+      message.success(t('org.deleteSuccess'));
       if (selectedOrg?.id === id) setSelectedOrg(null);
       fetchOrgTree();
     } catch (err: any) {
-      message.error(err?.response?.data?.message || '删除失败');
+      message.error(err?.response?.data?.message || t('org.deleteFailed'));
     }
   };
 
   const handleImport = async () => {
     if (importFileList.length === 0) {
-      message.warning('请先选择文件');
+      message.warning(t('org.selectFileFirst'));
       return;
     }
     setImporting(true);
     try {
       const file = importFileList[0].originFileObj!;
       const result = await importOrg(file);
-      message.success(`导入完成：总计 ${result.total}，新建 ${result.created}，跳过 ${result.skipped}`);
+      message.success(t('org.importSuccess', { total: result.total, created: result.created, skipped: result.skipped }));
       setImportFileList([]);
       fetchOrgTree();
     } catch (err: any) {
-      message.error(err?.response?.data?.message || '导入失败');
+      message.error(err?.response?.data?.message || t('org.importFailed'));
     } finally {
       setImporting(false);
     }
@@ -159,10 +161,10 @@ export default function OrganizationPage() {
     setRebuilding(true);
     try {
       await rebuildOrgPaths();
-      message.success('路径重建完成');
+      message.success(t('org.rebuildSuccess'));
       fetchOrgTree();
     } catch (err: any) {
-      message.error(err?.response?.data?.message || '重建失败');
+      message.error(err?.response?.data?.message || t('org.rebuildFailed'));
     } finally {
       setRebuilding(false);
     }
@@ -173,14 +175,14 @@ export default function OrganizationPage() {
     : [];
 
   const childColumns = [
-    { title: '名称', dataIndex: 'name', key: 'name' },
-    { title: '类型', dataIndex: 'type', key: 'type', render: (t: number) => ORG_TYPE_LABELS[t] || '-' },
-    { title: '编码', dataIndex: 'code', key: 'code' },
-    { title: '状态', dataIndex: 'is_active', key: 'is_active', render: (v: number) => v === 1 ? <Tag color="green">启用</Tag> : <Tag color="red">停用</Tag> },
+    { title: t('org.colName'), dataIndex: 'name', key: 'name' },
+    { title: t('org.colType'), dataIndex: 'type', key: 'type', render: (v: number) => ORG_TYPE_LABELS[v] || '-' },
+    { title: t('org.colCode'), dataIndex: 'code', key: 'code' },
+    { title: t('org.colStatus'), dataIndex: 'is_active', key: 'is_active', render: (v: number) => v === 1 ? <Tag color="green">{t('org.statusEnabled')}</Tag> : <Tag color="red">{t('org.statusDisabled')}</Tag> },
     {
-      title: '操作', key: 'actions', width: 80,
+      title: t('org.colActions'), key: 'actions', width: 80,
       render: (_: any, record: Organization) => (
-        <Popconfirm title="确定删除？" onConfirm={() => handleDelete(record.id)}>
+        <Popconfirm title={t('org.deleteConfirm')} onConfirm={() => handleDelete(record.id)}>
           <Button size="small" danger icon={<DeleteOutlined />} />
         </Popconfirm>
       ),
@@ -197,24 +199,24 @@ export default function OrganizationPage() {
           beforeUpload={() => false}
           onChange={({ fileList: fl }) => setImportFileList(fl)}
         >
-          <Button icon={<UploadOutlined />}>导入组织架构</Button>
+          <Button icon={<UploadOutlined />}>{t('org.importOrg')}</Button>
         </Upload>
         <Button type="primary" onClick={handleImport} loading={importing} disabled={importFileList.length === 0}>
-          开始导入
+          {t('org.startImport')}
         </Button>
-        <Popconfirm title="确定重建所有组织路径？" onConfirm={handleRebuild}>
-          <Button icon={<RetweetOutlined />} loading={rebuilding}>重建路径</Button>
+        <Popconfirm title={t('org.rebuildConfirm')} onConfirm={handleRebuild}>
+          <Button icon={<RetweetOutlined />} loading={rebuilding}>{t('org.rebuildPath')}</Button>
         </Popconfirm>
       </Space>
 
       <Row gutter={16}>
         <Col span={8}>
           <Card
-            title={<span><ApartmentOutlined /> 组织架构</span>}
+            title={<span><ApartmentOutlined /> {t('org.treeTitle')}</span>}
             size="small"
             extra={
               <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => setAddModalOpen(true)}>
-                新增
+                {t('org.addBtn')}
               </Button>
             }
           >
@@ -229,32 +231,32 @@ export default function OrganizationPage() {
         <Col span={16}>
           {selectedOrg ? (
             <Space direction="vertical" style={{ width: '100%' }} size="middle">
-              <Card title="组织详情" size="small">
+              <Card title={t('org.detailTitle')} size="small">
                 <Descriptions size="small" column={2}>
-                  <Descriptions.Item label="ID">{selectedOrg.id}</Descriptions.Item>
-                  <Descriptions.Item label="类型">{ORG_TYPE_LABELS[selectedOrg.type] || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="路径">{selectedOrg.path}</Descriptions.Item>
-                  <Descriptions.Item label="排序">{selectedOrg.sort_order}</Descriptions.Item>
-                  <Descriptions.Item label="创建时间">{dayjs(selectedOrg.created_at).format('YYYY-MM-DD HH:mm')}</Descriptions.Item>
+                  <Descriptions.Item label={t('org.detailId')}>{selectedOrg.id}</Descriptions.Item>
+                  <Descriptions.Item label={t('org.detailType')}>{ORG_TYPE_LABELS[selectedOrg.type] || '-'}</Descriptions.Item>
+                  <Descriptions.Item label={t('org.detailPath')}>{selectedOrg.path}</Descriptions.Item>
+                  <Descriptions.Item label={t('org.detailSortOrder')}>{selectedOrg.sort_order}</Descriptions.Item>
+                  <Descriptions.Item label={t('org.detailCreatedAt')}>{dayjs(selectedOrg.created_at).format('YYYY-MM-DD HH:mm')}</Descriptions.Item>
                 </Descriptions>
               </Card>
-              <Card title="编辑" size="small">
+              <Card title={t('org.editTitle')} size="small">
                 <Form form={editForm} layout="inline" onFinish={handleEdit}>
-                  <Form.Item name="name" rules={[{ required: true, message: '请输入名称' }]}>
-                    <Input placeholder="名称" />
+                  <Form.Item name="name" rules={[{ required: true, message: t('org.nameRequired') }]}>
+                    <Input placeholder={t('org.name')} />
                   </Form.Item>
                   <Form.Item name="code">
-                    <Input placeholder="编码" />
+                    <Input placeholder={t('org.code')} />
                   </Form.Item>
                   <Form.Item name="is_active" valuePropName="checked">
-                    <Switch checkedChildren="启用" unCheckedChildren="停用" />
+                    <Switch checkedChildren={t('org.statusEnabled')} unCheckedChildren={t('org.statusDisabled')} />
                   </Form.Item>
                   <Form.Item>
-                    <Button type="primary" htmlType="submit" icon={<EditOutlined />}>保存</Button>
+                    <Button type="primary" htmlType="submit" icon={<EditOutlined />}>{t('org.saveBtn')}</Button>
                   </Form.Item>
                 </Form>
               </Card>
-              <Card title={`下级组织 (${childOrgs.length})`} size="small">
+              <Card title={t('org.childOrgsTitle', { count: childOrgs.length })} size="small">
                 <Table
                   columns={childColumns}
                   dataSource={childOrgs}
@@ -267,7 +269,7 @@ export default function OrganizationPage() {
           ) : (
             <Card>
               <div style={{ textAlign: 'center', color: '#999', padding: 40 }}>
-                请在左侧选择一个组织节点
+                {t('org.selectNodeHint')}
               </div>
             </Card>
           )}
@@ -275,32 +277,32 @@ export default function OrganizationPage() {
       </Row>
 
       <Modal
-        title="新增组织"
+        title={t('org.addModalTitle')}
         open={addModalOpen}
         onOk={handleAdd}
         onCancel={() => { setAddModalOpen(false); addForm.resetFields(); }}
-        okText="创建"
+        okText={t('org.createBtn')}
       >
         <Form form={addForm} layout="vertical">
-          <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
+          <Form.Item name="name" label={t('org.name')} rules={[{ required: true, message: t('org.nameRequired') }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="type" label="类型" rules={[{ required: true, message: '请选择类型' }]}>
-            <Select options={ORG_TYPE_OPTIONS} placeholder="选择类型" />
+          <Form.Item name="type" label={t('org.type')} rules={[{ required: true, message: t('org.typeRequired') }]}>
+            <Select options={ORG_TYPE_OPTIONS} placeholder={t('org.type')} />
           </Form.Item>
-          <Form.Item name="code" label="编码">
-            <Input placeholder="成本中心编码" />
+          <Form.Item name="code" label={t('org.code')}>
+            <Input placeholder={t('org.codePlaceholder')} />
           </Form.Item>
-          <Form.Item name="parent_id" label="上级组织">
+          <Form.Item name="parent_id" label={t('org.parentOrg')}>
             <Select
               allowClear
-              placeholder="选择上级（空为顶级）"
+              placeholder={t('org.parentOrgPlaceholder')}
               options={orgList.map((o) => ({ value: o.id, label: o.name }))}
               showSearch
               optionFilterProp="label"
             />
           </Form.Item>
-          <Form.Item name="sort_order" label="排序">
+          <Form.Item name="sort_order" label={t('org.sortOrder')}>
             <Input type="number" placeholder="0" />
           </Form.Item>
         </Form>

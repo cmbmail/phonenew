@@ -3,6 +3,8 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ConfigProvider } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
+import enUS from 'antd/locale/en_US';
+import { useTranslation } from 'react-i18next';
 import { useAuthStore } from './store/auth';
 import AppLayout from './components/AppLayout';
 import Login from './pages/Login';
@@ -15,13 +17,20 @@ import UserManagement from './pages/UserManagement';
 import TemplateManagement from './pages/TemplateManagement';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30000 } } });
+
 const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const token = useAuthStore((s) => s.token);
   return token ? <>{children}</> : <Navigate to="/login" replace />;
 };
 
+const AntdLocaleWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { i18n } = useTranslation();
+  const locale = i18n.language?.startsWith('en') ? enUS : zhCN;
+  return <ConfigProvider locale={locale}>{children}</ConfigProvider>;
+};
+
 const App: React.FC = () => (
-  <ConfigProvider locale={zhCN}>
+  <AntdLocaleWrapper>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Routes>
@@ -38,6 +47,6 @@ const App: React.FC = () => (
         </Routes>
       </BrowserRouter>
     </QueryClientProvider>
-  </ConfigProvider>
+  </AntdLocaleWrapper>
 );
 export default App;

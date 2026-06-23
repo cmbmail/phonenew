@@ -24,6 +24,7 @@ import {
   CopyOutlined,
   EyeOutlined,
 } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 import type { ColumnsType } from 'antd/es/table';
 import {
   getTemplates,
@@ -102,6 +103,8 @@ const DEFAULT_TEMPLATE_JSON = JSON.stringify(
 );
 
 export default function TemplateManagement() {
+  const { t } = useTranslation();
+
   const [templates, setTemplates] = useState<BillTemplate[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
@@ -118,7 +121,8 @@ export default function TemplateManagement() {
       const data = await getTemplates();
       setTemplates(data);
     } catch {
-      message.error('获取模板列表失败');
+      // Use a generic error since template-specific fetch error isn't defined
+      message.error(t('template.activateFailed'));
     } finally {
       setLoading(false);
     }
@@ -164,12 +168,12 @@ export default function TemplateManagement() {
       try {
         parsedJson = JSON.parse(jsonText);
       } catch {
-        message.error('Sheet配置JSON格式错误，请检查');
+        message.error(t('template.jsonFormatError'));
         return;
       }
 
       if (!Array.isArray(parsedJson) || parsedJson.length === 0) {
-        message.error('Sheet配置必须是非空数组');
+        message.error(t('template.jsonArrayError'));
         return;
       }
 
@@ -181,17 +185,17 @@ export default function TemplateManagement() {
 
       if (editingId != null) {
         await updateTemplate(editingId, body);
-        message.success('模板更新成功');
+        message.success(t('template.saveSuccess'));
       } else {
         await createTemplate(body as Parameters<typeof createTemplate>[0]);
-        message.success('模板创建成功');
+        message.success(t('template.createSuccess'));
       }
 
       setModalOpen(false);
       fetchTemplates();
     } catch (err: any) {
       if (err?.errorFields) return; // form validation error
-      message.error(err?.response?.data?.message || '保存失败');
+      message.error(err?.response?.data?.message || t('common.failed'));
     } finally {
       setSaving(false);
     }
@@ -202,20 +206,20 @@ export default function TemplateManagement() {
   const handleActivate = async (id: number) => {
     try {
       await activateTemplate(id);
-      message.success('模板已切换为活跃状态');
+      message.success(t('template.activateSuccess'));
       fetchTemplates();
     } catch (err: any) {
-      message.error(err?.response?.data?.message || '切换失败');
+      message.error(err?.response?.data?.message || t('template.activateFailed'));
     }
   };
 
   const handleDelete = async (id: number) => {
     try {
       await deleteTemplate(id);
-      message.success('模板已删除');
+      message.success(t('template.deleteSuccess'));
       fetchTemplates();
     } catch (err: any) {
-      message.error(err?.response?.data?.message || '删除失败');
+      message.error(err?.response?.data?.message || t('template.deleteFailed'));
     }
   };
 
@@ -252,68 +256,68 @@ export default function TemplateManagement() {
 
   const columns: ColumnsType<BillTemplate> = [
     {
-      title: '状态',
+      title: t('common.status'),
       key: 'active',
       width: 70,
       render: (_, r) =>
         r.is_active === 1 ? (
           <Tag color="green" icon={<CheckCircleOutlined />}>
-            活跃
+            {t('template.activeTag')}
           </Tag>
         ) : (
           <Text type="secondary">-</Text>
         ),
     },
-    { title: '名称', dataIndex: 'name', key: 'name' },
+    { title: t('template.templateName'), dataIndex: 'name', key: 'name' },
     {
-      title: '运营商',
+      title: t('template.operator'),
       dataIndex: 'operator',
       key: 'operator',
       width: 110,
       render: (v: string) => OPERATOR_LABELS[v] || v,
     },
     {
-      title: 'Sheet数',
+      title: t('template.sheetCount'),
       key: 'sheetCount',
       width: 80,
       align: 'center',
       render: (_, r) => parseSheetConfigs(r.sheet_configs).length,
     },
     {
-      title: '描述',
+      title: t('template.description'),
       dataIndex: 'description',
       key: 'description',
       ellipsis: true,
       render: (v: string) => v || '-',
     },
     {
-      title: '操作',
+      title: t('common.actions'),
       key: 'actions',
       width: 260,
       fixed: 'right' as const,
       render: (_, record) => (
         <Space size="small">
           <Button size="small" icon={<EyeOutlined />} onClick={() => showDetail(record)}>
-            查看
+            {t('template.viewBtn')}
           </Button>
           <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
-            编辑
+            {t('template.editBtn')}
           </Button>
           <Button size="small" icon={<CopyOutlined />} onClick={() => handleDuplicate(record)}>
-            复制
+            {t('template.copyBtn')}
           </Button>
           {record.is_active !== 1 && (
             <Button size="small" type="primary" ghost onClick={() => handleActivate(record.id)}>
-              激活
+              {t('template.activateBtn')}
             </Button>
           )}
           {record.is_active !== 1 && (
             <Popconfirm
-              title="确定删除此模板？"
+              title={t('template.deleteConfirm')}
               onConfirm={() => handleDelete(record.id)}
             >
               <Button size="small" danger icon={<DeleteOutlined />}>
-                删除
+                {t('template.deleteBtn')}
               </Button>
             </Popconfirm>
           )}
@@ -325,15 +329,15 @@ export default function TemplateManagement() {
   return (
     <div>
       <Card
-        title="账单模板管理"
+        title={t('template.title')}
         extra={
           <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
-            新建模板
+            {t('template.addTemplate')}
           </Button>
         }
       >
         <Alert
-          message="模板用于驱动账单Excel的解析逻辑。修改模板后，下次导入账单时将使用新配置。"
+          message={t('template.alertMessage')}
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
@@ -351,7 +355,7 @@ export default function TemplateManagement() {
 
       {/* Create/Edit Modal */}
       <Modal
-        title={editingId != null ? '编辑模板' : '新建模板'}
+        title={editingId != null ? t('template.editTitle') : t('template.createTitle')}
         open={modalOpen}
         onOk={handleSave}
         onCancel={() => setModalOpen(false)}
@@ -361,34 +365,34 @@ export default function TemplateManagement() {
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
           <Space style={{ width: '100%' }} size="middle">
-            <Form.Item name="name" label="模板名称" rules={[{ required: true, message: '请输入模板名称' }]} style={{ flex: 1 }}>
-              <Input placeholder="如：中国电信标准模板" />
+            <Form.Item name="name" label={t('template.templateName')} rules={[{ required: true, message: t('template.templateNameRequired') }]} style={{ flex: 1 }}>
+              <Input placeholder={t('template.templateNamePlaceholder')} />
             </Form.Item>
-            <Form.Item name="operator" label="运营商" style={{ width: 180 }}>
+            <Form.Item name="operator" label={t('template.operator')} style={{ width: 180 }}>
               <Select options={[
-                { value: 'CHINA_TELECOM', label: '中国电信' },
-                { value: 'CHINA_MOBILE', label: '中国移动' },
-                { value: 'CHINA_UNICOM', label: '中国联通' },
+                { value: 'CHINA_TELECOM', label: t('template.chinaTelecom') },
+                { value: 'CHINA_MOBILE', label: t('template.chinaMobile') },
+                { value: 'CHINA_UNICOM', label: t('template.chinaUnicom') },
               ]} />
             </Form.Item>
           </Space>
 
           <Space style={{ width: '100%' }} size="middle">
-            <Form.Item name="month_pattern" label="账期正则" style={{ flex: 1 }}>
-              <Input placeholder="(\\d{4})年(\\d{1,2})月" />
+            <Form.Item name="month_pattern" label={t('template.monthPattern')} style={{ flex: 1 }}>
+              <Input placeholder={t('template.monthPatternPlaceholder')} />
             </Form.Item>
-            <Form.Item name="description" label="描述" style={{ flex: 1 }}>
-              <Input placeholder="可选，模板用途说明" />
+            <Form.Item name="description" label={t('template.desc')} style={{ flex: 1 }}>
+              <Input placeholder={t('template.descPlaceholder')} />
             </Form.Item>
           </Space>
 
-          <Form.Item label="Sheet 配置 (JSON)">
+          <Form.Item label={t('template.sheetConfigLabel')}>
             <Input.TextArea
               value={jsonText}
               onChange={(e) => setJsonText(e.target.value)}
               rows={16}
               style={{ fontFamily: 'monospace', fontSize: 12 }}
-              placeholder="输入 Sheet 解析配置 JSON 数组"
+              placeholder={t('template.sheetConfigPlaceholder')}
             />
           </Form.Item>
         </Form>
@@ -396,7 +400,7 @@ export default function TemplateManagement() {
 
       {/* Detail Modal */}
       <Modal
-        title={`模板详情 - ${detailTemplate?.name || ''}`}
+        title={t('template.detailTitle', { name: detailTemplate?.name || '' })}
         open={detailOpen}
         onCancel={() => setDetailOpen(false)}
         footer={null}
@@ -405,17 +409,17 @@ export default function TemplateManagement() {
         {detailTemplate && (
           <div>
             <Descriptions bordered size="small" column={2} style={{ marginBottom: 16 }}>
-              <Descriptions.Item label="ID">{detailTemplate.id}</Descriptions.Item>
-              <Descriptions.Item label="运营商">{OPERATOR_LABELS[detailTemplate.operator] || detailTemplate.operator}</Descriptions.Item>
-              <Descriptions.Item label="账期正则">{detailTemplate.month_pattern || '-'}</Descriptions.Item>
-              <Descriptions.Item label="状态">
-                {detailTemplate.is_active === 1 ? <Tag color="green">活跃</Tag> : <Tag>未激活</Tag>}
+              <Descriptions.Item label={t('template.idField')}>{detailTemplate.id}</Descriptions.Item>
+              <Descriptions.Item label={t('template.operator')}>{OPERATOR_LABELS[detailTemplate.operator] || detailTemplate.operator}</Descriptions.Item>
+              <Descriptions.Item label={t('template.monthPattern')}>{detailTemplate.month_pattern || '-'}</Descriptions.Item>
+              <Descriptions.Item label={t('template.statusField')}>
+                {detailTemplate.is_active === 1 ? <Tag color="green">{t('template.statusActive')}</Tag> : <Tag>{t('template.statusInactive')}</Tag>}
               </Descriptions.Item>
-              <Descriptions.Item label="描述" span={2}>{detailTemplate.description || '-'}</Descriptions.Item>
-              <Descriptions.Item label="创建时间" span={2}>{new Date(detailTemplate.created_at).toLocaleString()}</Descriptions.Item>
+              <Descriptions.Item label={t('template.description')} span={2}>{detailTemplate.description || '-'}</Descriptions.Item>
+              <Descriptions.Item label={t('template.createdAtField')} span={2}>{new Date(detailTemplate.created_at).toLocaleString()}</Descriptions.Item>
             </Descriptions>
 
-            <Typography.Title level={5}>Sheet 配置</Typography.Title>
+            <Typography.Title level={5}>{t('template.sheetConfigTitle')}</Typography.Title>
             {parseSheetConfigs(detailTemplate.sheet_configs).map((sheet, idx) => (
               <Card
                 key={idx}
@@ -423,21 +427,21 @@ export default function TemplateManagement() {
                 title={
                   <Space>
                     <Tag color="blue">{SHEET_TYPE_LABELS[sheet.sheetType] || sheet.sheetType}</Tag>
-                    <Text type="secondary">匹配: {sheet.sheetNamePattern}</Text>
-                    {sheet.isQuarterly && <Tag color="orange">季度结算</Tag>}
+                    <Text type="secondary">{t('template.matchLabel')} {sheet.sheetNamePattern}</Text>
+                    {sheet.isQuarterly && <Tag color="orange">{t('template.quarterlyTag')}</Tag>}
                   </Space>
                 }
                 style={{ marginBottom: 8 }}
               >
                 <Descriptions size="small" column={2}>
-                  <Descriptions.Item label="号码列">{sheet.phoneColumn}</Descriptions.Item>
-                  <Descriptions.Item label="分机列">{sheet.extensionColumn ?? '-'}</Descriptions.Item>
-                  <Descriptions.Item label="跳过行数">{sheet.skipRows}</Descriptions.Item>
-                  <Descriptions.Item label="列映射数">{sheet.columns?.length || 0}</Descriptions.Item>
+                  <Descriptions.Item label={t('template.phoneColumnLabel')}>{sheet.phoneColumn}</Descriptions.Item>
+                  <Descriptions.Item label={t('template.extensionColumnLabel')}>{sheet.extensionColumn ?? '-'}</Descriptions.Item>
+                  <Descriptions.Item label={t('template.skipRowsLabel')}>{sheet.skipRows}</Descriptions.Item>
+                  <Descriptions.Item label={t('template.columnMappingCount')}>{sheet.columns?.length || 0}</Descriptions.Item>
                 </Descriptions>
                 {sheet.columns && sheet.columns.length > 0 && (
                   <div style={{ marginTop: 8 }}>
-                    <Text strong>列定义：</Text>
+                    <Text strong>{t('template.columnDefTitle')}</Text>
                     <pre style={{
                       background: '#f5f5f5', padding: 8, borderRadius: 4,
                       fontSize: 11, marginTop: 4, overflow: 'auto', maxHeight: 150,
@@ -448,7 +452,7 @@ export default function TemplateManagement() {
                 )}
                 {sheet.computedFields && Object.keys(sheet.computedFields).length > 0 && (
                   <div style={{ marginTop: 8 }}>
-                    <Text strong>计算字段：</Text>
+                    <Text strong>{t('template.computedFieldsTitle')}</Text>
                     <pre style={{
                       background: '#f5f5f5', padding: 8, borderRadius: 4,
                       fontSize: 11, marginTop: 4, overflow: 'auto', maxHeight: 100,
@@ -461,10 +465,10 @@ export default function TemplateManagement() {
             ))}
 
             {parseSheetConfigs(detailTemplate.sheet_configs).length === 0 && (
-              <Empty description="无有效 Sheet 配置" />
+              <Empty description={t('template.noValidSheets')} />
             )}
 
-            <Typography.Title level={5} style={{ marginTop: 16 }}>原始 JSON</Typography.Title>
+            <Typography.Title level={5} style={{ marginTop: 16 }}>{t('template.rawJsonTitle')}</Typography.Title>
             <Paragraph>
               <pre style={{
                 background: '#f5f5f5', padding: 12, borderRadius: 6,
