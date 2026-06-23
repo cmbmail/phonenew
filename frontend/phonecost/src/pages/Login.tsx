@@ -4,6 +4,7 @@ import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { apiPost } from '../lib/request';
 import { useAuthStore } from '../store/auth';
+import { getErrorMessage } from '../types/api';
 import type { LoginResponse } from '../types/auth';
 import { useTranslation } from 'react-i18next';
 
@@ -23,7 +24,7 @@ const Login: React.FC = () => {
       setAuth(data);
       message.success(t('login.loginSuccess'));
       navigate('/');
-    } catch (err: any) { message.error(err.response?.data?.message || t('login.loginFailed')); }
+    } catch (err) { message.error(getErrorMessage(err, t('login.loginFailed'))); }
     finally { setLoading(false); }
   };
 

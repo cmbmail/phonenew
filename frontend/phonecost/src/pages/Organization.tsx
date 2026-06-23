@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Card,
   Tree,
@@ -67,7 +67,7 @@ export default function OrganizationPage() {
   const [importing, setImporting] = useState(false);
   const [rebuilding, setRebuilding] = useState(false);
 
-  const fetchOrgTree = async () => {
+  const fetchOrgTree = useCallback(async () => {
     try {
       const data = await getOrgTree();
       setOrgList(data);
@@ -75,11 +75,11 @@ export default function OrganizationPage() {
     } catch {
       message.error(t('org.fetchFailed'));
     }
-  };
+  }, [t]);
 
-  useEffect(() => { fetchOrgTree(); }, []);
+  useEffect(() => { fetchOrgTree(); }, [fetchOrgTree]);
 
-  const handleSelect = (_: any, info: any) => {
+  const handleSelect = (_unused: unknown, info: { node: { key: unknown } }) => {
     const id = info.node.key as number;
     const org = orgList.find((o) => o.id === id) || null;
     setSelectedOrg(org);
@@ -106,7 +106,7 @@ export default function OrganizationPage() {
       setAddModalOpen(false);
       addForm.resetFields();
       fetchOrgTree();
-    } catch (err: any) {
+    } catch (err: ApiError) {
       if (err?.response?.data?.message) message.error(err.response.data.message);
     }
   };
@@ -122,7 +122,7 @@ export default function OrganizationPage() {
       });
       message.success(t('org.updateSuccess'));
       fetchOrgTree();
-    } catch (err: any) {
+    } catch (err: ApiError) {
       if (err?.response?.data?.message) message.error(err.response.data.message);
     }
   };
@@ -133,7 +133,7 @@ export default function OrganizationPage() {
       message.success(t('org.deleteSuccess'));
       if (selectedOrg?.id === id) setSelectedOrg(null);
       fetchOrgTree();
-    } catch (err: any) {
+    } catch (err: ApiError) {
       message.error(err?.response?.data?.message || t('org.deleteFailed'));
     }
   };
@@ -150,7 +150,7 @@ export default function OrganizationPage() {
       message.success(t('org.importSuccess', { total: result.total, created: result.created, skipped: result.skipped }));
       setImportFileList([]);
       fetchOrgTree();
-    } catch (err: any) {
+    } catch (err: ApiError) {
       message.error(err?.response?.data?.message || t('org.importFailed'));
     } finally {
       setImporting(false);
@@ -163,7 +163,7 @@ export default function OrganizationPage() {
       await rebuildOrgPaths();
       message.success(t('org.rebuildSuccess'));
       fetchOrgTree();
-    } catch (err: any) {
+    } catch (err: ApiError) {
       message.error(err?.response?.data?.message || t('org.rebuildFailed'));
     } finally {
       setRebuilding(false);
@@ -181,7 +181,7 @@ export default function OrganizationPage() {
     { title: t('org.colStatus'), dataIndex: 'is_active', key: 'is_active', render: (v: number) => v === 1 ? <Tag color="green">{t('org.statusEnabled')}</Tag> : <Tag color="red">{t('org.statusDisabled')}</Tag> },
     {
       title: t('org.colActions'), key: 'actions', width: 80,
-      render: (_: any, record: Organization) => (
+      render: (_unused: unknown, record: Organization) => (
         <Popconfirm title={t('org.deleteConfirm')} onConfirm={() => handleDelete(record.id)}>
           <Button size="small" danger icon={<DeleteOutlined />} />
         </Popconfirm>

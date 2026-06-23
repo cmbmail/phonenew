@@ -38,6 +38,7 @@ import type { BillBatch } from '../types/bill';
 import { IMPORT_STATUS_MAP } from '../types/import';
 import dayjs from 'dayjs';
 import { useTranslation } from 'react-i18next';
+import { getErrorMessage } from '../types/api';
 
 const { Text } = Typography;
 
@@ -63,8 +64,8 @@ export default function DataImport() {
       message.success(t('import.ownershipImportSuccess', { total: result.total_count, exceptions: result.exception_count ?? 0 }));
       setOwnershipFileList([]);
       fetchOwnershipBatches();
-    } catch (err: any) {
-      message.error(err?.response?.data?.message || t('import.importFailed'));
+    } catch (err) {
+      message.error(getErrorMessage(err, t('import.importFailed')));
     } finally {
       setOwnershipUploading(false);
     }
@@ -100,8 +101,8 @@ export default function DataImport() {
       message.success(t('import.directoryImportSuccess', { total: result.total_count, seconded: result.seconded_count ?? 0 }));
       setDirectoryFileList([]);
       fetchDirectoryBatches();
-    } catch (err: any) {
-      message.error(err?.response?.data?.message || t('import.importFailed'));
+    } catch (err) {
+      message.error(getErrorMessage(err, t('import.importFailed')));
     } finally {
       setDirectoryUploading(false);
     }
@@ -144,8 +145,8 @@ export default function DataImport() {
       message.success(t('import.billImportSuccess', { count: result.total_count, amount: (result.total_amount ?? 0).toFixed(2), month: result.billing_month }));
       setBillFileList([]);
       fetchBillBatches();
-    } catch (err: any) {
-      message.error(err?.response?.data?.message || t('import.importFailed'));
+    } catch (err) {
+      message.error(getErrorMessage(err, t('import.importFailed')));
     } finally {
       setBillUploading(false);
     }
@@ -177,8 +178,8 @@ export default function DataImport() {
         directory_batch_id: matchDirectoryBatchId ?? undefined,
       });
       message.success(t('import.matchSuccess', { count: result.matched_count }));
-    } catch (err: any) {
-      message.error(err?.response?.data?.message || t('import.matchFailed'));
+    } catch (err) {
+      message.error(getErrorMessage(err, t('import.matchFailed')));
     } finally {
       setMatching(false);
     }

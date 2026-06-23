@@ -3,6 +3,7 @@ import { Layout, Menu, Avatar, Dropdown, Typography, Popconfirm, Modal, Form, In
 import { DashboardOutlined, FileTextOutlined, PhoneOutlined, TeamOutlined, SettingOutlined, LogoutOutlined, ImportOutlined, ToolOutlined, GlobalOutlined } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
+import { getErrorMessage } from '../types/api';
 import { apiPost } from '../lib/request';
 import { useTranslation } from 'react-i18next';
 const { Sider, Header, Content } = Layout;
@@ -52,8 +53,8 @@ const AppLayout: React.FC = () => {
       setChangePwdOpen(false);
       clearMustChangePwd();
       form.resetFields();
-    } catch (e: any) {
-      message.error(e?.response?.data?.message || '密码修改失败');
+    } catch (e) {
+      message.error(getErrorMessage(e, '密码修改失败'));
     } finally {
       setChangePwdLoading(false);
     }

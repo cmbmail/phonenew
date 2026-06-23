@@ -126,7 +126,7 @@ export default function TemplateManagement() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     fetchTemplates();
@@ -193,7 +193,7 @@ export default function TemplateManagement() {
 
       setModalOpen(false);
       fetchTemplates();
-    } catch (err: any) {
+    } catch (err: ApiError) {
       if (err?.errorFields) return; // form validation error
       message.error(err?.response?.data?.message || t('common.failed'));
     } finally {
@@ -208,7 +208,7 @@ export default function TemplateManagement() {
       await activateTemplate(id);
       message.success(t('template.activateSuccess'));
       fetchTemplates();
-    } catch (err: any) {
+    } catch (err: ApiError) {
       message.error(err?.response?.data?.message || t('template.activateFailed'));
     }
   };
@@ -218,7 +218,7 @@ export default function TemplateManagement() {
       await deleteTemplate(id);
       message.success(t('template.deleteSuccess'));
       fetchTemplates();
-    } catch (err: any) {
+    } catch (err: ApiError) {
       message.error(err?.response?.data?.message || t('template.deleteFailed'));
     }
   };

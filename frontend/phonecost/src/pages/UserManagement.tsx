@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Card,
   Table,
@@ -41,7 +41,7 @@ export default function UserManagement() {
   const [editForm] = Form.useForm();
   const [resetForm] = Form.useForm();
 
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     setLoading(true);
     try {
       const data = await getUsers();
@@ -51,16 +51,16 @@ export default function UserManagement() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [t]);
 
-  const fetchOrgs = async () => {
+  const fetchOrgs = useCallback(async () => {
     try {
       const data = await getOrgTree();
       setOrgList(data);
     } catch { /* ignore */ }
-  };
+  }, []);
 
-  useEffect(() => { fetchUsers(); fetchOrgs(); }, []);
+  useEffect(() => { fetchUsers(); fetchOrgs(); }, [fetchUsers, fetchOrgs]);
 
   const orgNameMap = new Map(orgList.map((o) => [o.id, o.name]));
 
@@ -72,7 +72,7 @@ export default function UserManagement() {
       setAddModalOpen(false);
       addForm.resetFields();
       fetchUsers();
-    } catch (err: any) {
+    } catch (err: ApiError) {
       if (err?.response?.data?.message) message.error(err.response.data.message);
     }
   };
@@ -87,7 +87,7 @@ export default function UserManagement() {
       setEditingUser(null);
       editForm.resetFields();
       fetchUsers();
-    } catch (err: any) {
+    } catch (err: ApiError) {
       if (err?.response?.data?.message) message.error(err.response.data.message);
     }
   };
@@ -97,7 +97,7 @@ export default function UserManagement() {
       await deleteUser(id);
       message.success(t('user.deleteSuccess'));
       fetchUsers();
-    } catch (err: any) {
+    } catch (err: ApiError) {
       message.error(err?.response?.data?.message || t('user.deleteFailed'));
     }
   };
@@ -111,7 +111,7 @@ export default function UserManagement() {
       setResetModalOpen(false);
       setEditingUser(null);
       resetForm.resetFields();
-    } catch (err: any) {
+    } catch (err: ApiError) {
       if (err?.response?.data?.message) message.error(err.response.data.message);
     }
   };
@@ -158,7 +158,7 @@ export default function UserManagement() {
     },
     {
       title: t('user.colActions'), key: 'actions', width: 180,
-      render: (_: any, record: UserItem) => (
+      render: (_unused: unknown, record: UserItem) => (
         <Space size="small">
           <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)}>{t('user.editBtn')}</Button>
           <Button size="small" icon={<KeyOutlined />} onClick={() => openReset(record)}>{t('user.resetPwdBtn')}</Button>

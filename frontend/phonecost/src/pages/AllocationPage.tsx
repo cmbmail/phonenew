@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Card, Table, Tag, Button, Space, Modal, Input, Select, message, Descriptions, Tabs, Form, TreeSelect } from 'antd';
 import { CheckOutlined, UndoOutlined, DownloadOutlined, SwapOutlined, HistoryOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
@@ -6,6 +6,7 @@ import type { BillBatch } from '../types/bill';
 import type { AllocationResult, AllocationAdjustment } from '../types/allocation';
 import { CONFIRM_STATUS_MAP } from '../types/allocation';
 import type { Organization } from '../types/organization';
+import type { TreeNode } from '../types/api';
 import {
   getBillBatches,
   getAllocationResults,
@@ -22,25 +23,25 @@ import { getOrgTree } from '../api/org';
 import { useAuthStore } from '../store/auth';
 
 /** Build Ant Design TreeSelect data from flat org list */
-function buildTreeData(orgs: Organization[]) {
-  const map = new Map<number, { value: number; title: string; children: any[] }>();
-  const roots: any[] = [];
+function buildTreeData(orgs: Organization[]): TreeNode[] {
+  const map = new Map<number, TreeNode>();
+  const roots: TreeNode[] = [];
   for (const org of orgs) {
     map.set(org.id, { value: org.id, title: org.name, children: [] });
   }
   for (const org of orgs) {
     const node = map.get(org.id)!;
     if (org.parent_id && map.has(org.parent_id)) {
-      map.get(org.parent_id)!.children.push(node);
+      map.get(org.parent_id)!.children!.push(node);
     } else {
       roots.push(node);
     }
   }
   // Remove empty children arrays to avoid leaf arrow
-  function clean(nodes: any[]) {
+  function clean(nodes: TreeNode[]) {
     for (const n of nodes) {
-      if (n.children.length === 0) delete n.children;
-      else clean(n.children);
+      if (n.children && n.children.length === 0) delete n.children;
+      else if (n.children) clean(n.children);
     }
   }
   clean(roots);
@@ -69,7 +70,7 @@ export default function AllocationPage() {
   const [orgList, setOrgList] = useState<Organization[]>([]);
   const [activeTab, setActiveTab] = useState('results');
 
-  const fetchBatches = async () => {
+  const fetchBatches = useCallback(async () => {
     setLoading(true);
     try {
       const data = await getBillBatches();
@@ -79,9 +80,9 @@ export default function AllocationPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [t]);
 
-  const fetchResults = async (batchId: number) => {
+  const fetchResults = useCallback(async (batchId: number) => {
     setResultsLoading(true);
     try {
       const data = await getAllocationResults(batchId);
@@ -91,9 +92,9 @@ export default function AllocationPage() {
     } finally {
       setResultsLoading(false);
     }
-  };
+  }, [t]);
 
-  const fetchAdjustments = async (batchId: number) => {
+  const fetchAdjustments = useCallback(async (batchId: number) => {
     setAdjustmentsLoading(true);
     try {
       const data = await getAdjustments(batchId);
@@ -103,31 +104,31 @@ export default function AllocationPage() {
     } finally {
       setAdjustmentsLoading(false);
     }
-  };
+  }, [t]);
 
-  const fetchOrgTree = async () => {
+  const fetchOrgTree = useCallback(async () => {
     try {
       const data = await getOrgTree();
       setOrgList(data);
     } catch {
       // silently fail, org tree is optional for adjust
     }
-  };
+  }, []);
 
-  useEffect(() => { fetchBatches(); fetchOrgTree(); }, []);
+  useEffect(() => { fetchBatches(); fetchOrgTree(); }, [fetchBatches, fetchOrgTree]);
 
   useEffect(() => {
     if (selectedBatchId) {
       fetchResults(selectedBatchId);
       if (activeTab === 'adjustments') fetchAdjustments(selectedBatchId);
     }
-  }, [selectedBatchId]);
+  }, [selectedBatchId, fetchResults, fetchAdjustments, activeTab]);
 
   useEffect(() => {
     if (selectedBatchId && activeTab === 'adjustments') {
       fetchAdjustments(selectedBatchId);
     }
-  }, [activeTab]);
+  }, [selectedBatchId, activeTab, fetchAdjustments]);
 
   const treeData = useMemo(() => buildTreeData(orgList), [orgList]);
 
@@ -136,7 +137,7 @@ export default function AllocationPage() {
       await confirmAllocation(batchId, orgId);
       message.success(t('allocation.confirmSuccessMsg'));
       fetchResults(batchId);
-    } catch (err: any) {
+    } catch (err: ApiError) {
       message.error(err?.response?.data?.message || t('allocation.confirmFailedMsg'));
     }
   };
@@ -147,7 +148,7 @@ export default function AllocationPage() {
       const res = await confirmAllAllocation(selectedBatchId);
       message.success(t('allocation.confirmAllSuccessMsg', { count: res.confirmed_count }));
       fetchResults(selectedBatchId);
-    } catch (err: any) {
+    } catch (err: ApiError) {
       message.error(err?.response?.data?.message || t('allocation.confirmAllFailedMsg'));
     }
   };
@@ -163,7 +164,7 @@ export default function AllocationPage() {
       setWithdrawModal({ open: false });
       setWithdrawReason('');
       fetchResults(withdrawModal.result.batch_id);
-    } catch (err: any) {
+    } catch (err: ApiError) {
       message.error(err?.response?.data?.message || t('allocation.withdrawFailedMsg'));
     }
   };
@@ -188,7 +189,7 @@ export default function AllocationPage() {
       adjustForm.resetFields();
       fetchResults(selectedBatchId!);
       if (activeTab === 'adjustments') fetchAdjustments(selectedBatchId!);
-    } catch (err: any) {
+    } catch (err: ApiError) {
       if (err?.errorFields) return; // form validation error
       message.error(err?.response?.data?.message || t('allocation.adjustFailed'));
     } finally {
@@ -243,7 +244,7 @@ export default function AllocationPage() {
     },
     {
       title: t('common.actions'), key: 'actions', width: 140,
-      render: (_: any, record: AllocationResult) => (
+      render: (_unused: unknown, record: AllocationResult) => (
         <Space size="small">
           {record.confirm_status === 0 && (
             <Button size="small" type="primary" icon={<CheckOutlined />}

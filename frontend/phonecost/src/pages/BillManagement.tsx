@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card, Table, Tag, Button, Space, Modal, Input, message, Descriptions, Tooltip } from 'antd';
 import { CheckOutlined, UndoOutlined, DownloadOutlined, CalculatorOutlined } from '@ant-design/icons';
 import type { BillBatch } from '../types/bill';
@@ -7,7 +7,6 @@ import { BILL_STATUS_LABELS, BILL_STATUS_COLORS } from '../types/bill';
 import { CONFIRM_STATUS_MAP } from '../types/allocation';
 import {
   getBillBatches,
-  getAllocationResults,
   calculateAllocation,
   confirmAllocation,
   confirmAllAllocation,
@@ -16,6 +15,7 @@ import {
   getExportDetailUrl,
 } from '../api/allocation';
 import { useTranslation } from 'react-i18next';
+import { getErrorMessage } from '../types/api';
 import dayjs from 'dayjs';
 
 export default function BillManagement() {
@@ -29,7 +29,7 @@ export default function BillManagement() {
   const [withdrawModal, setWithdrawModal] = useState<{ open: boolean; result?: AllocationResult }>({ open: false });
   const [withdrawReason, setWithdrawReason] = useState('');
 
-  const fetchBatches = async () => {
+  const fetchBatches = useCallback(async () => {
     setLoading(true);
     try {
       const data = await getBillBatches();
@@ -39,9 +39,11 @@ export default function BillManagement() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [t]);
 
-  const fetchResults = async (batchId: number) => {
+  useEffect(() => { fetchBatches(); }, [fetchBatches]);
+
+  const fetchResults = useCallback(async (batchId: number) => {
     setResultsLoading(true);
     try {
       const data = await getAllocationResults(batchId);
@@ -51,9 +53,7 @@ export default function BillManagement() {
     } finally {
       setResultsLoading(false);
     }
-  };
-
-  useEffect(() => { fetchBatches(); }, []);
+  }, [t]);
 
   const handleCalculate = async (batchId: number) => {
     setCalculating(true);
@@ -62,8 +62,8 @@ export default function BillManagement() {
       message.success(t('bill.calculateSuccess', { orgCount: res.org_count }));
       fetchBatches();
       fetchResults(batchId);
-    } catch (err: any) {
-      message.error(err?.response?.data?.message || t('bill.calcFailed'));
+    } catch (err) {
+      message.error(getErrorMessage(err, t('bill.calcFailed')));
     } finally {
       setCalculating(false);
     }
@@ -74,8 +74,8 @@ export default function BillManagement() {
       await confirmAllocation(batchId, orgId);
       message.success(t('bill.confirmSuccess'));
       fetchResults(batchId);
-    } catch (err: any) {
-      message.error(err?.response?.data?.message || t('bill.confirmFailed'));
+    } catch (err) {
+      message.error(getErrorMessage(err, t('bill.confirmFailed')));
     }
   };
 
@@ -84,8 +84,8 @@ export default function BillManagement() {
       const res = await confirmAllAllocation(batchId);
       message.success(t('bill.confirmAllSuccess', { count: res.confirmed_count }));
       fetchResults(batchId);
-    } catch (err: any) {
-      message.error(err?.response?.data?.message || t('bill.confirmAllFailed'));
+    } catch (err) {
+      message.error(getErrorMessage(err, t('bill.confirmAllFailed')));
     }
   };
 
@@ -100,8 +100,8 @@ export default function BillManagement() {
       setWithdrawModal({ open: false });
       setWithdrawReason('');
       fetchResults(withdrawModal.result.batch_id);
-    } catch (err: any) {
-      message.error(err?.response?.data?.message || t('bill.withdrawFailed'));
+    } catch (err) {
+      message.error(getErrorMessage(err, t('bill.withdrawFailed')));
     }
   };
 
@@ -128,7 +128,7 @@ export default function BillManagement() {
     },
     {
       title: t('bill.actions'), key: 'actions', width: 280,
-      render: (_: any, record: BillBatch) => (
+      render: (_unused: unknown, record: BillBatch) => (
         <Space size="small">
           <Button size="small" onClick={() => { setSelectedBatch(record); fetchResults(record.id); }}>
             {t('bill.viewAllocation')}
@@ -196,7 +196,7 @@ export default function BillManagement() {
     },
     {
       title: t('bill.actions'), key: 'actions', width: 140,
-      render: (_: any, record: AllocationResult) => (
+      render: (_unused: unknown, record: AllocationResult) => (
         <Space size="small">
           {record.confirm_status === 0 && (
             <Button size="small" type="primary" icon={<CheckOutlined />}
