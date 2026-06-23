@@ -656,6 +656,71 @@ public class BranchBillExportService {
         BigDecimal internationalFee = ZERO;
     }
 
+    // ==================== L1 Summary JSON (for frontend table) ====================
+
+    public List<Map<String, Object>> getL1SummaryData(Long batchId) {
+        List<AllocationResult> allResults = resultRepository.findByBatchIdAndDeletedAtIsNull(batchId);
+        List<BillDetail> allDetails = billDetailRepository.findByBatchIdAndDeletedAtIsNull(batchId);
+        Map<Long, SysOrganization> orgMap = buildOrgMap();
+
+        List<SysOrganization> branches = orgMap.values().stream()
+                .filter(o -> o.getType() != null && o.getType() == 2 && o.getDeletedAt() == null)
+                .sorted(Comparator.comparing(SysOrganization::getId))
+                .collect(Collectors.toList());
+
+        List<Map<String, Object>> rows = new ArrayList<>();
+
+        for (SysOrganization branch : branches) {
+            String branchPath = branch.getPath();
+
+            AggregatedFees fees = aggregateFeesByOrgPath(batchId, branchPath, orgMap);
+
+            List<AllocationResult> childResults = allResults.stream()
+                    .filter(r -> {
+                        if (r.getOrgId() == null || r.getOrgId() == -1L) return false;
+                        SysOrganization rOrg = orgMap.get(r.getOrgId());
+                        return rOrg != null && rOrg.getPath() != null
+                                && rOrg.getPath().startsWith(branchPath);
+                    })
+                    .collect(Collectors.toList());
+
+            BigDecimal sumRec = safeSum(childResults, AllocationResult::getRecordingFee);
+            BigDecimal sumCrbt = safeSum(childResults, AllocationResult::getCrbtFee);
+            BigDecimal sumFlash = safeSum(childResults, AllocationResult::getFlashMsgFee);
+            int phoneCount = childResults.stream()
+                    .mapToInt(r -> r.getPhoneCount() != null ? r.getPhoneCount() : 0).sum();
+            int confirmed = (int) childResults.stream()
+                    .filter(r -> r.getConfirmStatus() != null && r.getConfirmStatus() == 1).count();
+            int pending = (int) childResults.stream()
+                    .filter(r -> r.getConfirmStatus() != null && r.getConfirmStatus() == 0).count();
+
+            BigDecimal callSubtotal = fees.platformFee.add(fees.monthlyRentCode)
+                    .add(fees.domesticFee).add(fees.internationalFee);
+            BigDecimal total = callSubtotal.add(sumRec).add(sumCrbt).add(sumFlash);
+
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("branch_name", branch.getName());
+            row.put("platform_fee", fees.platformFee);
+            row.put("monthly_rent_code", fees.monthlyRentCode);
+            row.put("domestic_duration", fees.domesticDuration);
+            row.put("transfer_duration", fees.transferDuration);
+            row.put("domestic_fee", fees.domesticFee);
+            row.put("international_duration", fees.internationalDuration);
+            row.put("international_fee", fees.internationalFee);
+            row.put("call_subtotal", callSubtotal);
+            row.put("recording_fee", sumRec);
+            row.put("crbt_fee", sumCrbt);
+            row.put("flash_fee", sumFlash);
+            row.put("total_fee", total);
+            row.put("phone_count", phoneCount);
+            row.put("confirmed", confirmed);
+            row.put("pending", pending);
+            rows.add(row);
+        }
+
+        return rows;
+    }
+
     // ==================== Org Hierarchy Helpers ====================
 
     private boolean isInPath(Long orgId, String pathPrefix, Map<Long, SysOrganization> orgMap) {

@@ -249,6 +249,16 @@ public class AllocationController {
     // ==================== 三级分摊导出 ====================
 
     /**
+     * L1 分摊汇总数据（JSON，供前端表格展示）
+     */
+    @GetMapping("/l1-summary-data")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getL1SummaryData(
+            @RequestParam Long batchId) {
+        List<Map<String, Object>> data = branchBillExportService.getL1SummaryData(batchId);
+        return ResponseEntity.ok(ApiResponse.ok(data));
+    }
+
+    /**
      * L1 分摊汇总：集团 → 一级分行
      * 每个一级分行一行，汇总其所有下属费用
      */
