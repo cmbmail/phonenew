@@ -246,7 +246,7 @@ public class BranchBillExportService {
 
             // Sheet1: 二级分行分摊汇总
             writeL3SummarySheet(wb, monthLabel, parentBranchName, subBranchName,
-                    directChildren, allResults, orgMap, headerStyle, numberStyle, boldStyle);
+                    directChildren, allResults, batchId, orgMap, headerStyle, numberStyle, boldStyle);
 
             // Sheet2: 按号码费用
             writePhoneDetailSheet(wb, monthLabel + subBranchName, allDetails, orgMap,
