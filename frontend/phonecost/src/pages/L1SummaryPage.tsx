@@ -92,7 +92,6 @@ export default function L1SummaryPage() {
 
   const columns = [
     { title: t('l1Summary.branchCol'), dataIndex: 'branchName', key: 'branchName', width: 140 },
-    { title: t('l1Summary.costCenterCol'), dataIndex: 'costCenter', key: 'costCenter', width: 90 },
     { title: t('l1Summary.monthlyRentCodeCol'), dataIndex: 'monthlyRent', key: 'monthlyRent', width: 100, render: money },
     { title: t('l1Summary.callFeeCol'), dataIndex: 'callFee', key: 'callFee', width: 100, render: money },
     { title: t('l1Summary.recordingFeeCol'), dataIndex: 'recordingFee', key: 'recordingFee', width: 100, render: money },
@@ -122,7 +121,6 @@ export default function L1SummaryPage() {
     return {
       key: branch.id,
       branchName: branch.name,
-      costCenter: branch.code || '-',
       monthlyRent, callFee, recordingFee, crbtFee, flashFee,
       totalFee, phoneCount, confirmed, pending,
     };
@@ -180,11 +178,10 @@ export default function L1SummaryPage() {
                 <Table.Summary.Cell index={3} />
                 <Table.Summary.Cell index={4} />
                 <Table.Summary.Cell index={5} />
-                <Table.Summary.Cell index={6} />
-                <Table.Summary.Cell index={7}><strong>¥{grandTotal.toFixed(2)}</strong></Table.Summary.Cell>
-                <Table.Summary.Cell index={8}><strong>{totalPhones}</strong></Table.Summary.Cell>
+                <Table.Summary.Cell index={6}><strong>¥{grandTotal.toFixed(2)}</strong></Table.Summary.Cell>
+                <Table.Summary.Cell index={7}><strong>{totalPhones}</strong></Table.Summary.Cell>
+                <Table.Summary.Cell index={8} />
                 <Table.Summary.Cell index={9} />
-                <Table.Summary.Cell index={10} />
               </Table.Summary.Row>
             )}
           />
