@@ -213,6 +213,33 @@ export default {
     fetchFailed: 'Failed to fetch allocation data',
   },
 
+  // ==================== L1 Detail ====================
+  l1Detail: {
+    title: 'Allocation Detail',
+    callTab: 'Per-Number Fees',
+    recordingTab: 'Recording Fees',
+    crbtTab: 'CRBT Fees',
+    flashTab: 'Flash Msg Fees',
+    phoneCol: 'Phone',
+    extensionCol: 'Extension',
+    orgCol: 'Organization',
+    sourceCol: 'Source',
+    platformFeeCol: 'Platform Fee',
+    monthlyRentCodeCol: 'Monthly Rent',
+    domesticDurationCol: 'Domestic Dur.(min)',
+    transferDurationCol: 'Transfer Dur.(min)',
+    domesticFeeCol: 'Domestic Fee',
+    intlDurationCol: 'Intl Dur.(min)',
+    intlFeeCol: 'Intl Fee',
+    totalFeeCol: 'Fee Subtotal',
+    recordingDirCol: 'Recording Dir',
+    recordingFeeCol: 'Recording Fee',
+    crbtFeeCol: 'CRBT Fee',
+    flashMonthCol: 'Month',
+    flashCountCol: 'Count',
+    flashFeeCol: 'Flash Fee',
+  },
+
   // ==================== L2 Branch Detail ====================
   l2Branch: {
     title: 'Branch Detail',

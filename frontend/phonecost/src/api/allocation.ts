@@ -43,6 +43,9 @@ export const getAdjustments = (batchId: number) =>
 export const getL1SummaryData = (batchId: number) =>
   apiGet<L1SummaryRow[]>(`/allocation/l1-summary-data?batchId=${batchId}`);
 
+export const getL1DetailData = (batchId: number, sheetType: string) =>
+  apiGet<Record<string, unknown>[]>(`/allocation/l1-detail?batchId=${batchId}&sheetType=${sheetType}`);
+
 // ==================== Export URLs ====================
 
 /**

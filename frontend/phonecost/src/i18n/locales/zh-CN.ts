@@ -223,6 +223,37 @@ export default {
     fetchFailed: '获取分摊数据失败',
   },
 
+  // ==================== L1 Detail (分摊明细) ====================
+  l1Detail: {
+    title: '分摊明细',
+    callTab: '按号码费用',
+    recordingTab: '录音费用',
+    crbtTab: '彩铃费用',
+    flashTab: '闪信费用',
+    phoneCol: '号码',
+    extensionCol: '分机',
+    orgCol: '组织',
+    sourceCol: '归属',
+    // CALL columns
+    platformFeeCol: '平台使用费',
+    monthlyRentCodeCol: '码号月租费',
+    domesticDurationCol: '国内呼时长(分)',
+    transferDurationCol: '转接时长(分)',
+    domesticFeeCol: '国内费用',
+    intlDurationCol: '国际时长(分)',
+    intlFeeCol: '国际费用',
+    totalFeeCol: '费用小计',
+    // RECORDING columns
+    recordingDirCol: '录音方向',
+    recordingFeeCol: '录音费用',
+    // CRBT columns
+    crbtFeeCol: '彩铃费用',
+    // FLASH_MSG columns
+    flashMonthCol: '月份',
+    flashCountCol: '条数',
+    flashFeeCol: '闪信费用',
+  },
+
   // ==================== L2 Branch Detail (一级分行) ====================
   l2Branch: {
     title: '一级分行',
