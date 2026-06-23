@@ -151,10 +151,10 @@ export default function L2BranchPage() {
 
         {selectedBatchId && selectedBranchId && childSummary.length > 0 && (
           <Descriptions size="small" column={4} style={{ marginBottom: 16 }}>
-            <Descriptions.Item label="月份">{selectedBatch?.billing_month}</Descriptions.Item>
-            <Descriptions.Item label="分行">{selectedBranch?.name}</Descriptions.Item>
-            <Descriptions.Item label="下级组织数">{directChildren.length}</Descriptions.Item>
-            <Descriptions.Item label="费用合计">¥{branchTotal.toFixed(2)}</Descriptions.Item>
+            <Descriptions.Item label={t('l2Branch.descMonth')}>{selectedBatch?.billing_month}</Descriptions.Item>
+            <Descriptions.Item label={t('l2Branch.descBranch')}>{selectedBranch?.name}</Descriptions.Item>
+            <Descriptions.Item label={t('l2Branch.descChildCount')}>{directChildren.length}</Descriptions.Item>
+            <Descriptions.Item label={t('l2Branch.descTotalFee')}>¥{branchTotal.toFixed(2)}</Descriptions.Item>
           </Descriptions>
         )}
 

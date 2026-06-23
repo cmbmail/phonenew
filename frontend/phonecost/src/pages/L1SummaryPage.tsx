@@ -94,7 +94,7 @@ export default function L1SummaryPage() {
     { title: t('l1Summary.branchCol'), dataIndex: 'branchName', key: 'branchName', width: 140 },
     { title: t('l1Summary.costCenterCol'), dataIndex: 'costCenter', key: 'costCenter', width: 90 },
     { title: t('l1Summary.monthlyRentCodeCol'), dataIndex: 'monthlyRent', key: 'monthlyRent', width: 100, render: money },
-    { title: t('l1Summary.callFeeCol') || '通话费', dataIndex: 'callFee', key: 'callFee', width: 100, render: money },
+    { title: t('l1Summary.callFeeCol'), dataIndex: 'callFee', key: 'callFee', width: 100, render: money },
     { title: t('l1Summary.recordingFeeCol'), dataIndex: 'recordingFee', key: 'recordingFee', width: 100, render: money },
     { title: t('l1Summary.crbtFeeCol'), dataIndex: 'crbtFee', key: 'crbtFee', width: 90, render: money },
     { title: t('l1Summary.flashFeeCol'), dataIndex: 'flashFee', key: 'flashFee', width: 90, render: money },
@@ -102,8 +102,8 @@ export default function L1SummaryPage() {
       render: (v: number) => <strong>{money(v)}</strong>,
     },
     { title: t('l1Summary.phoneCountCol'), dataIndex: 'phoneCount', key: 'phoneCount', width: 70 },
-    { title: '已确认', dataIndex: 'confirmed', key: 'confirmed', width: 70 },
-    { title: '待确认', dataIndex: 'pending', key: 'pending', width: 70 },
+    { title: t('l1Summary.confirmedCol'), dataIndex: 'confirmed', key: 'confirmed', width: 70 },
+    { title: t('l1Summary.pendingCol'), dataIndex: 'pending', key: 'pending', width: 70 },
   ];
 
   const dataSource = branchSummary.map(({ branch, totalFee, phoneCount, confirmed, pending }) => {
@@ -157,10 +157,10 @@ export default function L1SummaryPage() {
 
         {selectedBatchId && results.length > 0 && (
           <Descriptions size="small" column={4} style={{ marginBottom: 16 }}>
-            <Descriptions.Item label="月份">{selectedBatch?.billing_month}</Descriptions.Item>
-            <Descriptions.Item label="总费用">¥{grandTotal.toFixed(2)}</Descriptions.Item>
-            <Descriptions.Item label="号码总数">{totalPhones}</Descriptions.Item>
-            <Descriptions.Item label="分行数">{branches.length}</Descriptions.Item>
+            <Descriptions.Item label={t('l1Summary.descMonth')}>{selectedBatch?.billing_month}</Descriptions.Item>
+            <Descriptions.Item label={t('l1Summary.descTotalFee')}>¥{grandTotal.toFixed(2)}</Descriptions.Item>
+            <Descriptions.Item label={t('l1Summary.descTotalPhones')}>{totalPhones}</Descriptions.Item>
+            <Descriptions.Item label={t('l1Summary.descBranchCount')}>{branches.length}</Descriptions.Item>
           </Descriptions>
         )}
 

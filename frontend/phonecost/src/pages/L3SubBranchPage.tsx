@@ -151,10 +151,10 @@ export default function L3SubBranchPage() {
 
         {selectedBatchId && selectedSubBranchId && childSummary.length > 0 && (
           <Descriptions size="small" column={4} style={{ marginBottom: 16 }}>
-            <Descriptions.Item label="月份">{selectedBatch?.billing_month}</Descriptions.Item>
-            <Descriptions.Item label="二级分行">{selectedSubBranch?.name}</Descriptions.Item>
-            <Descriptions.Item label="下属组织数">{directChildren.length}</Descriptions.Item>
-            <Descriptions.Item label="费用合计">¥{branchTotal.toFixed(2)}</Descriptions.Item>
+            <Descriptions.Item label={t('l3SubBranch.descMonth')}>{selectedBatch?.billing_month}</Descriptions.Item>
+            <Descriptions.Item label={t('l3SubBranch.descSubBranch')}>{selectedSubBranch?.name}</Descriptions.Item>
+            <Descriptions.Item label={t('l3SubBranch.descChildCount')}>{directChildren.length}</Descriptions.Item>
+            <Descriptions.Item label={t('l3SubBranch.descTotalFee')}>¥{branchTotal.toFixed(2)}</Descriptions.Item>
           </Descriptions>
         )}
 
