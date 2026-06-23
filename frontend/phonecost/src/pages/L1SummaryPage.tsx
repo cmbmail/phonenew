@@ -143,6 +143,7 @@ export default function L1SummaryPage() {
   // ========== 分摊明细 - 按号码费用 (CALL) ==========
   const callColumns = [
     { title: t('l1Detail.phoneCol'), dataIndex: 'phone_number', key: 'phone_number', width: 120, fixed: 'left' as const },
+    { title: t('l1Detail.extensionCol'), dataIndex: 'extension', key: 'extension', width: 90 },
     { title: t('l1Detail.orgCol'), dataIndex: 'org_name', key: 'org_name', width: 180 },
     { title: t('l1Detail.platformFeeCol'), dataIndex: 'platform_fee', key: 'platform_fee', width: 100, align: 'right' as const, render: money },
     { title: t('l1Detail.monthlyRentCodeCol'), dataIndex: 'monthly_rent_code', key: 'monthly_rent_code', width: 100, align: 'right' as const, render: money },

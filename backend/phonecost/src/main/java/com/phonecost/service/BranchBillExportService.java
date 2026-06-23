@@ -682,6 +682,7 @@ public class BranchBillExportService {
 
             switch (sheetType) {
                 case "CALL" -> {
+                    row.put("extension", d.getExtension() != null ? d.getExtension() : "");
                     row.put("platform_fee", getRawDecimalOrZero(raw, "platformFee"));
                     row.put("monthly_rent_code", getRawDecimalOrZero(raw, "monthlyRentCode"));
                     row.put("domestic_duration", getRawDecimalOrZero(raw, "domesticDuration"));
