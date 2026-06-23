@@ -284,13 +284,22 @@ public class BillImportService {
             String phoneNumber = getStringValue(values, "phoneNumber");
             if (phoneNumber == null || phoneNumber.isEmpty() || phoneNumber.startsWith("AIGC:")) continue;
 
+            // Store raw column values as JSON for export fidelity
+            String rawDataJson;
+            try {
+                rawDataJson = MAPPER.writeValueAsString(values);
+            } catch (Exception e) {
+                rawDataJson = "{}";
+            }
+
             // Build BillDetail from extracted values
             BillDetail.BillDetailBuilder builder = BillDetail.builder()
                     .batchId(batchId)
                     .phoneNumber(phoneNumber.trim())
                     .sheetType(config.sheetType)
                     .extension(getStringValue(values, "extension") != null ? getStringValue(values, "extension").trim() : "")
-                    .flashMonth("");
+                    .flashMonth("")
+                    .rawData(rawDataJson);
 
             // Map extracted values to BillDetail fields
             builder.monthlyRent(getBigDecimalValue(values, "monthlyRent"));
@@ -469,7 +478,10 @@ public class BillImportService {
                 new ColumnConfig(0, "phoneNumber", "STRING"),
                 new ColumnConfig(1, "platformFee", "DECIMAL"),
                 new ColumnConfig(2, "monthlyRentCode", "DECIMAL"),
+                new ColumnConfig(3, "domesticDuration", "DECIMAL"),
+                new ColumnConfig(4, "transferDuration", "DECIMAL"),
                 new ColumnConfig(5, "domesticFee", "DECIMAL"),
+                new ColumnConfig(6, "internationalDuration", "DECIMAL"),
                 new ColumnConfig(7, "internationalFee", "DECIMAL"),
                 new ColumnConfig(8, "totalFee", "DECIMAL")
         );
@@ -488,6 +500,7 @@ public class BillImportService {
         rec.columns = Arrays.asList(
                 new ColumnConfig(0, "extension", "STRING"),
                 new ColumnConfig(1, "phoneNumber", "STRING"),
+                new ColumnConfig(2, "recordingDir", "STRING"),
                 new ColumnConfig(3, "recordingFee", "DECIMAL")
         );
         fallbacks.add(rec);
@@ -517,6 +530,7 @@ public class BillImportService {
         flash.columns = Arrays.asList(
                 new ColumnConfig(0, "phoneNumber", "STRING"),
                 new ColumnConfig(1, "flashMonth", "STRING"),
+                new ColumnConfig(2, "flashCount", "DECIMAL"),
                 new ColumnConfig(3, "flashMsgFee", "DECIMAL")
         );
         fallbacks.add(flash);

@@ -196,23 +196,7 @@ public class AllocationController {
             @RequestParam Long batchId,
             @RequestParam(required = false) Long branchOrgId,
             @RequestAttribute("userId") Long userId) throws Exception {
-        DataScope scope = dataScopeService.getDataScope(userId);
-
-        // 非管理员强制使用自己的组织范围
-        Long effectiveBranchOrgId = branchOrgId;
-        if (!scope.isAllScope()) {
-            // 分行/部门用户：忽略客户端传入的 branchOrgId，使用自己的
-            if (scope.getSingleOrgId() != null) {
-                effectiveBranchOrgId = scope.getSingleOrgId();
-            } else if (scope.getPathPrefix() != null) {
-                // BRANCH: pathPrefix 对应的 orgId 需要从 path 推算
-                // 取 pathPrefix 中最后一个 ID
-                String path = scope.getPathPrefix();
-                String trimmed = path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
-                int lastSlash = trimmed.lastIndexOf('/');
-                effectiveBranchOrgId = Long.parseLong(trimmed.substring(lastSlash + 1));
-            }
-        }
+        Long effectiveBranchOrgId = resolveEffectiveBranchOrgId(branchOrgId, userId);
 
         byte[] data = exportService.exportSummary(batchId, effectiveBranchOrgId);
         return ResponseEntity.ok()
@@ -228,19 +212,7 @@ public class AllocationController {
             @RequestParam Long batchId,
             @RequestParam(required = false) Long branchOrgId,
             @RequestAttribute("userId") Long userId) throws Exception {
-        DataScope scope = dataScopeService.getDataScope(userId);
-
-        Long effectiveBranchOrgId = branchOrgId;
-        if (!scope.isAllScope()) {
-            if (scope.getSingleOrgId() != null) {
-                effectiveBranchOrgId = scope.getSingleOrgId();
-            } else if (scope.getPathPrefix() != null) {
-                String path = scope.getPathPrefix();
-                String trimmed = path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
-                int lastSlash = trimmed.lastIndexOf('/');
-                effectiveBranchOrgId = Long.parseLong(trimmed.substring(lastSlash + 1));
-            }
-        }
+        Long effectiveBranchOrgId = resolveEffectiveBranchOrgId(branchOrgId, userId);
 
         byte[] data = exportService.exportDetail(batchId, effectiveBranchOrgId);
         return ResponseEntity.ok()
@@ -259,20 +231,7 @@ public class AllocationController {
             @RequestParam Long batchId,
             @RequestParam(required = false) Long branchOrgId,
             @RequestAttribute("userId") Long userId) throws Exception {
-        DataScope scope = dataScopeService.getDataScope(userId);
-
-        // Non-admin: force own org range
-        Long effectiveBranchOrgId = branchOrgId;
-        if (!scope.isAllScope()) {
-            if (scope.getSingleOrgId() != null) {
-                effectiveBranchOrgId = scope.getSingleOrgId();
-            } else if (scope.getPathPrefix() != null) {
-                String path = scope.getPathPrefix();
-                String trimmed = path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
-                int lastSlash = trimmed.lastIndexOf('/');
-                effectiveBranchOrgId = Long.parseLong(trimmed.substring(lastSlash + 1));
-            }
-        }
+        Long effectiveBranchOrgId = resolveEffectiveBranchOrgId(branchOrgId, userId);
 
         byte[] data = branchBillExportService.exportBranchBill(batchId, effectiveBranchOrgId, userId);
         String filename = java.net.URLEncoder.encode(
@@ -282,6 +241,40 @@ public class AllocationController {
                 .contentType(MediaType.parseMediaType(
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
                 .body(data);
+    }
+
+    // ==================== 分行成本中心对照表导出 ====================
+
+    @GetMapping("/export/cost-center-mapping")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_FINANCE', 'ROLE_BRANCH')")
+    public ResponseEntity<byte[]> exportCostCenterMapping(
+            @RequestParam Long batchId,
+            @RequestParam(required = false) Long branchOrgId,
+            @RequestAttribute("userId") Long userId) throws Exception {
+        Long effectiveBranchOrgId = resolveEffectiveBranchOrgId(branchOrgId, userId);
+
+        byte[] data = branchBillExportService.exportCostCenterMapping(batchId, effectiveBranchOrgId, userId);
+        String filename = java.net.URLEncoder.encode(
+                "分行成本中心对照表_" + batchId + ".xlsx", "UTF-8");
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                .contentType(MediaType.parseMediaType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(data);
+    }
+
+    /** Resolve effective branch org ID based on user's data scope */
+    private Long resolveEffectiveBranchOrgId(Long branchOrgId, Long userId) {
+        DataScope scope = dataScopeService.getDataScope(userId);
+        if (scope.isAllScope()) return branchOrgId;
+        if (scope.getSingleOrgId() != null) return scope.getSingleOrgId();
+        if (scope.getPathPrefix() != null) {
+            String path = scope.getPathPrefix();
+            String trimmed = path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
+            int lastSlash = trimmed.lastIndexOf('/');
+            return Long.parseLong(trimmed.substring(lastSlash + 1));
+        }
+        return branchOrgId;
     }
 
     private Long toLong(Object val) {
