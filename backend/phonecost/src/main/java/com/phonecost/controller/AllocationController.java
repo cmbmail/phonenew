@@ -259,6 +259,18 @@ public class AllocationController {
     }
 
     /**
+     * L1 分摊明细数据（JSON，供前端分摊明细4个Tab展示）
+     * sheetType: CALL / RECORDING / CRBT / FLASH_MSG
+     */
+    @GetMapping("/l1-detail")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getL1DetailData(
+            @RequestParam Long batchId,
+            @RequestParam String sheetType) {
+        List<Map<String, Object>> data = branchBillExportService.getL1DetailData(batchId, sheetType);
+        return ResponseEntity.ok(ApiResponse.ok(data));
+    }
+
+    /**
      * L1 分摊汇总：集团 → 一级分行
      * 每个一级分行一行，汇总其所有下属费用
      */

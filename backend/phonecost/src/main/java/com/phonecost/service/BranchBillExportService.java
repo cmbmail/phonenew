@@ -656,6 +656,65 @@ public class BranchBillExportService {
         BigDecimal internationalFee = ZERO;
     }
 
+    // ==================== L1 Detail JSON (for frontend 分摊明细 tabs) ====================
+
+    /**
+     * Returns bill_detail rows for a given batchId and sheetType, with org_name resolved.
+     * Each row is a Map with phone_number, org_name, ownership_source, and fields from raw_data.
+     */
+    public List<Map<String, Object>> getL1DetailData(Long batchId, String sheetType) {
+        List<BillDetail> details = billDetailRepository.findByBatchIdAndDeletedAtIsNull(batchId)
+                .stream()
+                .filter(d -> sheetType.equals(d.getSheetType()))
+                .collect(Collectors.toList());
+
+        Map<Long, SysOrganization> orgMap = buildOrgMap();
+        List<Map<String, Object>> rows = new ArrayList<>();
+
+        for (BillDetail d : details) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", d.getId());
+            row.put("phone_number", d.getPhoneNumber());
+            row.put("org_name", d.getOrgId() != null && orgMap.containsKey(d.getOrgId())
+                    ? orgMap.get(d.getOrgId()).getName() : "");
+            row.put("ownership_source", d.getOwnershipSource() != null ? d.getOwnershipSource() : "");
+
+            String raw = d.getRawData();
+
+            switch (sheetType) {
+                case "CALL" -> {
+                    row.put("platform_fee", getRawDecimalOrZero(raw, "platformFee"));
+                    row.put("monthly_rent_code", getRawDecimalOrZero(raw, "monthlyRentCode"));
+                    row.put("domestic_duration", getRawDecimalOrZero(raw, "domesticDuration"));
+                    row.put("transfer_duration", getRawDecimalOrZero(raw, "transferDuration"));
+                    row.put("domestic_fee", getRawDecimalOrZero(raw, "domesticFee"));
+                    row.put("international_duration", getRawDecimalOrZero(raw, "internationalDuration"));
+                    row.put("international_fee", getRawDecimalOrZero(raw, "internationalFee"));
+                    row.put("total_fee", getRawDecimalOrZero(raw, "totalFee"));
+                }
+                case "RECORDING" -> {
+                    row.put("extension", d.getExtension() != null ? d.getExtension() : "");
+                    row.put("recording_dir", getRawString(raw, "recordingDir"));
+                    row.put("recording_fee", getRawDecimalOrZero(raw, "recordingFee"));
+                }
+                case "CRBT" -> {
+                    row.put("extension", d.getExtension() != null ? d.getExtension() : "");
+                    row.put("crbt_fee", getRawDecimalOrZero(raw, "crbtFee"));
+                }
+                case "FLASH_MSG" -> {
+                    row.put("flash_month", d.getFlashMonth() != null ? d.getFlashMonth() : "");
+                    row.put("flash_count", getRawDecimalOrZero(raw, "flashCount"));
+                    row.put("flash_msg_fee", getRawDecimalOrZero(raw, "flashMsgFee"));
+                }
+                default -> { /* no extra fields */ }
+            }
+
+            rows.add(row);
+        }
+
+        return rows;
+    }
+
     // ==================== L1 Summary JSON (for frontend table) ====================
 
     public List<Map<String, Object>> getL1SummaryData(Long batchId) {
