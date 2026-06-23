@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Card, Table, Select, Button, Descriptions, Row, Col, Tabs, message, Empty, Statistic } from 'antd';
-import { DownloadOutlined } from '@ant-design/icons';
+import { Card, Table, Select, Button, Descriptions, Row, Col, Tabs, message, Empty, Statistic, Input } from 'antd';
+import { DownloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import type { BillBatch } from '../types/bill';
 import type { L1SummaryRow } from '../types/allocation';
@@ -24,6 +24,7 @@ export default function L1SummaryPage() {
   });
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailLoaded, setDetailLoaded] = useState(false);
+  const [detailSearch, setDetailSearch] = useState('');
 
   const fetchBatches = useCallback(async () => {
     setLoading(true);
@@ -56,6 +57,7 @@ export default function L1SummaryPage() {
       // 重置明细数据
       setDetailData({ CALL: [], RECORDING: [], CRBT: [], FLASH_MSG: [] });
       setDetailLoaded(false);
+      setDetailSearch('');
     }
   }, [selectedBatchId, t]);
 
@@ -186,26 +188,44 @@ export default function L1SummaryPage() {
     { title: t('l1Detail.sourceCol'), dataIndex: 'ownership_source', key: 'ownership_source', width: 70 },
   ];
 
-  // 统计卡片
+  // 搜索过滤：按号码/分机/组织名模糊匹配
+  const filteredDetailData = useMemo(() => {
+    const kw = detailSearch.trim().toLowerCase();
+    if (!kw) return detailData;
+    const filter = (rows: Record<string, unknown>[]) =>
+      rows.filter(r =>
+        String(r.phone_number || '').toLowerCase().includes(kw) ||
+        String(r.extension || '').toLowerCase().includes(kw) ||
+        String(r.org_name || '').toLowerCase().includes(kw)
+      );
+    return {
+      CALL: filter(detailData.CALL),
+      RECORDING: filter(detailData.RECORDING),
+      ["CRBT"]: filter(detailData["CRBT"]),
+      FLASH_MSG: filter(detailData.FLASH_MSG),
+    } as Record<SheetType, Record<string, unknown>[]>;
+  }, [detailData, detailSearch]);
+
+  // 统计卡片（基于过滤后数据）
   const detailStats = useMemo(() => {
     const sum = (data: Record<string, unknown>[], field: string) =>
       data.reduce((s, r) => s + (Number(r[field]) || 0), 0);
     return {
-      callCount: detailData.CALL.length,
-      callTotal: sum(detailData.CALL, 'total_fee'),
-      recCount: detailData.RECORDING.length,
-      recTotal: sum(detailData.RECORDING, 'recording_fee'),
-      crbtCount: detailData["CRBT"].length,
-      crbtTotal: sum(detailData["CRBT"], 'crbt_fee'),
-      flashCount: detailData.FLASH_MSG.length,
-      flashTotal: sum(detailData.FLASH_MSG, 'flash_msg_fee'),
+      callCount: filteredDetailData.CALL.length,
+      callTotal: sum(filteredDetailData.CALL, 'total_fee'),
+      recCount: filteredDetailData.RECORDING.length,
+      recTotal: sum(filteredDetailData.RECORDING, 'recording_fee'),
+      crbtCount: filteredDetailData["CRBT"].length,
+      crbtTotal: sum(filteredDetailData["CRBT"], 'crbt_fee'),
+      flashCount: filteredDetailData.FLASH_MSG.length,
+      flashTotal: sum(filteredDetailData.FLASH_MSG, 'flash_msg_fee'),
     };
-  }, [detailData]);
+  }, [filteredDetailData]);
 
   const summaryDataSource = rows.map((r, i) => ({ ...r, key: i }));
 
   const renderDetailTab = (sheetType: SheetType) => {
-    const data = detailData[sheetType];
+    const data = filteredDetailData[sheetType];
     let columns;
     let scrollX;
     switch (sheetType) {
@@ -217,8 +237,8 @@ export default function L1SummaryPage() {
     return (
       <Table
         columns={columns}
-        dataSource={data.map((r, i) => ({ ...r, key: i }))}
-        rowKey="key"
+        dataSource={data}
+        rowKey="id"
         size="small"
         loading={detailLoading}
         pagination={{ pageSize: 100, showSizeChanger: true, showTotal: (total) => `${total} 条` }}
@@ -290,6 +310,14 @@ export default function L1SummaryPage() {
               <Col span={6}><Statistic title={t('l1Detail.flashTab')} value={detailStats.flashCount} suffix={`¥${detailStats.flashTotal.toFixed(2)}`} /></Col>
             </Row>
           )}
+          <Input
+            prefix={<SearchOutlined />}
+            placeholder={t('l1Detail.searchPlaceholder')}
+            allowClear
+            value={detailSearch}
+            onChange={e => setDetailSearch(e.target.value)}
+            style={{ width: 320, marginBottom: 12 }}
+          />
           <Tabs
             type="card"
             onChange={() => fetchAllDetails()}

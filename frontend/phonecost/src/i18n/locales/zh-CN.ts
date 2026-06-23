@@ -252,6 +252,7 @@ export default {
     flashMonthCol: '月份',
     flashCountCol: '条数',
     flashFeeCol: '闪信费用',
+    searchPlaceholder: '搜索号码/分机/组织',
   },
 
   // ==================== L2 Branch Detail (一级分行) ====================

@@ -238,6 +238,7 @@ export default {
     flashMonthCol: 'Month',
     flashCountCol: 'Count',
     flashFeeCol: 'Flash Fee',
+    searchPlaceholder: 'Search phone/ext/org',
   },
 
   // ==================== L2 Branch Detail ====================
