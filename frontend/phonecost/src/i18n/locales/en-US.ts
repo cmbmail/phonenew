@@ -229,6 +229,7 @@ export default {
     phoneCol: 'Phone',
     extensionCol: 'Extension',
     orgCol: 'Organization',
+    orgCodeCol: 'Cost Center',
     sourceCol: 'Source',
     platformFeeCol: 'Platform Fee',
     monthlyRentCodeCol: 'Monthly Rent',
@@ -284,6 +285,11 @@ export default {
     reimbursementCostCenter: 'Cost Center',
     reimbursementFeeSubtotal: 'Fee Subtotal',
     reimbursementTotal: 'Total',
+    // Per-tab export
+    exportSummary: 'Export Summary',
+    exportDetail: 'Export Detail',
+    exportReimbursement: 'Export Reimbursement',
+    detailSheetType: 'Fee Type',
   },
   phoneOwnership: {
     selectBatch: 'Batch:',
@@ -402,6 +408,11 @@ export default {
     reimbursementCostCenter: 'Cost Center',
     reimbursementFeeSubtotal: 'Fee Subtotal',
     reimbursementTotal: 'Total',
+    // Per-tab export
+    exportSummary: 'Export Summary',
+    exportDetail: 'Export Detail',
+    exportReimbursement: 'Export Reimbursement',
+    detailSheetType: 'Fee Type',
   },
   org: {
     importOrg: 'Import Organization',

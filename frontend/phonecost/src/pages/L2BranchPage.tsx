@@ -1,14 +1,15 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Card, Table, Select, Button, Descriptions, Row, Col, Tabs, message, Empty, Tag, Statistic, Input } from 'antd';
+import { Card, Table, Select, Button, Descriptions, Row, Col, Tabs, message, Empty, Tag, Statistic, Input, Space } from 'antd';
 import { DownloadOutlined, SearchOutlined, FileTextOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import type { BillBatch } from '../types/bill';
 import type { AllocationResult } from '../types/allocation';
 import { CONFIRM_STATUS_MAP } from '../types/allocation';
-import { getBillBatches, getAllocationResults, getL2BranchDetailUrl, getL2DetailData } from '../api/allocation';
+import { getBillBatches, getAllocationResults, getL2DetailData } from '../api/allocation';
 import { getOrgTree } from '../api/org';
 import type { Organization } from '../types/organization';
 import { ORG_TYPE_LABELS } from '../types/organization';
+import { exportCSV } from '../lib/export';
 
 const SHEET_TYPES = ['CALL', 'RECORDING', 'CRBT', 'FLASH_MSG'] as const;
 type SheetType = typeof SHEET_TYPES[number];
@@ -186,6 +187,7 @@ export default function L2BranchPage() {
     { title: t('l1Detail.phoneCol'), dataIndex: 'phone_number', key: 'phone_number', width: 120, fixed: 'left' as const },
     { title: t('l1Detail.extensionCol'), dataIndex: 'extension', key: 'extension', width: 90 },
     { title: t('l1Detail.orgCol'), dataIndex: 'org_name', key: 'org_name', width: 180 },
+    { title: t('l1Detail.orgCodeCol'), dataIndex: 'org_code', key: 'org_code', width: 100 },
     { title: t('l1Detail.platformFeeCol'), dataIndex: 'platform_fee', key: 'platform_fee', width: 100, align: 'right' as const, render: money },
     { title: t('l1Detail.monthlyRentCodeCol'), dataIndex: 'monthly_rent_code', key: 'monthly_rent_code', width: 100, align: 'right' as const, render: money },
     { title: t('l1Detail.domesticDurationCol'), dataIndex: 'domestic_duration', key: 'domestic_duration', width: 110, align: 'right' as const, render: dur },
@@ -201,6 +203,7 @@ export default function L2BranchPage() {
     { title: t('l1Detail.extensionCol'), dataIndex: 'extension', key: 'extension', width: 90 },
     { title: t('l1Detail.phoneCol'), dataIndex: 'phone_number', key: 'phone_number', width: 120 },
     { title: t('l1Detail.orgCol'), dataIndex: 'org_name', key: 'org_name', width: 200 },
+    { title: t('l1Detail.orgCodeCol'), dataIndex: 'org_code', key: 'org_code', width: 100 },
     { title: t('l1Detail.recordingDirCol'), dataIndex: 'recording_dir', key: 'recording_dir', width: 200 },
     { title: t('l1Detail.recordingFeeCol'), dataIndex: 'recording_fee', key: 'recording_fee', width: 100, align: 'right' as const, render: money },
     { title: t('l1Detail.sourceCol'), dataIndex: 'ownership_source', key: 'ownership_source', width: 70 },
@@ -210,6 +213,7 @@ export default function L2BranchPage() {
     { title: t('l1Detail.phoneCol'), dataIndex: 'phone_number', key: 'phone_number', width: 120 },
     { title: t('l1Detail.extensionCol'), dataIndex: 'extension', key: 'extension', width: 90 },
     { title: t('l1Detail.orgCol'), dataIndex: 'org_name', key: 'org_name', width: 200 },
+    { title: t('l1Detail.orgCodeCol'), dataIndex: 'org_code', key: 'org_code', width: 100 },
     { title: t('l1Detail.crbtFeeCol'), dataIndex: 'crbt_fee', key: 'crbt_fee', width: 100, align: 'right' as const, render: money },
     { title: t('l1Detail.sourceCol'), dataIndex: 'ownership_source', key: 'ownership_source', width: 70 },
   ];
@@ -218,6 +222,7 @@ export default function L2BranchPage() {
     { title: t('l1Detail.phoneCol'), dataIndex: 'phone_number', key: 'phone_number', width: 120 },
     { title: t('l1Detail.extensionCol'), dataIndex: 'extension', key: 'extension', width: 90 },
     { title: t('l1Detail.orgCol'), dataIndex: 'org_name', key: 'org_name', width: 200 },
+    { title: t('l1Detail.orgCodeCol'), dataIndex: 'org_code', key: 'org_code', width: 100 },
     { title: t('l1Detail.flashMonthCol'), dataIndex: 'flash_month', key: 'flash_month', width: 90 },
     { title: t('l1Detail.flashCountCol'), dataIndex: 'flash_count', key: 'flash_count', width: 90, align: 'right' as const, render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? String(Math.round(n)) : '-'; } },
     { title: t('l1Detail.flashFeeCol'), dataIndex: 'flash_msg_fee', key: 'flash_msg_fee', width: 100, align: 'right' as const, render: money },
@@ -232,7 +237,8 @@ export default function L2BranchPage() {
       rows.filter(r =>
         String(r.phone_number || '').toLowerCase().includes(kw) ||
         String(r.extension || '').toLowerCase().includes(kw) ||
-        String(r.org_name || '').toLowerCase().includes(kw)
+        String(r.org_name || '').toLowerCase().includes(kw) ||
+        String(r.org_code || '').toLowerCase().includes(kw)
       );
     return {
       CALL: filter(detailData.CALL),
@@ -313,6 +319,32 @@ export default function L2BranchPage() {
               <Descriptions.Item label={t('l2Branch.descTotalFee')}>¥{branchTotal.toFixed(2)}</Descriptions.Item>
             </Descriptions>
           )}
+          {selectedBatchId && selectedBranchId && childSummary.length > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+              <Button icon={<DownloadOutlined />} onClick={() => {
+                const batch = batches.find(b => b.id === selectedBatchId);
+                const branch = selectedBranch?.name || '';
+                exportCSV(
+                  `分摊汇总_${branch}_${batch?.billing_month || ''}`,
+                  [
+                    { title: t('l2Branch.seqCol'), dataIndex: 'seq', render: (_: unknown, __: unknown, i: number) => i + 1 },
+                    { title: t('l2Branch.orgTypeCol'), dataIndex: 'orgType', render: (_: unknown, r: typeof childSummary[0]) => orgTypeLabel(r.child.type) },
+                    { title: t('l2Branch.orgNameCol'), dataIndex: 'orgName', render: (_: unknown, r: typeof childSummary[0]) => r.child.name },
+                    { title: t('l2Branch.costCenterCol'), dataIndex: 'costCenter', render: (_: unknown, r: typeof childSummary[0]) => (r.child.type === 2 || r.child.type === 3) ? '-' : (r.child.code || '-') },
+                    { title: t('l2Branch.monthlyRentCodeCol'), dataIndex: 'monthlyRent', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
+                    { title: t('l2Branch.domesticFeeCol'), dataIndex: 'callFee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
+                    { title: t('l2Branch.recordingFeeCol'), dataIndex: 'recordingFee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
+                    { title: t('l2Branch.crbtFeeCol'), dataIndex: 'crbtFee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
+                    { title: t('l2Branch.flashFeeCol'), dataIndex: 'flashFee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
+                    { title: t('l2Branch.totalCol'), dataIndex: 'totalFee', render: (v: number) => v != null ? v.toFixed(2) : '' },
+                    { title: t('l2Branch.phoneCountCol'), dataIndex: 'phoneCount' },
+                    { title: t('l2Branch.confirmStatusCol'), dataIndex: 'confirmStatus', render: (v: number) => v >= 0 ? (CONFIRM_STATUS_MAP[v]?.label || '') : '' },
+                  ],
+                  childSummary as unknown as Record<string, unknown>[],
+                );
+              }}>{t('l2Branch.exportSummary')}</Button>
+            </div>
+          )}
           {selectedBatchId && selectedBranchId && childSummary.length > 0 ? (
             <Table
               columns={columns}
@@ -348,20 +380,61 @@ export default function L2BranchPage() {
         <>
           {detailLoaded && (
             <Row gutter={16} style={{ marginBottom: 16 }}>
-              <Col span={6}><Statistic title={t('l1Detail.callTab')} value={detailStats.callCount} suffix={`¥${detailStats.callTotal.toFixed(2)}`} /></Col>
-              <Col span={6}><Statistic title={t('l1Detail.recordingTab')} value={detailStats.recCount} suffix={`¥${detailStats.recTotal.toFixed(2)}`} /></Col>
-              <Col span={6}><Statistic title={t('l1Detail.crbtTab')} value={detailStats.crbtCount} suffix={`¥${detailStats.crbtTotal.toFixed(2)}`} /></Col>
-              <Col span={6}><Statistic title={t('l1Detail.flashTab')} value={detailStats.flashCount} suffix={`¥${detailStats.flashTotal.toFixed(2)}`} /></Col>
+              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.callTab')} value={detailStats.callCount} suffix={`¥${detailStats.callTotal.toFixed(2)}`} /></Col>
+              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.recordingTab')} value={detailStats.recCount} suffix={`¥${detailStats.recTotal.toFixed(2)}`} /></Col>
+              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.crbtTab')} value={detailStats.crbtCount} suffix={`¥${detailStats.crbtTotal.toFixed(2)}`} /></Col>
+              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.flashTab')} value={detailStats.flashCount} suffix={`¥${detailStats.flashTotal.toFixed(2)}`} /></Col>
             </Row>
           )}
-          <Input
-            prefix={<SearchOutlined />}
-            placeholder={t('l1Detail.searchPlaceholder')}
-            allowClear
-            value={detailSearch}
-            onChange={e => setDetailSearch(e.target.value)}
-            style={{ width: 320, marginBottom: 12 }}
-          />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <Input
+              prefix={<SearchOutlined />}
+              placeholder={t('l1Detail.searchPlaceholder')}
+              allowClear
+              value={detailSearch}
+              onChange={e => setDetailSearch(e.target.value)}
+              style={{ width: 320 }}
+            />
+            {detailLoaded && detailData.CALL.length + detailData.RECORDING.length + detailData.CALL.length + detailData.FLASH_MSG.length > 0 && (
+              <Button icon={<DownloadOutlined />} onClick={() => {
+                const batch = batches.find(b => b.id === selectedBatchId);
+                const branch = selectedBranch?.name || '';
+                const allRows: Record<string, unknown>[] = [];
+                const sheetLabels: Record<string, string> = { CALL: t('l1Detail.callTab'), RECORDING: t('l1Detail.recordingTab'), CRBT: t('l1Detail.crbtTab'), FLASH_MSG: t('l1Detail.flashTab') };
+                for (const st of SHEET_TYPES) {
+                  for (const row of detailData[st]) {
+                    allRows.push({ ...row, _sheet_type: sheetLabels[st] });
+                  }
+                }
+                exportCSV(
+                  `分摊明细_${branch}_${batch?.billing_month || ''}`,
+                  [
+                    { title: t('l2Branch.detailSheetType'), dataIndex: '_sheet_type' },
+                    { title: t('l1Detail.phoneCol'), dataIndex: 'phone_number' },
+                    { title: t('l1Detail.extensionCol'), dataIndex: 'extension' },
+                    { title: t('l1Detail.orgCol'), dataIndex: 'org_name' },
+                    { title: t('l1Detail.orgCodeCol'), dataIndex: 'org_code' },
+                    { title: t('l1Detail.platformFeeCol'), dataIndex: 'platform_fee', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? n.toFixed(2) : ''; } },
+                    { title: t('l1Detail.monthlyRentCodeCol'), dataIndex: 'monthly_rent_code', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? n.toFixed(2) : ''; } },
+                    { title: t('l1Detail.domesticDurationCol'), dataIndex: 'domestic_duration', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? n.toFixed(1) : ''; } },
+                    { title: t('l1Detail.transferDurationCol'), dataIndex: 'transfer_duration', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? n.toFixed(1) : ''; } },
+                    { title: t('l1Detail.domesticFeeCol'), dataIndex: 'domestic_fee', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? n.toFixed(2) : ''; } },
+                    { title: t('l1Detail.intlDurationCol'), dataIndex: 'international_duration', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? n.toFixed(1) : ''; } },
+                    { title: t('l1Detail.intlFeeCol'), dataIndex: 'international_fee', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? n.toFixed(2) : ''; } },
+                    { title: t('l1Detail.recordingDirCol'), dataIndex: 'recording_dir' },
+                    { title: t('l1Detail.recordingFeeCol'), dataIndex: 'recording_fee', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? n.toFixed(2) : ''; } },
+                    { title: t('l1Detail.crbtFeeCol'), dataIndex: 'crbt_fee', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? n.toFixed(2) : ''; } },
+                    { title: t('l1Detail.flashMonthCol'), dataIndex: 'flash_month' },
+                    { title: t('l1Detail.flashCountCol'), dataIndex: 'flash_count', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? String(Math.round(n)) : ''; } },
+                    { title: t('l1Detail.flashFeeCol'), dataIndex: 'flash_msg_fee', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? n.toFixed(2) : ''; } },
+                    { title: t('l1Detail.totalFeeCol'), dataIndex: 'total_fee', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? n.toFixed(2) : ''; } },
+                    { title: t('l1Detail.sourceCol'), dataIndex: 'ownership_source' },
+                  ],
+                  allRows,
+                );
+              }}>{t('l2Branch.exportDetail')}</Button>
+            )}
+          </div>
           <Tabs
             type="card"
             onTabClick={() => { if (!detailLoaded) fetchAllDetails(); }}
@@ -379,7 +452,23 @@ export default function L2BranchPage() {
       key: 'reimbursement',
       label: <span><FileTextOutlined /> {t('l2Branch.reimbursementTab')}</span>,
       children: (
-        <Table
+        <>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+            <Button icon={<DownloadOutlined />} onClick={() => {
+              const batch = batches.find(b => b.id === selectedBatchId);
+              const branch = selectedBranch?.name || '';
+              const data = [...reimbursementData, { key: reimbursementData.length, cost_center: t('l2Branch.reimbursementTotal'), fee_subtotal: reimbursementTotal }];
+              exportCSV(
+                `报销单_${branch}_${batch?.billing_month || ''}`,
+                [
+                  { title: t('l2Branch.reimbursementCostCenter'), dataIndex: 'cost_center' },
+                  { title: t('l2Branch.reimbursementFeeSubtotal'), dataIndex: 'fee_subtotal', render: (v: number) => v.toFixed(2) },
+                ],
+                data,
+              );
+            }}>{t('l2Branch.exportReimbursement')}</Button>
+          </div>
+          <Table
           columns={reimbursementColumns}
           dataSource={reimbursementData}
           rowKey="key"
@@ -391,7 +480,8 @@ export default function L2BranchPage() {
               <Table.Summary.Cell index={1} align="right"><strong>¥{reimbursementTotal.toFixed(2)}</strong></Table.Summary.Cell>
             </Table.Summary.Row>
           )}
-        />
+         />
+        </>
       ),
     },
   ];
@@ -399,24 +489,16 @@ export default function L2BranchPage() {
   return (
     <div>
       <Card>
-        <Row gutter={16} align="middle" style={{ marginBottom: 16 }}>
+        <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
           <Col>
-            <span style={{ marginRight: 8 }}>{t('l2Branch.selectMonth')}</span>
-            <Select style={{ width: 220 }} placeholder={t('l2Branch.selectMonthPlaceholder')} loading={loading} value={selectedBatchId} onChange={setSelectedBatchId}
-              options={[...batches].sort((a, b) => b.billing_month.localeCompare(a.billing_month)).map(b => ({ label: `${b.billing_month}`, value: b.id }))} />
-          </Col>
-          <Col>
-            <span style={{ marginRight: 8 }}>{t('l2Branch.selectBranch')}</span>
-            <Select style={{ width: 180 }} placeholder={t('l2Branch.selectBranchPlaceholder')} value={selectedBranchId} onChange={setSelectedBranchId}
-              options={branches.map(b => ({ label: b.name, value: b.id }))} />
-          </Col>
-          <Col>
-            {selectedBatchId && selectedBranchId && (
-              <Button type="primary" icon={<DownloadOutlined />}
-                onClick={() => window.open(getL2BranchDetailUrl(selectedBatchId, selectedBranchId), '_blank', 'noopener,noreferrer')}>
-                {t('l2Branch.exportL2')}
-              </Button>
-            )}
+            <Space>
+              <span>{t('l2Branch.selectMonth')}</span>
+              <Select style={{ width: 220 }} placeholder={t('l2Branch.selectMonthPlaceholder')} loading={loading} value={selectedBatchId} onChange={setSelectedBatchId}
+                options={[...batches].sort((a, b) => b.billing_month.localeCompare(a.billing_month)).map(b => ({ label: `${b.billing_month}`, value: b.id }))} />
+              <span>{t('l2Branch.selectBranch')}</span>
+              <Select style={{ width: 180 }} placeholder={t('l2Branch.selectBranchPlaceholder')} value={selectedBranchId} onChange={setSelectedBranchId}
+                options={branches.map(b => ({ label: b.name, value: b.id }))} />
+            </Space>
           </Col>
         </Row>
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Card, Table, Tag, Button, Space, Modal, Input, Select, message, Descriptions, Tabs, Form, TreeSelect } from 'antd';
+import { Card, Table, Tag, Button, Space, Modal, Input, Select, message, Descriptions, Tabs, Form, TreeSelect, Row, Col } from 'antd';
 import { CheckOutlined, UndoOutlined, DownloadOutlined, SwapOutlined, HistoryOutlined, FileTextOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import type { BillBatch } from '../types/bill';
@@ -317,159 +317,166 @@ export default function AllocationPage() {
   return (
     <div>
       <Card>
-        <Space style={{ marginBottom: 16 }}>
-          <span>{t('allocation.selectBatch')}</span>
-          <Select
-            style={{ width: 300 }}
-            placeholder={t('allocation.selectBatchPlaceholder')}
-            loading={loading}
-            value={selectedBatchId}
-            onChange={setSelectedBatchId}
-            options={batches.map(b => ({ label: `${b.batch_no} (${b.billing_month})`, value: b.id }))}
-          />
-          {selectedBatchId && results.length > 0 && (
-            <>
-              <Button type="primary" icon={<CheckOutlined />} onClick={handleConfirmAll}>
-                {t('allocation.batchConfirmAll')}
-              </Button>
-              {isAdminOrFinance && (
-                <Button icon={<SwapOutlined />} onClick={openAdjustModal}>
-                  {t('allocation.feeAdjustment')}
-                </Button>
+        <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
+          <Col>
+            <Space>
+              <span>{t('allocation.selectBatch')}</span>
+              <Select
+                style={{ width: 300 }}
+                placeholder={t('allocation.selectBatchPlaceholder')}
+                loading={loading}
+                value={selectedBatchId}
+                onChange={setSelectedBatchId}
+                options={batches.map(b => ({ label: `${b.batch_no} (${b.billing_month})`, value: b.id }))}
+              />
+            </Space>
+          </Col>
+          <Col>
+            <Space>
+              {selectedBatchId && results.length > 0 && (
+                <>
+                  <Button type="primary" icon={<CheckOutlined />} onClick={handleConfirmAll}>
+                    {t('allocation.batchConfirmAll')}
+                  </Button>
+                  {isAdminOrFinance && (
+                    <Button icon={<SwapOutlined />} onClick={openAdjustModal}>
+                      {t('allocation.feeAdjustment')}
+                    </Button>
+                  )}
+                  <Button type="primary" icon={<DownloadOutlined />}
+                    onClick={() => handleExport(getBranchBillUrl(selectedBatchId))}>
+                    {t('allocation.branchBill')}
+                  </Button>
+                </>
               )}
-              <Button icon={<DownloadOutlined />}
-                onClick={() => handleExport(getExportSummaryUrl(selectedBatchId))}>
-                {t('allocation.exportSummary')}
-              </Button>
-              <Button icon={<DownloadOutlined />}
-                onClick={() => handleExport(getExportDetailUrl(selectedBatchId))}>
-                {t('allocation.exportDetail')}
-              </Button>
-              <Button type="primary" icon={<DownloadOutlined />}
-                onClick={() => handleExport(getBranchBillUrl(selectedBatchId))}>
-                {t('allocation.branchBill')}
-              </Button>
-            </>
-          )}
-        </Space>
+            </Space>
+          </Col>
+        </Row>
 
         {selectedBatchId && (
-          <>
-            <Descriptions size="small" column={4} style={{ marginBottom: 16 }}>
-              <Descriptions.Item label={t('allocation.statsOrgs')}>{results.length}</Descriptions.Item>
-              <Descriptions.Item label={t('allocation.statsTotalFee')}>¥{totalFee.toFixed(2)}</Descriptions.Item>
-              <Descriptions.Item label={t('allocation.statsConfirmed')}>{confirmedCount}</Descriptions.Item>
-              <Descriptions.Item label={t('allocation.statsPending')}>{pendingCount}</Descriptions.Item>
-            </Descriptions>
-
-            <Tabs activeKey={activeTab} onChange={setActiveTab} items={[
-              {
-                key: 'results',
-                label: t('allocation.resultsTab'),
-                children: (
-                  <>
-                    <div style={{ marginBottom: 12, textAlign: 'right' }}>
-                      <Button icon={<DownloadOutlined />} onClick={() => {
-                        const batch = batches.find(b => b.id === selectedBatchId);
-                        exportCSV(
-                          `分摊结果_${batch?.billing_month || ''}`,
-                          [
-                            { title: t('allocation.orgName'), dataIndex: 'org_name' },
-                            { title: t('allocation.monthlyRentFee'), dataIndex: 'monthly_rent', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
-                            { title: t('allocation.callFeeCol'), dataIndex: 'call_fee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
-                            { title: t('allocation.recordingFeeCol'), dataIndex: 'recording_fee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
-                            { title: t('allocation.crbtFeeCol'), dataIndex: 'crbt_fee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
-                            { title: t('allocation.flashMsgFeeCol'), dataIndex: 'flash_msg_fee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
-                            { title: t('allocation.totalFeeCol'), dataIndex: 'total_fee', render: (v: number) => v != null ? v.toFixed(2) : '' },
-                            { title: t('allocation.phoneCountCol'), dataIndex: 'phone_count' },
-                            { title: t('allocation.confirmStatusCol'), dataIndex: 'confirm_status', render: (v: number) => CONFIRM_STATUS_MAP[v]?.label || '' },
-                          ],
-                          results as unknown as Record<string, unknown>[],
-                        );
-                      }}>{t('allocation.exportCurrentTab')}</Button>
-                    </div>
-                    <Table
-                      columns={resultColumns}
-                      dataSource={results}
-                      rowKey="id"
-                      size="small"
-                      loading={resultsLoading}
-                      pagination={{ pageSize: 20 }}
-                    />
-                  </>
-                ),
-              },
-              {
-                key: 'adjustments',
-                label: <span><HistoryOutlined /> {t('allocation.adjustmentsTab')}</span>,
-                children: (
-                  <>
-                    <div style={{ marginBottom: 12, textAlign: 'right' }}>
-                      <Button icon={<DownloadOutlined />} onClick={() => {
-                        const batch = batches.find(b => b.id === selectedBatchId);
-                        exportCSV(
-                          `调整记录_${batch?.billing_month || ''}`,
-                          [
-                            { title: t('allocation.phoneNum'), dataIndex: 'phone_number' },
-                            { title: t('allocation.fromOrg'), dataIndex: 'from_org_name' },
-                            { title: t('allocation.toOrg'), dataIndex: 'to_org_name' },
-                            { title: t('allocation.adjustAmount'), dataIndex: 'amount', render: (v: number) => v != null ? v.toFixed(2) : '' },
-                            { title: t('allocation.adjustReason'), dataIndex: 'reason' },
-                            { title: t('allocation.adjustTime'), dataIndex: 'created_at', render: (v: string) => v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '' },
-                          ],
-                          adjustments as unknown as Record<string, unknown>[],
-                        );
-                      }}>{t('allocation.exportCurrentTab')}</Button>
-                    </div>
-                    <Table
-                      columns={adjustmentColumns}
-                      dataSource={adjustments}
-                      rowKey="id"
-                      size="small"
-                      loading={adjustmentsLoading}
-                      pagination={{ pageSize: 20 }}
-                      locale={{ emptyText: t('allocation.noAdjustments') }}
-                    />
-                  </>
-                ),
-              },
-              {
-                key: 'reimbursement',
-                label: <span><FileTextOutlined /> {t('allocation.reimbursementTab')}</span>,
-                children: (
-                  <>
-                    <div style={{ marginBottom: 12, textAlign: 'right' }}>
-                      <Button icon={<DownloadOutlined />} onClick={() => {
-                        const batch = batches.find(b => b.id === selectedBatchId);
-                        const data = [...reimbursementData, { key: reimbursementData.length, cost_center: t('allocation.reimbursementTotal'), fee_subtotal: reimbursementTotal }];
-                        exportCSV(
-                          `报销单_${batch?.billing_month || ''}`,
-                          [
-                            { title: t('allocation.reimbursementCostCenter'), dataIndex: 'cost_center' },
-                            { title: t('allocation.reimbursementFeeSubtotal'), dataIndex: 'fee_subtotal', render: (v: number) => v.toFixed(2) },
-                          ],
-                          data,
-                        );
-                      }}>{t('allocation.exportCurrentTab')}</Button>
-                    </div>
-                    <Table
-                      columns={reimbursementColumns}
-                      dataSource={reimbursementData}
-                      rowKey="key"
-                      size="small"
-                      pagination={false}
-                      summary={() => (
-                        <Table.Summary.Row>
-                          <Table.Summary.Cell index={0}><strong>{t('allocation.reimbursementTotal')}</strong></Table.Summary.Cell>
-                          <Table.Summary.Cell index={1} align="right"><strong>¥{reimbursementTotal.toFixed(2)}</strong></Table.Summary.Cell>
-                        </Table.Summary.Row>
-                      )}
-                    />
-                  </>
-                ),
-              },
-            ]} />
-          </>
+          <Tabs type="card" activeKey={activeTab} onChange={setActiveTab} items={[
+            {
+              key: 'results',
+              label: t('allocation.resultsTab'),
+              children: (
+                <>
+                  <Descriptions size="small" column={4} style={{ marginBottom: 16 }}>
+                    <Descriptions.Item label={t('allocation.statsOrgs')}>{results.length}</Descriptions.Item>
+                    <Descriptions.Item label={t('allocation.statsTotalFee')}>¥{totalFee.toFixed(2)}</Descriptions.Item>
+                    <Descriptions.Item label={t('allocation.statsConfirmed')}>{confirmedCount}</Descriptions.Item>
+                    <Descriptions.Item label={t('allocation.statsPending')}>{pendingCount}</Descriptions.Item>
+                  </Descriptions>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                    <Space>
+                      <Button icon={<DownloadOutlined />}
+                        onClick={() => handleExport(getExportSummaryUrl(selectedBatchId))}>
+                        {t('allocation.exportSummary')}
+                      </Button>
+                      <Button icon={<DownloadOutlined />}
+                        onClick={() => handleExport(getExportDetailUrl(selectedBatchId))}>
+                        {t('allocation.exportDetail')}
+                      </Button>
+                    </Space>
+                    <Button icon={<DownloadOutlined />} onClick={() => {
+                      const batch = batches.find(b => b.id === selectedBatchId);
+                      exportCSV(
+                        `分摊结果_${batch?.billing_month || ''}`,
+                        [
+                          { title: t('allocation.orgName'), dataIndex: 'org_name' },
+                          { title: t('allocation.monthlyRentFee'), dataIndex: 'monthly_rent', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
+                          { title: t('allocation.callFeeCol'), dataIndex: 'call_fee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
+                          { title: t('allocation.recordingFeeCol'), dataIndex: 'recording_fee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
+                          { title: t('allocation.crbtFeeCol'), dataIndex: 'crbt_fee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
+                          { title: t('allocation.flashMsgFeeCol'), dataIndex: 'flash_msg_fee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
+                          { title: t('allocation.totalFeeCol'), dataIndex: 'total_fee', render: (v: number) => v != null ? v.toFixed(2) : '' },
+                          { title: t('allocation.phoneCountCol'), dataIndex: 'phone_count' },
+                          { title: t('allocation.confirmStatusCol'), dataIndex: 'confirm_status', render: (v: number) => CONFIRM_STATUS_MAP[v]?.label || '' },
+                        ],
+                        results as unknown as Record<string, unknown>[],
+                      );
+                    }}>{t('allocation.exportCurrentTab')}</Button>
+                  </div>
+                  <Table
+                    columns={resultColumns}
+                    dataSource={results}
+                    rowKey="id"
+                    size="small"
+                    loading={resultsLoading}
+                    pagination={{ pageSize: 20 }}
+                  />
+                </>
+              ),
+            },
+            {
+              key: 'adjustments',
+              label: <span><HistoryOutlined /> {t('allocation.adjustmentsTab')}</span>,
+              children: (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+                    <Button icon={<DownloadOutlined />} onClick={() => {
+                      const batch = batches.find(b => b.id === selectedBatchId);
+                      exportCSV(
+                        `调整记录_${batch?.billing_month || ''}`,
+                        [
+                          { title: t('allocation.phoneNum'), dataIndex: 'phone_number' },
+                          { title: t('allocation.fromOrg'), dataIndex: 'from_org_name' },
+                          { title: t('allocation.toOrg'), dataIndex: 'to_org_name' },
+                          { title: t('allocation.adjustAmount'), dataIndex: 'amount', render: (v: number) => v != null ? v.toFixed(2) : '' },
+                          { title: t('allocation.adjustReason'), dataIndex: 'reason' },
+                          { title: t('allocation.adjustTime'), dataIndex: 'created_at', render: (v: string) => v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '' },
+                        ],
+                        adjustments as unknown as Record<string, unknown>[],
+                      );
+                    }}>{t('allocation.exportCurrentTab')}</Button>
+                  </div>
+                  <Table
+                    columns={adjustmentColumns}
+                    dataSource={adjustments}
+                    rowKey="id"
+                    size="small"
+                    loading={adjustmentsLoading}
+                    pagination={{ pageSize: 20 }}
+                    locale={{ emptyText: t('allocation.noAdjustments') }}
+                  />
+                </>
+              ),
+            },
+            {
+              key: 'reimbursement',
+              label: <span><FileTextOutlined /> {t('allocation.reimbursementTab')}</span>,
+              children: (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+                    <Button icon={<DownloadOutlined />} onClick={() => {
+                      const batch = batches.find(b => b.id === selectedBatchId);
+                      const data = [...reimbursementData, { key: reimbursementData.length, cost_center: t('allocation.reimbursementTotal'), fee_subtotal: reimbursementTotal }];
+                      exportCSV(
+                        `报销单_${batch?.billing_month || ''}`,
+                        [
+                          { title: t('allocation.reimbursementCostCenter'), dataIndex: 'cost_center' },
+                          { title: t('allocation.reimbursementFeeSubtotal'), dataIndex: 'fee_subtotal', render: (v: number) => v.toFixed(2) },
+                        ],
+                        data,
+                      );
+                    }}>{t('allocation.exportCurrentTab')}</Button>
+                  </div>
+                  <Table
+                    columns={reimbursementColumns}
+                    dataSource={reimbursementData}
+                    rowKey="key"
+                    size="small"
+                    pagination={false}
+                    summary={() => (
+                      <Table.Summary.Row>
+                        <Table.Summary.Cell index={0}><strong>{t('allocation.reimbursementTotal')}</strong></Table.Summary.Cell>
+                        <Table.Summary.Cell index={1} align="right"><strong>¥{reimbursementTotal.toFixed(2)}</strong></Table.Summary.Cell>
+                      </Table.Summary.Row>
+                    )}
+                  />
+                </>
+              ),
+            },
+          ]} />
         )}
       </Card>
 

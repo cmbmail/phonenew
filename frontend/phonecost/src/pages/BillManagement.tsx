@@ -132,7 +132,7 @@ export default function BillManagement() {
       render: (v: string) => dayjs(v).format('MM-DD HH:mm'),
     },
     {
-      title: t('bill.actions'), key: 'actions', width: 280,
+      title: t('bill.actions'), key: 'actions', width: 200,
       render: (_unused: unknown, record: BillBatch) => (
         <Space size="small">
           <Button size="small" onClick={(e) => { e.stopPropagation(); setSelectedBatch(record); fetchResults(record.id); }}>
@@ -143,18 +143,6 @@ export default function BillManagement() {
               onClick={(e) => { e.stopPropagation(); handleCalculate(record.id); }} loading={calculatingId === record.id}>
               {t('bill.calculateAllocation')}
             </Button>
-          )}
-          {record.status >= 1 && (
-            <>
-              <Tooltip title={t('bill.exportSummaryTooltip')}>
-                <Button size="small" icon={<DownloadOutlined />}
-                  onClick={() => handleExport(getExportSummaryUrl(record.id))} />
-              </Tooltip>
-              <Tooltip title={t('bill.exportDetailTooltip')}>
-                <Button size="small" icon={<DownloadOutlined />}
-                  onClick={() => handleExport(getExportDetailUrl(record.id))} />
-              </Tooltip>
-            </>
           )}
         </Space>
       ),
@@ -248,9 +236,23 @@ export default function BillManagement() {
           extra={
             <Space>
               {results.length > 0 && (
-                <Button onClick={() => handleConfirmAll(selectedBatch.id)} icon={<CheckOutlined />}>
-                  {t('bill.confirmAll')}
-                </Button>
+                <>
+                  <Button onClick={() => handleConfirmAll(selectedBatch.id)} icon={<CheckOutlined />}>
+                    {t('bill.confirmAll')}
+                  </Button>
+                  {selectedBatch.status >= 1 && (
+                    <>
+                      <Button icon={<DownloadOutlined />}
+                        onClick={() => handleExport(getExportSummaryUrl(selectedBatch.id))}>
+                        {t('bill.exportSummaryTooltip')}
+                      </Button>
+                      <Button icon={<DownloadOutlined />}
+                        onClick={() => handleExport(getExportDetailUrl(selectedBatch.id))}>
+                        {t('bill.exportDetailTooltip')}
+                      </Button>
+                    </>
+                  )}
+                </>
               )}
               <Button onClick={() => fetchResults(selectedBatch.id)}>{t('bill.refresh')}</Button>
             </Space>

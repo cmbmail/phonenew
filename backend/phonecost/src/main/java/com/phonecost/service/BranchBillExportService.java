@@ -719,6 +719,8 @@ public class BranchBillExportService {
             row.put("id", d.getId());
             row.put("phone_number", d.getPhoneNumber());
             row.put("org_name", buildFullNamePath(d.getOrgId(), orgMap));
+            SysOrganization org = orgMap.get(d.getOrgId());
+            row.put("org_code", org != null && org.getCode() != null ? org.getCode() : "");
             row.put("ownership_source", d.getOwnershipSource() != null ? d.getOwnershipSource() : "");
 
             String raw = d.getRawData();

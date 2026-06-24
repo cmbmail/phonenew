@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Card, Table, Select, Button, Descriptions, Row, Col, Tabs, message, Empty, Statistic, Input } from 'antd';
+import { Card, Table, Select, Button, Descriptions, Row, Col, Tabs, message, Empty, Statistic, Input, Space } from 'antd';
 import { DownloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import type { BillBatch } from '../types/bill';
@@ -148,6 +148,7 @@ export default function L1SummaryPage() {
     { title: t('l1Detail.phoneCol'), dataIndex: 'phone_number', key: 'phone_number', width: 120, fixed: 'left' as const },
     { title: t('l1Detail.extensionCol'), dataIndex: 'extension', key: 'extension', width: 90 },
     { title: t('l1Detail.orgCol'), dataIndex: 'org_name', key: 'org_name', width: 180 },
+    { title: t('l1Detail.orgCodeCol'), dataIndex: 'org_code', key: 'org_code', width: 100 },
     { title: t('l1Detail.platformFeeCol'), dataIndex: 'platform_fee', key: 'platform_fee', width: 100, align: 'right' as const, render: money },
     { title: t('l1Detail.monthlyRentCodeCol'), dataIndex: 'monthly_rent_code', key: 'monthly_rent_code', width: 100, align: 'right' as const, render: money },
     { title: t('l1Detail.domesticDurationCol'), dataIndex: 'domestic_duration', key: 'domestic_duration', width: 110, align: 'right' as const, render: dur },
@@ -164,6 +165,7 @@ export default function L1SummaryPage() {
     { title: t('l1Detail.extensionCol'), dataIndex: 'extension', key: 'extension', width: 90 },
     { title: t('l1Detail.phoneCol'), dataIndex: 'phone_number', key: 'phone_number', width: 120 },
     { title: t('l1Detail.orgCol'), dataIndex: 'org_name', key: 'org_name', width: 200 },
+    { title: t('l1Detail.orgCodeCol'), dataIndex: 'org_code', key: 'org_code', width: 100 },
     { title: t('l1Detail.recordingDirCol'), dataIndex: 'recording_dir', key: 'recording_dir', width: 200 },
     { title: t('l1Detail.recordingFeeCol'), dataIndex: 'recording_fee', key: 'recording_fee', width: 100, align: 'right' as const, render: money },
     { title: t('l1Detail.sourceCol'), dataIndex: 'ownership_source', key: 'ownership_source', width: 70 },
@@ -174,6 +176,7 @@ export default function L1SummaryPage() {
     { title: t('l1Detail.phoneCol'), dataIndex: 'phone_number', key: 'phone_number', width: 120 },
     { title: t('l1Detail.extensionCol'), dataIndex: 'extension', key: 'extension', width: 90 },
     { title: t('l1Detail.orgCol'), dataIndex: 'org_name', key: 'org_name', width: 200 },
+    { title: t('l1Detail.orgCodeCol'), dataIndex: 'org_code', key: 'org_code', width: 100 },
     { title: t('l1Detail.crbtFeeCol'), dataIndex: 'crbt_fee', key: 'crbt_fee', width: 100, align: 'right' as const, render: money },
     { title: t('l1Detail.sourceCol'), dataIndex: 'ownership_source', key: 'ownership_source', width: 70 },
   ];
@@ -183,6 +186,7 @@ export default function L1SummaryPage() {
     { title: t('l1Detail.phoneCol'), dataIndex: 'phone_number', key: 'phone_number', width: 120 },
     { title: t('l1Detail.extensionCol'), dataIndex: 'extension', key: 'extension', width: 90 },
     { title: t('l1Detail.orgCol'), dataIndex: 'org_name', key: 'org_name', width: 200 },
+    { title: t('l1Detail.orgCodeCol'), dataIndex: 'org_code', key: 'org_code', width: 100 },
     { title: t('l1Detail.flashMonthCol'), dataIndex: 'flash_month', key: 'flash_month', width: 90 },
     { title: t('l1Detail.flashCountCol'), dataIndex: 'flash_count', key: 'flash_count', width: 90, align: 'right' as const, render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? String(Math.round(n)) : '-'; } },
     { title: t('l1Detail.flashFeeCol'), dataIndex: 'flash_msg_fee', key: 'flash_msg_fee', width: 100, align: 'right' as const, render: money },
@@ -197,7 +201,8 @@ export default function L1SummaryPage() {
       rows.filter(r =>
         String(r.phone_number || '').toLowerCase().includes(kw) ||
         String(r.extension || '').toLowerCase().includes(kw) ||
-        String(r.org_name || '').toLowerCase().includes(kw)
+        String(r.org_name || '').toLowerCase().includes(kw) ||
+        String(r.org_code || '').toLowerCase().includes(kw)
       );
     return {
       CALL: filter(detailData.CALL),
@@ -305,10 +310,10 @@ export default function L1SummaryPage() {
         <>
           {detailLoaded && (
             <Row gutter={16} style={{ marginBottom: 16 }}>
-              <Col span={6}><Statistic title={t('l1Detail.callTab')} value={detailStats.callCount} suffix={`¥${detailStats.callTotal.toFixed(2)}`} /></Col>
-              <Col span={6}><Statistic title={t('l1Detail.recordingTab')} value={detailStats.recCount} suffix={`¥${detailStats.recTotal.toFixed(2)}`} /></Col>
-              <Col span={6}><Statistic title={t('l1Detail.crbtTab')} value={detailStats.crbtCount} suffix={`¥${detailStats.crbtTotal.toFixed(2)}`} /></Col>
-              <Col span={6}><Statistic title={t('l1Detail.flashTab')} value={detailStats.flashCount} suffix={`¥${detailStats.flashTotal.toFixed(2)}`} /></Col>
+              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.callTab')} value={detailStats.callCount} suffix={`¥${detailStats.callTotal.toFixed(2)}`} /></Col>
+              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.recordingTab')} value={detailStats.recCount} suffix={`¥${detailStats.recTotal.toFixed(2)}`} /></Col>
+              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.crbtTab')} value={detailStats.crbtCount} suffix={`¥${detailStats.crbtTotal.toFixed(2)}`} /></Col>
+              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.flashTab')} value={detailStats.flashCount} suffix={`¥${detailStats.flashTotal.toFixed(2)}`} /></Col>
             </Row>
           )}
           <Input
@@ -339,15 +344,17 @@ export default function L1SummaryPage() {
       <Card>
         <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
           <Col>
-            <span style={{ marginRight: 8 }}>{t('l1Summary.selectMonth')}</span>
-            <Select
-              style={{ width: 280 }}
-              placeholder={t('l1Summary.selectMonth')}
-              loading={loading}
-              value={selectedBatchId}
-              onChange={setSelectedBatchId}
-              options={[...batches].sort((a, b) => b.billing_month.localeCompare(a.billing_month)).map(b => ({ label: `${b.billing_month} (${b.batch_no})`, value: b.id }))}
-            />
+            <Space>
+              <span>{t('l1Summary.selectMonth')}</span>
+              <Select
+                style={{ width: 280 }}
+                placeholder={t('l1Summary.selectMonth')}
+                loading={loading}
+                value={selectedBatchId}
+                onChange={setSelectedBatchId}
+                options={[...batches].sort((a, b) => b.billing_month.localeCompare(a.billing_month)).map(b => ({ label: `${b.billing_month} (${b.batch_no})`, value: b.id }))}
+              />
+            </Space>
           </Col>
           <Col>
             {selectedBatchId && (

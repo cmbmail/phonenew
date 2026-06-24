@@ -282,6 +282,7 @@ export default function DataImport() {
     <div>
       <Card>
         <Tabs
+          type="card"
           activeKey={activeTab}
           onChange={setActiveTab}
           items={[
@@ -417,10 +418,9 @@ export default function DataImport() {
                       showIcon
                       style={{ marginBottom: 16 }}
                     />
-                    <Space wrap>
-                      <div>
+                    <Space wrap size="middle">
+                      <Space direction="vertical" size={2}>
                         <Text type="secondary">{t('import.matchBillBatch')}</Text>
-                        <br />
                         <Select
                           style={{ width: 240 }}
                           placeholder={t('import.selectBillBatch')}
@@ -431,10 +431,9 @@ export default function DataImport() {
                             label: `${b.batch_no} (${b.billing_month})`,
                           }))}
                         />
-                      </div>
-                      <div>
+                      </Space>
+                      <Space direction="vertical" size={2}>
                         <Text type="secondary">{t('import.matchOwnershipBatch')}</Text>
-                        <br />
                         <Select
                           style={{ width: 240 }}
                           placeholder={t('import.matchOwnershipBatch')}
@@ -446,10 +445,9 @@ export default function DataImport() {
                             label: `${b.batch_no} (${t('import.recordCountSuffix', { count: b.total_count })})`,
                           }))}
                         />
-                      </div>
-                      <div>
+                      </Space>
+                      <Space direction="vertical" size={2}>
                         <Text type="secondary">{t('import.matchDirectoryBatch')}</Text>
-                        <br />
                         <Select
                           style={{ width: 240 }}
                           placeholder={t('import.matchDirectoryBatch')}
@@ -461,14 +459,13 @@ export default function DataImport() {
                             label: `${b.batch_no} (${t('import.recordCountSuffix', { count: b.total_count })})`,
                           }))}
                         />
-                      </div>
+                      </Space>
                       <Button
                         type="primary"
                         onClick={handleMatch}
                         loading={matching}
                         disabled={!matchBillBatchId}
                         icon={<LinkOutlined />}
-                        style={{ marginTop: 22 }}
                       >
                         {t('import.executeMatch')}
                       </Button>
