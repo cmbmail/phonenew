@@ -277,6 +277,60 @@ export default {
     fetchBranchesFailed: 'Failed to fetch branch list',
   },
 
+  // ==================== Phone Ownership ====================
+  phoneOwnership: {
+    selectBatch: 'Batch:',
+    selectBatchPlaceholder: 'Select ownership batch',
+    phoneCol: 'Phone Number',
+    descCol: 'Description',
+    exceptionCol: 'Exception',
+    orgCol: 'Organization',
+    costCenterCol: 'Cost Center',
+    matchLevelCol: 'Match Level',
+    totalCount: 'Total Phones',
+    exceptionCount: 'Exceptions',
+    searchPlaceholder: 'Search phone/description/org',
+    noData: 'No ownership data',
+    fetchFailed: 'Failed to fetch data',
+  },
+
+  // ==================== Cost Center ====================
+  costCenter: {
+    typeCol: 'Org Type',
+    nameCol: 'Name',
+    fullPathCol: 'Full Path',
+    codeCol: 'Cost Center Code',
+    parentCol: 'Parent Org',
+    typeFilter: 'Type:',
+    typeFilterPlaceholder: 'All types',
+    totalOrgs: 'Total Orgs',
+    branchCount: 'Branches',
+    deptCount: 'Departments',
+    costCenterCount: 'With Cost Center',
+    searchPlaceholder: 'Search name/code/path',
+    noData: 'No organization data',
+    fetchFailed: 'Failed to fetch data',
+    export: 'Export Mapping',
+  },
+
+  // ==================== Department Ownership ====================
+  deptOwnership: {
+    selectBatch: 'Batch:',
+    selectBatchPlaceholder: 'Select directory batch',
+    phoneCol: 'Phone Number',
+    extCol: 'Extension',
+    nameCol: 'Name',
+    deptPathCol: 'Department Path',
+    orgCol: 'Organization',
+    costCenterCol: 'Cost Center',
+    secondedCol: 'Seconded',
+    totalCount: 'Total Entries',
+    secondedCount: 'Seconded',
+    searchPlaceholder: 'Search phone/name/ext/org',
+    noData: 'No directory data',
+    fetchFailed: 'Failed to fetch data',
+  },
+
   // ==================== L3 Sub-branch Detail ====================
   l3SubBranch: {
     title: 'Sub-branch Detail',

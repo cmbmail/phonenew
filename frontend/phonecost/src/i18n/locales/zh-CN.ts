@@ -292,6 +292,60 @@ export default {
     fetchBranchesFailed: '获取分行列表失败',
   },
 
+  // ==================== Phone Ownership (号码归属) ====================
+  phoneOwnership: {
+    selectBatch: '选择批次：',
+    selectBatchPlaceholder: '选择号码归属批次',
+    phoneCol: '号码',
+    descCol: '描述',
+    exceptionCol: '例外',
+    orgCol: '归属组织',
+    costCenterCol: '成本中心',
+    matchLevelCol: '匹配级别',
+    totalCount: '号码总数',
+    exceptionCount: '例外标记',
+    searchPlaceholder: '搜索号码/描述/组织',
+    noData: '暂无号码归属数据',
+    fetchFailed: '获取数据失败',
+  },
+
+  // ==================== Cost Center (成本中心) ====================
+  costCenter: {
+    typeCol: '组织类型',
+    nameCol: '组织名称',
+    fullPathCol: '完整路径',
+    codeCol: '成本中心编码',
+    parentCol: '上级组织',
+    typeFilter: '组织类型：',
+    typeFilterPlaceholder: '全部类型',
+    totalOrgs: '组织总数',
+    branchCount: '分行数',
+    deptCount: '部门数',
+    costCenterCount: '已配置成本中心',
+    searchPlaceholder: '搜索名称/编码/路径',
+    noData: '暂无组织数据',
+    fetchFailed: '获取数据失败',
+    export: '导出对照表',
+  },
+
+  // ==================== Department Ownership (部门归属) ====================
+  deptOwnership: {
+    selectBatch: '选择批次：',
+    selectBatchPlaceholder: '选择通讯录批次',
+    phoneCol: '号码',
+    extCol: '分机',
+    nameCol: '姓名',
+    deptPathCol: '部门路径',
+    orgCol: '归属组织',
+    costCenterCol: '成本中心',
+    secondedCol: '借调',
+    totalCount: '人员总数',
+    secondedCount: '借调人员',
+    searchPlaceholder: '搜索号码/姓名/分机/组织',
+    noData: '暂无通讯录数据',
+    fetchFailed: '获取数据失败',
+  },
+
   // ==================== L3 Sub-branch Detail (二级分行) ====================
   l3SubBranch: {
     title: '二级分行',

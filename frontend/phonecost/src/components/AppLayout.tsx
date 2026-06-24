@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Layout, Menu, Avatar, Dropdown, Typography, Popconfirm, Modal, Form, Input, message } from 'antd';
-import { DashboardOutlined, FileTextOutlined, PhoneOutlined, TeamOutlined, SettingOutlined, LogoutOutlined, ImportOutlined, ToolOutlined, GlobalOutlined, BankOutlined, BranchesOutlined } from '@ant-design/icons';
+import { DashboardOutlined, FileTextOutlined, PhoneOutlined, TeamOutlined, SettingOutlined, LogoutOutlined, ImportOutlined, ToolOutlined, GlobalOutlined, BankOutlined, BranchesOutlined, DatabaseOutlined, NumberOutlined, ApartmentOutlined, UserSwitchOutlined } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
 import { getErrorMessage } from '../types/api';
@@ -32,6 +32,16 @@ const allMenuItems: MenuItemDef[] = [
     ],
   },
   { key: '/org', icon: <TeamOutlined />, label: '组织架构' },
+  {
+    key: '/base-data-group',
+    icon: <DatabaseOutlined />,
+    label: '基础数据',
+    children: [
+      { key: '/base/phone-ownership', icon: <NumberOutlined />, label: '号码归属' },
+      { key: '/base/cost-center', icon: <ApartmentOutlined />, label: '成本中心' },
+      { key: '/base/dept-ownership', icon: <UserSwitchOutlined />, label: '部门归属' },
+    ],
+  },
   { key: '/settings', icon: <SettingOutlined />, label: '系统管理', roles: [1] },
   { key: '/templates', icon: <ToolOutlined />, label: '模板管理', roles: [1] },
 ];
