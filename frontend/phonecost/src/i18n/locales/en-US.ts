@@ -186,6 +186,7 @@ export default {
     reimbursementCostCenter: 'Cost Center',
     reimbursementFeeSubtotal: 'Fee Subtotal',
     reimbursementTotal: 'Total',
+    exportCurrentTab: 'Export',
   },
   l1Summary: {
     title: 'Allocation Summary',

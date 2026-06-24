@@ -22,6 +22,7 @@ import {
 } from '../api/allocation';
 import { getOrgTree } from '../api/org';
 import { useAuthStore } from '../store/auth';
+import { exportCSV } from '../lib/export';
 import dayjs from 'dayjs';
 
 /** Build Ant Design TreeSelect data from flat org list */
@@ -366,48 +367,105 @@ export default function AllocationPage() {
                 key: 'results',
                 label: t('allocation.resultsTab'),
                 children: (
-                  <Table
-                    columns={resultColumns}
-                    dataSource={results}
-                    rowKey="id"
-                    size="small"
-                    loading={resultsLoading}
-                    pagination={{ pageSize: 20 }}
-                  />
+                  <>
+                    <div style={{ marginBottom: 12, textAlign: 'right' }}>
+                      <Button icon={<DownloadOutlined />} onClick={() => {
+                        const batch = batches.find(b => b.id === selectedBatchId);
+                        exportCSV(
+                          `分摊结果_${batch?.billing_month || ''}`,
+                          [
+                            { title: t('allocation.orgName'), dataIndex: 'org_name' },
+                            { title: t('allocation.monthlyRentFee'), dataIndex: 'monthly_rent', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
+                            { title: t('allocation.callFeeCol'), dataIndex: 'call_fee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
+                            { title: t('allocation.recordingFeeCol'), dataIndex: 'recording_fee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
+                            { title: t('allocation.crbtFeeCol'), dataIndex: 'crbt_fee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
+                            { title: t('allocation.flashMsgFeeCol'), dataIndex: 'flash_msg_fee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
+                            { title: t('allocation.totalFeeCol'), dataIndex: 'total_fee', render: (v: number) => v != null ? v.toFixed(2) : '' },
+                            { title: t('allocation.phoneCountCol'), dataIndex: 'phone_count' },
+                            { title: t('allocation.confirmStatusCol'), dataIndex: 'confirm_status', render: (v: number) => CONFIRM_STATUS_MAP[v]?.label || '' },
+                          ],
+                          results as unknown as Record<string, unknown>[],
+                        );
+                      }}>{t('allocation.exportCurrentTab')}</Button>
+                    </div>
+                    <Table
+                      columns={resultColumns}
+                      dataSource={results}
+                      rowKey="id"
+                      size="small"
+                      loading={resultsLoading}
+                      pagination={{ pageSize: 20 }}
+                    />
+                  </>
                 ),
               },
               {
                 key: 'adjustments',
                 label: <span><HistoryOutlined /> {t('allocation.adjustmentsTab')}</span>,
                 children: (
-                  <Table
-                    columns={adjustmentColumns}
-                    dataSource={adjustments}
-                    rowKey="id"
-                    size="small"
-                    loading={adjustmentsLoading}
-                    pagination={{ pageSize: 20 }}
-                    locale={{ emptyText: t('allocation.noAdjustments') }}
-                  />
+                  <>
+                    <div style={{ marginBottom: 12, textAlign: 'right' }}>
+                      <Button icon={<DownloadOutlined />} onClick={() => {
+                        const batch = batches.find(b => b.id === selectedBatchId);
+                        exportCSV(
+                          `调整记录_${batch?.billing_month || ''}`,
+                          [
+                            { title: t('allocation.phoneNum'), dataIndex: 'phone_number' },
+                            { title: t('allocation.fromOrg'), dataIndex: 'from_org_name' },
+                            { title: t('allocation.toOrg'), dataIndex: 'to_org_name' },
+                            { title: t('allocation.adjustAmount'), dataIndex: 'amount', render: (v: number) => v != null ? v.toFixed(2) : '' },
+                            { title: t('allocation.adjustReason'), dataIndex: 'reason' },
+                            { title: t('allocation.adjustTime'), dataIndex: 'created_at', render: (v: string) => v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '' },
+                          ],
+                          adjustments as unknown as Record<string, unknown>[],
+                        );
+                      }}>{t('allocation.exportCurrentTab')}</Button>
+                    </div>
+                    <Table
+                      columns={adjustmentColumns}
+                      dataSource={adjustments}
+                      rowKey="id"
+                      size="small"
+                      loading={adjustmentsLoading}
+                      pagination={{ pageSize: 20 }}
+                      locale={{ emptyText: t('allocation.noAdjustments') }}
+                    />
+                  </>
                 ),
               },
               {
                 key: 'reimbursement',
                 label: <span><FileTextOutlined /> {t('allocation.reimbursementTab')}</span>,
                 children: (
-                  <Table
-                    columns={reimbursementColumns}
-                    dataSource={reimbursementData}
-                    rowKey="key"
-                    size="small"
-                    pagination={false}
-                    summary={() => (
-                      <Table.Summary.Row>
-                        <Table.Summary.Cell index={0}><strong>{t('allocation.reimbursementTotal')}</strong></Table.Summary.Cell>
-                        <Table.Summary.Cell index={1} align="right"><strong>¥{reimbursementTotal.toFixed(2)}</strong></Table.Summary.Cell>
-                      </Table.Summary.Row>
-                    )}
-                  />
+                  <>
+                    <div style={{ marginBottom: 12, textAlign: 'right' }}>
+                      <Button icon={<DownloadOutlined />} onClick={() => {
+                        const batch = batches.find(b => b.id === selectedBatchId);
+                        const data = [...reimbursementData, { key: reimbursementData.length, cost_center: t('allocation.reimbursementTotal'), fee_subtotal: reimbursementTotal }];
+                        exportCSV(
+                          `报销单_${batch?.billing_month || ''}`,
+                          [
+                            { title: t('allocation.reimbursementCostCenter'), dataIndex: 'cost_center' },
+                            { title: t('allocation.reimbursementFeeSubtotal'), dataIndex: 'fee_subtotal', render: (v: number) => v.toFixed(2) },
+                          ],
+                          data,
+                        );
+                      }}>{t('allocation.exportCurrentTab')}</Button>
+                    </div>
+                    <Table
+                      columns={reimbursementColumns}
+                      dataSource={reimbursementData}
+                      rowKey="key"
+                      size="small"
+                      pagination={false}
+                      summary={() => (
+                        <Table.Summary.Row>
+                          <Table.Summary.Cell index={0}><strong>{t('allocation.reimbursementTotal')}</strong></Table.Summary.Cell>
+                          <Table.Summary.Cell index={1} align="right"><strong>¥{reimbursementTotal.toFixed(2)}</strong></Table.Summary.Cell>
+                        </Table.Summary.Row>
+                      )}
+                    />
+                  </>
                 ),
               },
             ]} />

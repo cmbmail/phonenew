@@ -196,6 +196,7 @@ export default {
     reimbursementCostCenter: '成本中心',
     reimbursementFeeSubtotal: '费用小计',
     reimbursementTotal: '合计',
+    exportCurrentTab: '导出',
   },
 
   // ==================== L1 Summary (分摊汇总) ====================
