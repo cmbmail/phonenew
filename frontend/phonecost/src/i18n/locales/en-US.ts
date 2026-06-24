@@ -181,9 +181,12 @@ export default {
     withdrawSuccessMsg: 'Withdrawn',
     withdrawFailedMsg: 'Withdrawal failed',
     unknown: 'Unknown',
+    // Reimbursement
+    reimbursementTab: 'Reimbursement',
+    reimbursementCostCenter: 'Cost Center',
+    reimbursementFeeSubtotal: 'Fee Subtotal',
+    reimbursementTotal: 'Total',
   },
-
-  // ==================== L1 Summary ====================
   l1Summary: {
     title: 'Allocation Summary',
     selectMonth: 'Month:',
@@ -275,9 +278,12 @@ export default {
     descTotalFee: 'Total Amount',
     fetchFailed: 'Failed to fetch data',
     fetchBranchesFailed: 'Failed to fetch branch list',
+    // Reimbursement
+    reimbursementTab: 'Reimbursement',
+    reimbursementCostCenter: 'Cost Center',
+    reimbursementFeeSubtotal: 'Fee Subtotal',
+    reimbursementTotal: 'Total',
   },
-
-  // ==================== Phone Ownership ====================
   phoneOwnership: {
     selectBatch: 'Batch:',
     selectBatchPlaceholder: 'Select ownership batch',
@@ -390,9 +396,12 @@ export default {
     descTotalFee: 'Total Amount',
     fetchFailed: 'Failed to fetch data',
     fetchSubBranchesFailed: 'Failed to fetch sub-branch list',
+    // Reimbursement
+    reimbursementTab: 'Reimbursement',
+    reimbursementCostCenter: 'Cost Center',
+    reimbursementFeeSubtotal: 'Fee Subtotal',
+    reimbursementTotal: 'Total',
   },
-
-  // ==================== Organization ====================
   org: {
     importOrg: 'Import Organization',
     startImport: 'Start Import',

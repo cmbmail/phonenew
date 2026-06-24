@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Card, Table, Select, Button, Descriptions, Row, Col, Tabs, message, Empty, Tag, Statistic, Input } from 'antd';
-import { DownloadOutlined, SearchOutlined } from '@ant-design/icons';
+import { DownloadOutlined, SearchOutlined, FileTextOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import type { BillBatch } from '../types/bill';
 import type { AllocationResult } from '../types/allocation';
@@ -281,6 +281,24 @@ export default function L2BranchPage() {
     );
   };
 
+  // ========== 报销单数据 ==========
+  const reimbursementData = useMemo(() => {
+    return childSummary
+      .filter(c => c.child.code && c.child.type !== 2 && c.child.type !== 3)
+      .map((c, i) => ({ key: i, cost_center: c.child.code!, fee_subtotal: c.totalFee }))
+      .sort((a, b) => a.cost_center.localeCompare(b.cost_center));
+  }, [childSummary]);
+
+  const reimbursementTotal = reimbursementData.reduce((s, r) => s + r.fee_subtotal, 0);
+
+  const reimbursementColumns = [
+    { title: t('l2Branch.reimbursementCostCenter'), dataIndex: 'cost_center', key: 'cost_center', width: 200 },
+    {
+      title: t('l2Branch.reimbursementFeeSubtotal'), dataIndex: 'fee_subtotal', key: 'fee_subtotal', width: 150, align: 'right' as const,
+      render: (v: number) => <strong>¥{v.toFixed(2)}</strong>,
+    },
+  ];
+
   const mainTabs = [
     {
       key: 'summary',
@@ -355,6 +373,25 @@ export default function L2BranchPage() {
             ]}
           />
         </>
+      ),
+    },
+    {
+      key: 'reimbursement',
+      label: <span><FileTextOutlined /> {t('l2Branch.reimbursementTab')}</span>,
+      children: (
+        <Table
+          columns={reimbursementColumns}
+          dataSource={reimbursementData}
+          rowKey="key"
+          size="small"
+          pagination={false}
+          summary={() => (
+            <Table.Summary.Row>
+              <Table.Summary.Cell index={0}><strong>{t('l2Branch.reimbursementTotal')}</strong></Table.Summary.Cell>
+              <Table.Summary.Cell index={1} align="right"><strong>¥{reimbursementTotal.toFixed(2)}</strong></Table.Summary.Cell>
+            </Table.Summary.Row>
+          )}
+        />
       ),
     },
   ];

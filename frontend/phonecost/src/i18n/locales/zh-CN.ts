@@ -191,6 +191,11 @@ export default {
     withdrawSuccessMsg: '撤回成功',
     withdrawFailedMsg: '撤回失败',
     unknown: '未知',
+    // Reimbursement
+    reimbursementTab: '报销单',
+    reimbursementCostCenter: '成本中心',
+    reimbursementFeeSubtotal: '费用小计',
+    reimbursementTotal: '合计',
   },
 
   // ==================== L1 Summary (分摊汇总) ====================
@@ -290,6 +295,11 @@ export default {
     descTotalFee: '费用合计',
     fetchFailed: '获取数据失败',
     fetchBranchesFailed: '获取分行列表失败',
+    // Reimbursement
+    reimbursementTab: '报销单',
+    reimbursementCostCenter: '成本中心',
+    reimbursementFeeSubtotal: '费用小计',
+    reimbursementTotal: '合计',
   },
 
   // ==================== Phone Ownership (号码归属) ====================
@@ -406,6 +416,11 @@ export default {
     descTotalFee: '费用合计',
     fetchFailed: '获取数据失败',
     fetchSubBranchesFailed: '获取二级分行列表失败',
+    // Reimbursement
+    reimbursementTab: '报销单',
+    reimbursementCostCenter: '成本中心',
+    reimbursementFeeSubtotal: '费用小计',
+    reimbursementTotal: '合计',
   },
 
   // ==================== Organization ====================

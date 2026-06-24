@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Card, Table, Tag, Button, Space, Modal, Input, Select, message, Descriptions, Tabs, Form, TreeSelect } from 'antd';
-import { CheckOutlined, UndoOutlined, DownloadOutlined, SwapOutlined, HistoryOutlined } from '@ant-design/icons';
+import { CheckOutlined, UndoOutlined, DownloadOutlined, SwapOutlined, HistoryOutlined, FileTextOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import type { BillBatch } from '../types/bill';
 import type { AllocationResult, AllocationAdjustment } from '../types/allocation';
@@ -198,6 +198,32 @@ export default function AllocationPage() {
     setAdjustModalOpen(true);
   };
 
+  // ========== 报销单数据 ==========
+  const reimbursementData = useMemo(() => {
+    const orgCodeMap = new Map<number, string>();
+    orgList.forEach(o => { if (o.code) orgCodeMap.set(o.id, o.code); });
+    const m = new Map<string, number>();
+    results.forEach(r => {
+      if (r.org_id === -1) return;
+      const code = orgCodeMap.get(r.org_id);
+      if (!code) return;
+      m.set(code, (m.get(code) || 0) + (r.total_fee || 0));
+    });
+    return [...m.entries()]
+      .map(([code, total], i) => ({ key: i, cost_center: code, fee_subtotal: total }))
+      .sort((a, b) => a.cost_center.localeCompare(b.cost_center));
+  }, [results, orgList]);
+
+  const reimbursementTotal = reimbursementData.reduce((s, r) => s + r.fee_subtotal, 0);
+
+  const reimbursementColumns = [
+    { title: t('allocation.reimbursementCostCenter'), dataIndex: 'cost_center', key: 'cost_center', width: 200 },
+    {
+      title: t('allocation.reimbursementFeeSubtotal'), dataIndex: 'fee_subtotal', key: 'fee_subtotal', width: 150, align: 'right' as const,
+      render: (v: number) => <strong>¥{v.toFixed(2)}</strong>,
+    },
+  ];
+
   const resultColumns = [
     {
       title: t('allocation.orgName'), dataIndex: 'org_name', key: 'org_name', width: 180,
@@ -362,6 +388,25 @@ export default function AllocationPage() {
                     loading={adjustmentsLoading}
                     pagination={{ pageSize: 20 }}
                     locale={{ emptyText: t('allocation.noAdjustments') }}
+                  />
+                ),
+              },
+              {
+                key: 'reimbursement',
+                label: <span><FileTextOutlined /> {t('allocation.reimbursementTab')}</span>,
+                children: (
+                  <Table
+                    columns={reimbursementColumns}
+                    dataSource={reimbursementData}
+                    rowKey="key"
+                    size="small"
+                    pagination={false}
+                    summary={() => (
+                      <Table.Summary.Row>
+                        <Table.Summary.Cell index={0}><strong>{t('allocation.reimbursementTotal')}</strong></Table.Summary.Cell>
+                        <Table.Summary.Cell index={1} align="right"><strong>¥{reimbursementTotal.toFixed(2)}</strong></Table.Summary.Cell>
+                      </Table.Summary.Row>
+                    )}
                   />
                 ),
               },
