@@ -271,6 +271,32 @@ public class AllocationController {
     }
 
     /**
+     * L2 一级分行分摊明细数据（JSON，供前端分摊明细4个Tab展示）
+     * 只返回该一级分行下属组织的明细
+     */
+    @GetMapping("/l2-detail")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getL2DetailData(
+            @RequestParam Long batchId,
+            @RequestParam Long branchOrgId,
+            @RequestParam String sheetType) {
+        List<Map<String, Object>> data = branchBillExportService.getL2DetailData(batchId, branchOrgId, sheetType);
+        return ResponseEntity.ok(ApiResponse.ok(data));
+    }
+
+    /**
+     * L3 二级分行分摊明细数据（JSON，供前端分摊明细4个Tab展示）
+     * 只返回该二级分行下属组织的明细
+     */
+    @GetMapping("/l3-detail")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getL3DetailData(
+            @RequestParam Long batchId,
+            @RequestParam Long subBranchOrgId,
+            @RequestParam String sheetType) {
+        List<Map<String, Object>> data = branchBillExportService.getL3DetailData(batchId, subBranchOrgId, sheetType);
+        return ResponseEntity.ok(ApiResponse.ok(data));
+    }
+
+    /**
      * L1 分摊汇总：集团 → 一级分行
      * 每个一级分行一行，汇总其所有下属费用
      */

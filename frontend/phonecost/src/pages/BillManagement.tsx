@@ -26,7 +26,7 @@ export default function BillManagement() {
   const [selectedBatch, setSelectedBatch] = useState<BillBatch | null>(null);
   const [results, setResults] = useState<AllocationResult[]>([]);
   const [resultsLoading, setResultsLoading] = useState(false);
-  const [calculating, setCalculating] = useState(false);
+  const [calculatingId, setCalculatingId] = useState<number | null>(null);
   const [withdrawModal, setWithdrawModal] = useState<{ open: boolean; result?: AllocationResult }>({ open: false });
   const [withdrawReason, setWithdrawReason] = useState('');
 
@@ -57,16 +57,20 @@ export default function BillManagement() {
   }, [t]);
 
   const handleCalculate = async (batchId: number) => {
-    setCalculating(true);
+    setCalculatingId(batchId);
     try {
       const res = await calculateAllocation(batchId);
       message.success(t('bill.calculateSuccess', { orgCount: res.org_count }));
-      fetchBatches();
+      const updatedBatches = await getBillBatches();
+      setBatches(updatedBatches);
+      // Update selectedBatch to reflect new status
+      const updated = updatedBatches.find(b => b.id === batchId);
+      if (updated) setSelectedBatch(updated);
       fetchResults(batchId);
     } catch (err) {
       message.error(getErrorMessage(err, t('bill.calcFailed')));
     } finally {
-      setCalculating(false);
+      setCalculatingId(null);
     }
   };
 
@@ -107,7 +111,7 @@ export default function BillManagement() {
   };
 
   const handleExport = (url: string) => {
-    window.open(url, '_blank');
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   const batchColumns = [
@@ -117,7 +121,7 @@ export default function BillManagement() {
     { title: t('bill.count'), dataIndex: 'total_count', key: 'total_count', width: 70 },
     {
       title: t('bill.totalAmountCol'), dataIndex: 'total_amount', key: 'total_amount', width: 110,
-      render: (v: number) => v != null ? `¥${v.toFixed(2)}` : '-',
+      render: (v: unknown) => v != null ? `¥${Number(v).toFixed(2)}` : '-',
     },
     {
       title: t('bill.status'), dataIndex: 'status', key: 'status', width: 90,
@@ -131,12 +135,12 @@ export default function BillManagement() {
       title: t('bill.actions'), key: 'actions', width: 280,
       render: (_unused: unknown, record: BillBatch) => (
         <Space size="small">
-          <Button size="small" onClick={() => { setSelectedBatch(record); fetchResults(record.id); }}>
+          <Button size="small" onClick={(e) => { e.stopPropagation(); setSelectedBatch(record); fetchResults(record.id); }}>
             {t('bill.viewAllocation')}
           </Button>
           {record.status === 0 && (
             <Button size="small" type="primary" icon={<CalculatorOutlined />}
-              onClick={() => handleCalculate(record.id)} loading={calculating}>
+              onClick={(e) => { e.stopPropagation(); handleCalculate(record.id); }} loading={calculatingId === record.id}>
               {t('bill.calculateAllocation')}
             </Button>
           )}
@@ -166,27 +170,27 @@ export default function BillManagement() {
     { title: t('bill.phoneCount'), dataIndex: 'phone_count', key: 'phone_count', width: 80 },
     {
       title: t('bill.monthlyRent'), dataIndex: 'monthly_rent', key: 'monthly_rent', width: 90,
-      render: (v: number) => v ? `¥${v.toFixed(2)}` : '-',
+      render: (v: number) => v != null && v !== 0 ? `¥${v.toFixed(2)}` : '-',
     },
     {
       title: t('bill.callFee'), dataIndex: 'call_fee', key: 'call_fee', width: 90,
-      render: (v: number) => v ? `¥${v.toFixed(2)}` : '-',
+      render: (v: number) => v != null && v !== 0 ? `¥${v.toFixed(2)}` : '-',
     },
     {
       title: t('bill.recordingFee'), dataIndex: 'recording_fee', key: 'recording_fee', width: 90,
-      render: (v: number) => v ? `¥${v.toFixed(2)}` : '-',
+      render: (v: number) => v != null && v !== 0 ? `¥${v.toFixed(2)}` : '-',
     },
     {
       title: t('bill.crbtFee'), dataIndex: 'crbt_fee', key: 'crbt_fee', width: 90,
-      render: (v: number) => v ? `¥${v.toFixed(2)}` : '-',
+      render: (v: number) => v != null && v !== 0 ? `¥${v.toFixed(2)}` : '-',
     },
     {
       title: t('bill.flashMsgFee'), dataIndex: 'flash_msg_fee', key: 'flash_msg_fee', width: 90,
-      render: (v: number) => v ? `¥${v.toFixed(2)}` : '-',
+      render: (v: number) => v != null && v !== 0 ? `¥${v.toFixed(2)}` : '-',
     },
     {
       title: t('bill.totalFee'), dataIndex: 'total_fee', key: 'total_fee', width: 100,
-      render: (v: number) => <strong>¥{v?.toFixed(2)}</strong>,
+      render: (v: number) => <strong>{v != null ? `¥${v.toFixed(2)}` : '-'}</strong>,
     },
     {
       title: t('bill.confirmStatus'), dataIndex: 'confirm_status', key: 'confirm_status', width: 90,

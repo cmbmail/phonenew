@@ -34,10 +34,10 @@ const Login: React.FC = () => {
         <Title level={3} style={{ textAlign: 'center', marginBottom: 24 }}>{t('login.title')}</Title>
         <Form form={form} onFinish={onFinish} size="large">
           <Form.Item name="username" rules={[{ required: true, message: t('login.usernameRequired') }]}>
-            <Input prefix={<UserOutlined />} placeholder={t('login.usernamePlaceholder')} />
+            <Input prefix={<UserOutlined />} placeholder={t('login.usernamePlaceholder')} autoComplete="username" />
           </Form.Item>
           <Form.Item name="password" rules={[{ required: true, message: t('login.passwordRequired') }]}>
-            <Input.Password prefix={<LockOutlined />} placeholder={t('login.passwordPlaceholder')} />
+            <Input.Password prefix={<LockOutlined />} placeholder={t('login.passwordPlaceholder')} autoComplete="current-password" />
           </Form.Item>
           <Form.Item><Button type="primary" htmlType="submit" loading={loading} block>{t('login.loginBtn')}</Button></Form.Item>
         </Form>

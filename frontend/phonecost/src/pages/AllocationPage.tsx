@@ -22,6 +22,7 @@ import {
 } from '../api/allocation';
 import { getOrgTree } from '../api/org';
 import { useAuthStore } from '../store/auth';
+import dayjs from 'dayjs';
 
 /** Build Ant Design TreeSelect data from flat org list */
 function buildTreeData(orgs: Organization[]): TreeNode[] {
@@ -125,12 +126,6 @@ export default function AllocationPage() {
     }
   }, [selectedBatchId, fetchResults, fetchAdjustments, activeTab]);
 
-  useEffect(() => {
-    if (selectedBatchId && activeTab === 'adjustments') {
-      fetchAdjustments(selectedBatchId);
-    }
-  }, [selectedBatchId, activeTab, fetchAdjustments]);
-
   const treeData = useMemo(() => buildTreeData(orgList), [orgList]);
 
   const handleConfirm = async (batchId: number, orgId: number) => {
@@ -171,7 +166,7 @@ export default function AllocationPage() {
   };
 
   const handleExport = (url: string) => {
-    window.open(url, '_blank');
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   const handleAdjust = async () => {
@@ -191,7 +186,7 @@ export default function AllocationPage() {
       fetchResults(selectedBatchId!);
       if (activeTab === 'adjustments') fetchAdjustments(selectedBatchId!);
     } catch (err) {
-      if (err instanceof Error && 'errorFields' in err) return; // form validation error
+      if (typeof err === 'object' && err !== null && 'errorFields' in err) return; // form validation error
       message.error(getErrorMessage(err, t('allocation.adjustFailed')));
     } finally {
       setAdjustSubmitting(false);
@@ -211,27 +206,27 @@ export default function AllocationPage() {
     },
     {
       title: t('allocation.monthlyRentFee'), dataIndex: 'monthly_rent', key: 'monthly_rent', width: 100,
-      render: (v: number) => v ? `¥${v.toFixed(2)}` : '-',
+      render: (v: number) => v != null && v !== 0 ? `¥${v.toFixed(2)}` : '-',
     },
     {
       title: t('allocation.callFeeCol'), dataIndex: 'call_fee', key: 'call_fee', width: 100,
-      render: (v: number) => v ? `¥${v.toFixed(2)}` : '-',
+      render: (v: number) => v != null && v !== 0 ? `¥${v.toFixed(2)}` : '-',
     },
     {
       title: t('allocation.recordingFeeCol'), dataIndex: 'recording_fee', key: 'recording_fee', width: 100,
-      render: (v: number) => v ? `¥${v.toFixed(2)}` : '-',
+      render: (v: number) => v != null && v !== 0 ? `¥${v.toFixed(2)}` : '-',
     },
     {
       title: t('allocation.crbtFeeCol'), dataIndex: 'crbt_fee', key: 'crbt_fee', width: 100,
-      render: (v: number) => v ? `¥${v.toFixed(2)}` : '-',
+      render: (v: number) => v != null && v !== 0 ? `¥${v.toFixed(2)}` : '-',
     },
     {
       title: t('allocation.flashMsgFeeCol'), dataIndex: 'flash_msg_fee', key: 'flash_msg_fee', width: 100,
-      render: (v: number) => v ? `¥${v.toFixed(2)}` : '-',
+      render: (v: number) => v != null && v !== 0 ? `¥${v.toFixed(2)}` : '-',
     },
     {
       title: t('allocation.totalFeeCol'), dataIndex: 'total_fee', key: 'total_fee', width: 110,
-      render: (v: number) => <strong>¥{v?.toFixed(2)}</strong>,
+      render: (v: number) => <strong>{v != null ? `¥${v.toFixed(2)}` : '-'}</strong>,
     },
     {
       title: t('allocation.phoneCountCol'), dataIndex: 'phone_count', key: 'phone_count', width: 70,
@@ -276,7 +271,7 @@ export default function AllocationPage() {
     },
     {
       title: t('allocation.adjustAmount'), dataIndex: 'amount', key: 'amount', width: 110,
-      render: (v: number) => <strong>¥{v?.toFixed(2)}</strong>,
+      render: (v: number) => <strong>{v != null ? `¥${v.toFixed(2)}` : '-'}</strong>,
     },
     {
       title: t('allocation.adjustReason'), dataIndex: 'reason', key: 'reason', width: 200,
@@ -284,6 +279,7 @@ export default function AllocationPage() {
     },
     {
       title: t('allocation.adjustTime'), dataIndex: 'created_at', key: 'created_at', width: 160,
+      render: (v: string) => v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '-',
     },
   ];
 

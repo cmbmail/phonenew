@@ -25,6 +25,7 @@ export default function L1SummaryPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailLoaded, setDetailLoaded] = useState(false);
   const [detailSearch, setDetailSearch] = useState('');
+  const [detailPageSize, setDetailPageSize] = useState(25);
 
   const fetchBatches = useCallback(async () => {
     setLoading(true);
@@ -84,11 +85,11 @@ export default function L1SummaryPage() {
 
   const money = (v: unknown) => {
     const n = Number(v);
-    return n ? `¥${n.toFixed(2)}` : '-';
+    return !isNaN(n) && n !== 0 ? `¥${n.toFixed(2)}` : '-';
   };
   const dur = (v: unknown) => {
     const n = Number(v);
-    return n ? n.toFixed(1) : '-';
+    return !isNaN(n) && n !== 0 ? n.toFixed(1) : '-';
   };
 
   // ========== 分摊汇总 ==========
@@ -183,7 +184,7 @@ export default function L1SummaryPage() {
     { title: t('l1Detail.extensionCol'), dataIndex: 'extension', key: 'extension', width: 90 },
     { title: t('l1Detail.orgCol'), dataIndex: 'org_name', key: 'org_name', width: 200 },
     { title: t('l1Detail.flashMonthCol'), dataIndex: 'flash_month', key: 'flash_month', width: 90 },
-    { title: t('l1Detail.flashCountCol'), dataIndex: 'flash_count', key: 'flash_count', width: 90, align: 'right' as const, render: dur },
+    { title: t('l1Detail.flashCountCol'), dataIndex: 'flash_count', key: 'flash_count', width: 90, align: 'right' as const, render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? String(Math.round(n)) : '-'; } },
     { title: t('l1Detail.flashFeeCol'), dataIndex: 'flash_msg_fee', key: 'flash_msg_fee', width: 100, align: 'right' as const, render: money },
     { title: t('l1Detail.sourceCol'), dataIndex: 'ownership_source', key: 'ownership_source', width: 70 },
   ];
@@ -201,7 +202,7 @@ export default function L1SummaryPage() {
     return {
       CALL: filter(detailData.CALL),
       RECORDING: filter(detailData.RECORDING),
-      ["CRBT"]: filter(detailData["CRBT"]),
+      CRBT: filter(detailData["CRBT"]),
       FLASH_MSG: filter(detailData.FLASH_MSG),
     } as Record<SheetType, Record<string, unknown>[]>;
   }, [detailData, detailSearch]);
@@ -241,7 +242,7 @@ export default function L1SummaryPage() {
         rowKey="id"
         size="small"
         loading={detailLoading}
-        pagination={{ pageSize: 100, showSizeChanger: true, showTotal: (total) => `${total} 条` }}
+        pagination={{ pageSize: detailPageSize, showSizeChanger: true, pageSizeOptions: ['25', '50', '100'], onShowSizeChange: (_current, size) => setDetailPageSize(size), showTotal: (total) => t('common.paginationTotal', { total }) }}
         scroll={{ x: scrollX }}
       />
     );
@@ -320,7 +321,6 @@ export default function L1SummaryPage() {
           />
           <Tabs
             type="card"
-            onChange={() => fetchAllDetails()}
             onTabClick={() => { if (!detailLoaded) fetchAllDetails(); }}
             items={[
               { key: 'CALL', label: t('l1Detail.callTab'), children: renderDetailTab('CALL') },
@@ -342,19 +342,17 @@ export default function L1SummaryPage() {
             <span style={{ marginRight: 8 }}>{t('l1Summary.selectMonth')}</span>
             <Select
               style={{ width: 280 }}
-              placeholder="选择月份"
+              placeholder={t('l1Summary.selectMonth')}
               loading={loading}
               value={selectedBatchId}
               onChange={setSelectedBatchId}
-              options={batches
-                .sort((a, b) => b.billing_month.localeCompare(a.billing_month))
-                .map(b => ({ label: `${b.billing_month} (${b.batch_no})`, value: b.id }))}
+              options={[...batches].sort((a, b) => b.billing_month.localeCompare(a.billing_month)).map(b => ({ label: `${b.billing_month} (${b.batch_no})`, value: b.id }))}
             />
           </Col>
           <Col>
             {selectedBatchId && (
               <Button type="primary" icon={<DownloadOutlined />}
-                onClick={() => window.open(getL1SummaryUrl(selectedBatchId), '_blank')}>
+                onClick={() => window.open(getL1SummaryUrl(selectedBatchId), '_blank', 'noopener,noreferrer')}>
                 {t('l1Summary.exportL1')}
               </Button>
             )}

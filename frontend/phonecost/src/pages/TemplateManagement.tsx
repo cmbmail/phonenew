@@ -122,8 +122,7 @@ export default function TemplateManagement() {
       const data = await getTemplates();
       setTemplates(data);
     } catch {
-      // Use a generic error since template-specific fetch error isn't defined
-      message.error(t('template.activateFailed'));
+      message.error(t('template.fetchFailed'));
     } finally {
       setLoading(false);
     }
@@ -195,7 +194,7 @@ export default function TemplateManagement() {
       setModalOpen(false);
       fetchTemplates();
     } catch (err) {
-      if (err instanceof Error && 'errorFields' in err) return; // form validation error
+      if (typeof err === 'object' && err !== null && 'errorFields' in err) return; // form validation error
       message.error(getErrorMessage(err, t('common.failed')));
     } finally {
       setSaving(false);
@@ -244,7 +243,7 @@ export default function TemplateManagement() {
   const handleDuplicate = (record: BillTemplate) => {
     setEditingId(null);
     form.setFieldsValue({
-      name: `${record.name} (副本)`,
+      name: `${record.name} (${t('template.copySuffix')})`,
       operator: record.operator || 'CHINA_TELECOM',
       month_pattern: record.month_pattern || '',
       description: record.description || '',

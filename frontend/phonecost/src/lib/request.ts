@@ -6,6 +6,26 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
 const instance: AxiosInstance = axios.create({ baseURL: API_BASE_URL, timeout: 30000, headers: { 'Content-Type': 'application/json' } });
 
+// Refresh lock: prevent concurrent refresh requests
+let refreshPromise: Promise<string | null> | null = null;
+
+function getOrStartRefresh(): Promise<string | null> {
+  if (refreshPromise) return refreshPromise;
+  const refreshToken = useAuthStore.getState().refreshToken;
+  if (!refreshToken) return Promise.resolve(null);
+  refreshPromise = axios.post(`${API_BASE_URL}/auth/refresh`, { refresh_token: refreshToken })
+    .then(({ data }) => {
+      if (data.code === 200) {
+        useAuthStore.getState().setToken(data.data.access_token);
+        return data.data.access_token as string;
+      }
+      return null;
+    })
+    .catch(() => null)
+    .finally(() => { refreshPromise = null; });
+  return refreshPromise;
+}
+
 instance.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const token = useAuthStore.getState().token;
   if (token && config.headers) { config.headers.Authorization = `Bearer ${token}`; }
@@ -18,16 +38,10 @@ instance.interceptors.response.use(
     const originalRequest = error.config;
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
-      const refreshToken = useAuthStore.getState().refreshToken;
-      if (refreshToken) {
-        try {
-          const { data } = await axios.post(`${API_BASE_URL}/auth/refresh`, { refresh_token: refreshToken });
-          if (data.code === 200) {
-            useAuthStore.getState().setToken(data.data.access_token);
-            originalRequest.headers.Authorization = `Bearer ${data.data.access_token}`;
-            return instance(originalRequest);
-          }
-        } catch { /* refresh failed */ }
+      const newToken = await getOrStartRefresh();
+      if (newToken) {
+        originalRequest.headers.Authorization = `Bearer ${newToken}`;
+        return instance(originalRequest);
       }
       useAuthStore.getState().logout();
       window.location.href = '/login';

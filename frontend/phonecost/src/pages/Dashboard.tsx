@@ -1,17 +1,21 @@
 import { useQuery } from '@tanstack/react-query';
-import { Card, Row, Col, Statistic, Typography } from 'antd';
-import { TeamOutlined, UserOutlined, FileTextOutlined, DollarOutlined, CheckCircleOutlined, ClockCircleOutlined } from '@ant-design/icons';
+import { Card, Row, Col, Statistic, Typography, Alert } from 'antd';
+import { TeamOutlined, UserOutlined, FileTextOutlined, MoneyCollectOutlined, CheckCircleOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import { getDashboardStats } from '../api/dashboard';
 import { useTranslation } from 'react-i18next';
 
 const { Title } = Typography;
 
 export default function Dashboard() {
-  const { data: stats, isLoading } = useQuery({
+  const { data: stats, isLoading, isError } = useQuery({
     queryKey: ['dashboard-stats'],
     queryFn: getDashboardStats,
   });
   const { t } = useTranslation();
+
+  if (isError) {
+    return <Alert type="error" message={t('dashboard.fetchFailed')} showIcon />;
+  }
 
   return (
     <div>
@@ -34,7 +38,7 @@ export default function Dashboard() {
         </Col>
         <Col xs={12} sm={8} md={4}>
           <Card loading={isLoading}>
-            <Statistic title={t('dashboard.totalAmount')} value={stats?.total_amount ?? 0} prefix={<DollarOutlined />} precision={2} />
+            <Statistic title={t('dashboard.totalAmount')} value={stats?.total_amount ?? 0} prefix={<MoneyCollectOutlined />} precision={2} />
           </Card>
         </Col>
         <Col xs={12} sm={8} md={4}>

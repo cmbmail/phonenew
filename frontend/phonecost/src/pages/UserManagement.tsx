@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Card,
   Table,
@@ -63,7 +63,7 @@ export default function UserManagement() {
 
   useEffect(() => { fetchUsers(); fetchOrgs(); }, [fetchUsers, fetchOrgs]);
 
-  const orgNameMap = new Map(orgList.map((o) => [o.id, o.name]));
+  const orgNameMap = useMemo(() => new Map(orgList.map((o) => [o.id, o.name])), [orgList]);
 
   const handleAdd = async () => {
     try {
@@ -74,7 +74,7 @@ export default function UserManagement() {
       addForm.resetFields();
       fetchUsers();
     } catch (err) {
-      message.error(getErrorMessage(err, '操作失败'));
+      message.error(getErrorMessage(err, t('common.failed')));
     }
   };
 
@@ -89,7 +89,7 @@ export default function UserManagement() {
       editForm.resetFields();
       fetchUsers();
     } catch (err) {
-      message.error(getErrorMessage(err, '操作失败'));
+      message.error(getErrorMessage(err, t('common.failed')));
     }
   };
 
@@ -113,7 +113,7 @@ export default function UserManagement() {
       setEditingUser(null);
       resetForm.resetFields();
     } catch (err) {
-      message.error(getErrorMessage(err, '操作失败'));
+      message.error(getErrorMessage(err, t('common.failed')));
     }
   };
 
@@ -202,7 +202,7 @@ export default function UserManagement() {
           <Form.Item name="username" label={t('user.formUsername')} rules={[{ required: true, message: t('user.formUsernameRequired') }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="password" label={t('user.formPassword')} rules={[{ required: true, message: t('user.formPasswordRequired') }]}>
+          <Form.Item name="password" label={t('user.formPassword')} rules={[{ required: true, message: t('user.formPasswordRequired') }, { min: 6, message: t('user.formNewPwdMin6') }]}>
             <Input.Password />
           </Form.Item>
           <Form.Item name="real_name" label={t('user.formRealName')} rules={[{ required: true, message: t('user.formRealNameRequired') }]}>

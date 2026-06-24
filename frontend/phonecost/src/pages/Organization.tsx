@@ -8,6 +8,7 @@ import {
   Upload,
   Button,
   Input,
+  InputNumber,
   Select,
   Space,
   Row,
@@ -108,7 +109,7 @@ export default function OrganizationPage() {
       addForm.resetFields();
       fetchOrgTree();
     } catch (err) {
-      const msg = getErrorMessage(err, '操作失败');
+      const msg = getErrorMessage(err, t('common.failed'));
       message.error(msg);
     }
   };
@@ -125,7 +126,7 @@ export default function OrganizationPage() {
       message.success(t('org.updateSuccess'));
       fetchOrgTree();
     } catch (err) {
-      const msg = getErrorMessage(err, '操作失败');
+      const msg = getErrorMessage(err, t('common.failed'));
       message.error(msg);
     }
   };
@@ -148,7 +149,8 @@ export default function OrganizationPage() {
     }
     setImporting(true);
     try {
-      const file = importFileList[0].originFileObj!;
+      const file = importFileList[0].originFileObj;
+      if (!file) { message.warning(t('org.selectFileFirst')); return; }
       const result = await importOrg(file);
       message.success(t('org.importSuccess', { total: result.total, created: result.created, skipped: result.skipped }));
       setImportFileList([]);
@@ -306,7 +308,7 @@ export default function OrganizationPage() {
             />
           </Form.Item>
           <Form.Item name="sort_order" label={t('org.sortOrder')}>
-            <Input type="number" placeholder="0" />
+            <InputNumber placeholder={0} style={{ width: '100%' }} />
           </Form.Item>
         </Form>
       </Modal>

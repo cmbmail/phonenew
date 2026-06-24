@@ -46,6 +46,12 @@ export const getL1SummaryData = (batchId: number) =>
 export const getL1DetailData = (batchId: number, sheetType: string) =>
   apiGet<Record<string, unknown>[]>(`/allocation/l1-detail?batchId=${batchId}&sheetType=${sheetType}`);
 
+export const getL2DetailData = (batchId: number, branchOrgId: number, sheetType: string) =>
+  apiGet<Record<string, unknown>[]>(`/allocation/l2-detail?batchId=${batchId}&branchOrgId=${branchOrgId}&sheetType=${sheetType}`);
+
+export const getL3DetailData = (batchId: number, subBranchOrgId: number, sheetType: string) =>
+  apiGet<Record<string, unknown>[]>(`/allocation/l3-detail?batchId=${batchId}&subBranchOrgId=${subBranchOrgId}&sheetType=${sheetType}`);
+
 // ==================== Export URLs ====================
 
 /**

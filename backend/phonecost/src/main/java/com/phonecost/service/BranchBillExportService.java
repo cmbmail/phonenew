@@ -669,8 +669,51 @@ public class BranchBillExportService {
                 .collect(Collectors.toList());
 
         Map<Long, SysOrganization> orgMap = buildOrgMap();
-        List<Map<String, Object>> rows = new ArrayList<>();
+        return buildDetailRows(details, sheetType, orgMap);
+    }
 
+    /**
+     * Returns bill_detail rows for a given batchId, branchOrgId and sheetType,
+     * filtered to only include details belonging to the branch's org subtree.
+     */
+    public List<Map<String, Object>> getL2DetailData(Long batchId, Long branchOrgId, String sheetType) {
+        Map<Long, SysOrganization> orgMap = buildOrgMap();
+        SysOrganization branch = orgMap.get(branchOrgId);
+        if (branch == null) return Collections.emptyList();
+        String pathPrefix = branch.getPath();
+
+        List<BillDetail> details = billDetailRepository.findByBatchIdAndDeletedAtIsNull(batchId)
+                .stream()
+                .filter(d -> sheetType.equals(d.getSheetType()))
+                .filter(d -> isInPath(d.getOrgId(), pathPrefix, orgMap))
+                .collect(Collectors.toList());
+
+        return buildDetailRows(details, sheetType, orgMap);
+    }
+
+    /**
+     * Returns bill_detail rows for a given batchId, subBranchOrgId and sheetType,
+     * filtered to only include details belonging to the sub-branch's org subtree.
+     */
+    public List<Map<String, Object>> getL3DetailData(Long batchId, Long subBranchOrgId, String sheetType) {
+        Map<Long, SysOrganization> orgMap = buildOrgMap();
+        SysOrganization subBranch = orgMap.get(subBranchOrgId);
+        if (subBranch == null) return Collections.emptyList();
+        String pathPrefix = subBranch.getPath();
+
+        List<BillDetail> details = billDetailRepository.findByBatchIdAndDeletedAtIsNull(batchId)
+                .stream()
+                .filter(d -> sheetType.equals(d.getSheetType()))
+                .filter(d -> isInPath(d.getOrgId(), pathPrefix, orgMap))
+                .collect(Collectors.toList());
+
+        return buildDetailRows(details, sheetType, orgMap);
+    }
+
+    /** Shared helper to build detail row maps from a filtered list of BillDetail */
+    private List<Map<String, Object>> buildDetailRows(List<BillDetail> details, String sheetType,
+                                                       Map<Long, SysOrganization> orgMap) {
+        List<Map<String, Object>> rows = new ArrayList<>();
         for (BillDetail d : details) {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("id", d.getId());
@@ -712,7 +755,6 @@ public class BranchBillExportService {
 
             rows.add(row);
         }
-
         return rows;
     }
 

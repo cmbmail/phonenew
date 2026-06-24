@@ -29,6 +29,7 @@ export default {
     totalAmount: 'Total Amount',
     confirmedCount: 'Confirmed',
     pendingCount: 'Pending',
+    fetchFailed: 'Failed to load dashboard data',
   },
 
   // ==================== Data Import ====================
@@ -65,6 +66,7 @@ export default {
     fetchFailed: 'Failed to fetch list',
     importFailed: 'Import failed',
     matchFailed: 'Match failed',
+    recordCountSuffix: '{{count}} records',
   },
 
   // ==================== Bill Management ====================
@@ -245,9 +247,12 @@ export default {
   l2Branch: {
     title: 'Branch Detail',
     selectBranch: 'Branch:',
+    selectBranchPlaceholder: 'Select branch',
     selectMonth: 'Month:',
+    selectMonthPlaceholder: 'Select month',
     noData: 'No data',
     exportL2: 'Export Branch Detail',
+    summaryTab: 'Summary',
     seqCol: '#',
     orgTypeCol: 'Type',
     orgNameCol: 'Organization',
@@ -276,9 +281,12 @@ export default {
   l3SubBranch: {
     title: 'Sub-branch Detail',
     selectSubBranch: 'Sub-branch:',
+    selectSubBranchPlaceholder: 'Select sub-branch',
     selectMonth: 'Month:',
+    selectMonthPlaceholder: 'Select month',
     noData: 'No data',
     exportL3: 'Export Detail',
+    summaryTab: 'Summary',
     seqCol: '#',
     orgTypeCol: 'Type',
     orgNameCol: 'Organization',
@@ -461,6 +469,8 @@ export default {
     sheetRecording: 'Recording Fee',
     sheetCrbt: 'CRBT Fee',
     sheetFlash: 'Flash Message Fee',
+    copySuffix: 'Copy',
+    fetchFailed: 'Failed to fetch template list',
   },
 
   // ==================== Common / Shared ====================
@@ -486,5 +496,6 @@ export default {
     error: 'Error',
     success: 'Success',
     failed: 'Failed',
+    paginationTotal: '{{total}} records',
   },
 };

@@ -29,6 +29,7 @@ export default {
     totalAmount: '费用总额',
     confirmedCount: '已确认',
     pendingCount: '待确认',
+    fetchFailed: '获取看板数据失败',
   },
 
   // ==================== Data Import ====================
@@ -70,6 +71,7 @@ export default {
     fetchFailed: '获取列表失败',
     importFailed: '导入失败',
     matchFailed: '匹配失败',
+    recordCountSuffix: '{{count}}条',
   },
 
   // ==================== Bill Management ====================
@@ -259,9 +261,12 @@ export default {
   l2Branch: {
     title: '一级分行',
     selectBranch: '选择一级分行：',
+    selectBranchPlaceholder: '选择分行',
     selectMonth: '选择月份：',
+    selectMonthPlaceholder: '选择月份',
     noData: '暂无数据',
     exportL2: '导出分行明细',
+    summaryTab: '分摊汇总',
     // Summary table columns
     seqCol: '序号',
     orgTypeCol: '组织类型',
@@ -291,9 +296,12 @@ export default {
   l3SubBranch: {
     title: '二级分行',
     selectSubBranch: '选择二级分行：',
+    selectSubBranchPlaceholder: '选择二级分行',
     selectMonth: '选择月份：',
+    selectMonthPlaceholder: '选择月份',
     noData: '暂无数据',
     exportL3: '导出明细',
+    summaryTab: '分摊汇总',
     // Same columns as L2 (reuse keys)
     seqCol: '序号',
     orgTypeCol: '组织类型',
@@ -464,7 +472,7 @@ export default {
     activateFailed: '切换失败',
     deleteSuccess: '模板已删除',
     deleteFailed: '删除失败',
-    // Detail modal
+    // Detail modal modal
     detailTitle: '模板详情 - {{name}}',
     sheetConfigTitle: 'Sheet 配置',
     noValidSheets: '无有效 Sheet 配置',
@@ -492,6 +500,8 @@ export default {
     sheetRecording: '录音费',
     sheetCrbt: '彩铃费',
     sheetFlash: '闪信费',
+    copySuffix: '副本',
+    fetchFailed: '获取模板列表失败',
   },
 
   // ==================== Common / Shared ====================
@@ -517,5 +527,6 @@ export default {
     error: '错误',
     success: '成功',
     failed: '失败',
+    paginationTotal: '共 {{total}} 条',
   },
 };

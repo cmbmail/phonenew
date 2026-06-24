@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Card,
   Tabs,
@@ -59,7 +59,8 @@ export default function DataImport() {
     }
     setOwnershipUploading(true);
     try {
-      const file = ownershipFileList[0].originFileObj!;
+      const file = ownershipFileList[0].originFileObj;
+      if (!file) { message.warning(t('import.selectFileFirst')); return; }
       const result = await importOwnership(file);
       message.success(t('import.ownershipImportSuccess', { total: result.total_count, exceptions: result.exception_count ?? 0 }));
       setOwnershipFileList([]);
@@ -96,7 +97,8 @@ export default function DataImport() {
     }
     setDirectoryUploading(true);
     try {
-      const file = directoryFileList[0].originFileObj!;
+      const file = directoryFileList[0].originFileObj;
+      if (!file) { message.warning(t('import.selectFileFirst')); return; }
       const result = await importDirectory(file);
       message.success(t('import.directoryImportSuccess', { total: result.total_count, seconded: result.seconded_count ?? 0 }));
       setDirectoryFileList([]);
@@ -140,9 +142,10 @@ export default function DataImport() {
     }
     setBillUploading(true);
     try {
-      const file = billFileList[0].originFileObj!;
+      const file = billFileList[0].originFileObj;
+      if (!file) { message.warning(t('import.selectFileFirst')); return; }
       const result = await importBill(file);
-      message.success(t('import.billImportSuccess', { count: result.total_count, amount: (result.total_amount ?? 0).toFixed(2), month: result.billing_month }));
+      message.success(t('import.billImportSuccess', { count: result.total_count, amount: Number(result.total_amount ?? 0).toFixed(2), month: result.billing_month }));
       setBillFileList([]);
       fetchBillBatches();
     } catch (err) {
@@ -185,6 +188,21 @@ export default function DataImport() {
     }
   };
 
+  // Fetch data on mount + tab switch
+  useEffect(() => {
+    if (activeTab === 'ownership') fetchOwnershipBatches();
+    else if (activeTab === 'directory') fetchDirectoryBatches();
+    else if (activeTab === 'bill') fetchBillBatches();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  useEffect(() => {
+    fetchOwnershipBatches();
+    fetchDirectoryBatches();
+    fetchBillBatches();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ==================== Common render helpers ====================
   const renderImportStatus = (status: number) => {
     const info = IMPORT_STATUS_MAP[status] || { label: t('common.unknown'), color: 'default' };
@@ -222,7 +240,7 @@ export default function DataImport() {
     { title: t('import.count'), dataIndex: 'total_count', key: 'total_count' },
     {
       title: t('import.totalAmountCol'), dataIndex: 'total_amount', key: 'total_amount',
-      render: (v: number) => v != null ? `¥${v.toFixed(2)}` : '-',
+      render: (v: unknown) => v != null ? `¥${Number(v).toFixed(2)}` : '-',
     },
     { title: t('import.status'), dataIndex: 'import_status', key: 'import_status', render: renderImportStatus },
     {
@@ -425,7 +443,7 @@ export default function DataImport() {
                           onChange={setMatchOwnershipBatchId}
                           options={ownershipBatches.map((b) => ({
                             value: b.id,
-                            label: `${b.batch_no} (${b.total_count}条)`,
+                            label: `${b.batch_no} (${t('import.recordCountSuffix', { count: b.total_count })})`,
                           }))}
                         />
                       </div>
@@ -440,7 +458,7 @@ export default function DataImport() {
                           onChange={setMatchDirectoryBatchId}
                           options={directoryBatches.map((b) => ({
                             value: b.id,
-                            label: `${b.batch_no} (${b.total_count}条)`,
+                            label: `${b.batch_no} (${t('import.recordCountSuffix', { count: b.total_count })})`,
                           }))}
                         />
                       </div>

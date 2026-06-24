@@ -1,13 +1,16 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Card, Table, Select, Button, Descriptions, Row, Col, message, Empty } from 'antd';
-import { DownloadOutlined } from '@ant-design/icons';
+import { Card, Table, Select, Button, Descriptions, Row, Col, Tabs, message, Empty, Statistic, Input } from 'antd';
+import { DownloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import type { BillBatch } from '../types/bill';
 import type { AllocationResult } from '../types/allocation';
-import { getBillBatches, getAllocationResults, getL3SubBranchDetailUrl } from '../api/allocation';
+import { getBillBatches, getAllocationResults, getL3SubBranchDetailUrl, getL3DetailData } from '../api/allocation';
 import { getOrgTree } from '../api/org';
 import type { Organization } from '../types/organization';
 import { ORG_TYPE_LABELS } from '../types/organization';
+
+const SHEET_TYPES = ['CALL', 'RECORDING', 'CRBT', 'FLASH_MSG'] as const;
+type SheetType = typeof SHEET_TYPES[number];
 
 export default function L3SubBranchPage() {
   const { t } = useTranslation();
@@ -19,6 +22,15 @@ export default function L3SubBranchPage() {
   const [orgList, setOrgList] = useState<Organization[]>([]);
   const [loading, setLoading] = useState(false);
   const [resultsLoading, setResultsLoading] = useState(false);
+
+  // 分摊明细数据
+  const [detailData, setDetailData] = useState<Record<SheetType, Record<string, unknown>[]>>({
+    CALL: [], RECORDING: [], CRBT: [], FLASH_MSG: [],
+  });
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailLoaded, setDetailLoaded] = useState(false);
+  const [detailSearch, setDetailSearch] = useState('');
+  const [detailPageSize, setDetailPageSize] = useState(25);
 
   const fetchBatches = useCallback(async () => {
     setLoading(true);
@@ -75,6 +87,13 @@ export default function L3SubBranchPage() {
     }
   }, [selectedBatchId, t]);
 
+  // 切换二级分行时重置明细
+  useEffect(() => {
+    setDetailData({ CALL: [], RECORDING: [], CRBT: [], FLASH_MSG: [] });
+    setDetailLoaded(false);
+    setDetailSearch('');
+  }, [selectedSubBranchId, selectedBatchId]);
+
   const selectedSubBranch = orgMap.get(selectedSubBranchId || 0);
 
   // 该二级分行的直属子组织
@@ -102,13 +121,45 @@ export default function L3SubBranchPage() {
     });
   }, [directChildren, results]);
 
+  const branchMonthlyRent = childSummary.reduce((s, c) => s + c.monthlyRent, 0);
+  const branchCallFee = childSummary.reduce((s, c) => s + c.callFee, 0);
+  const branchRecordingFee = childSummary.reduce((s, c) => s + c.recordingFee, 0);
+  const branchCrbtFee = childSummary.reduce((s, c) => s + c.crbtFee, 0);
+  const branchFlashFee = childSummary.reduce((s, c) => s + c.flashFee, 0);
   const branchTotal = childSummary.reduce((s, c) => s + c.totalFee, 0);
   const branchPhones = childSummary.reduce((s, c) => s + c.phoneCount, 0);
   const selectedBatch = batches.find(b => b.id === selectedBatchId);
 
-  const money = (v: number) => v ? `¥${v.toFixed(2)}` : '-';
+  const money = (v: unknown) => {
+    const n = Number(v);
+    return !isNaN(n) && n !== 0 ? `¥${n.toFixed(2)}` : '-';
+  };
+  const dur = (v: unknown) => {
+    const n = Number(v);
+    return !isNaN(n) && n !== 0 ? n.toFixed(1) : '-';
+  };
   const orgTypeLabel = (type: number) => ORG_TYPE_LABELS[type] || '其他';
 
+  // ========== 加载全部4种明细数据 ==========
+  const fetchAllDetails = useCallback(async () => {
+    if (!selectedBatchId || !selectedSubBranchId || detailLoaded) return;
+    setDetailLoading(true);
+    try {
+      const detailResults = await Promise.all(
+        SHEET_TYPES.map(st => getL3DetailData(selectedBatchId, selectedSubBranchId, st).then(d => [st, d] as const))
+      );
+      const newData = { CALL: [], RECORDING: [], CRBT: [], FLASH_MSG: [] } as Record<SheetType, Record<string, unknown>[]>;
+      for (const [st, d] of detailResults) newData[st] = d;
+      setDetailData(newData);
+      setDetailLoaded(true);
+    } catch {
+      message.error(t('l3SubBranch.fetchFailed'));
+    } finally {
+      setDetailLoading(false);
+    }
+  }, [selectedBatchId, selectedSubBranchId, detailLoaded, t]);
+
+  // ========== 分摊汇总 columns ==========
   const columns = [
     { title: t('l3SubBranch.seqCol'), key: 'seq', width: 50, render: (_: unknown, __: unknown, i: number) => i + 1 },
     { title: t('l3SubBranch.orgTypeCol'), key: 'orgType', width: 80, render: (_: unknown, r: typeof childSummary[0]) => orgTypeLabel(r.child.type) },
@@ -125,62 +176,213 @@ export default function L3SubBranchPage() {
     { title: t('l3SubBranch.phoneCountCol'), key: 'phoneCount', width: 70, dataIndex: 'phoneCount' },
   ];
 
+  // ========== 分摊明细 columns (same as L1) ==========
+  const callColumns = [
+    { title: t('l1Detail.phoneCol'), dataIndex: 'phone_number', key: 'phone_number', width: 120, fixed: 'left' as const },
+    { title: t('l1Detail.extensionCol'), dataIndex: 'extension', key: 'extension', width: 90 },
+    { title: t('l1Detail.orgCol'), dataIndex: 'org_name', key: 'org_name', width: 180 },
+    { title: t('l1Detail.platformFeeCol'), dataIndex: 'platform_fee', key: 'platform_fee', width: 100, align: 'right' as const, render: money },
+    { title: t('l1Detail.monthlyRentCodeCol'), dataIndex: 'monthly_rent_code', key: 'monthly_rent_code', width: 100, align: 'right' as const, render: money },
+    { title: t('l1Detail.domesticDurationCol'), dataIndex: 'domestic_duration', key: 'domestic_duration', width: 110, align: 'right' as const, render: dur },
+    { title: t('l1Detail.transferDurationCol'), dataIndex: 'transfer_duration', key: 'transfer_duration', width: 110, align: 'right' as const, render: dur },
+    { title: t('l1Detail.domesticFeeCol'), dataIndex: 'domestic_fee', key: 'domestic_fee', width: 100, align: 'right' as const, render: money },
+    { title: t('l1Detail.intlDurationCol'), dataIndex: 'international_duration', key: 'international_duration', width: 100, align: 'right' as const, render: dur },
+    { title: t('l1Detail.intlFeeCol'), dataIndex: 'international_fee', key: 'international_fee', width: 90, align: 'right' as const, render: money },
+    { title: t('l1Detail.totalFeeCol'), dataIndex: 'total_fee', key: 'total_fee', width: 100, align: 'right' as const, render: (v: number) => <strong>{money(v)}</strong> },
+    { title: t('l1Detail.sourceCol'), dataIndex: 'ownership_source', key: 'ownership_source', width: 70 },
+  ];
+
+  const recordingColumns = [
+    { title: t('l1Detail.extensionCol'), dataIndex: 'extension', key: 'extension', width: 90 },
+    { title: t('l1Detail.phoneCol'), dataIndex: 'phone_number', key: 'phone_number', width: 120 },
+    { title: t('l1Detail.orgCol'), dataIndex: 'org_name', key: 'org_name', width: 200 },
+    { title: t('l1Detail.recordingDirCol'), dataIndex: 'recording_dir', key: 'recording_dir', width: 200 },
+    { title: t('l1Detail.recordingFeeCol'), dataIndex: 'recording_fee', key: 'recording_fee', width: 100, align: 'right' as const, render: money },
+    { title: t('l1Detail.sourceCol'), dataIndex: 'ownership_source', key: 'ownership_source', width: 70 },
+  ];
+
+  const crbtColumns = [
+    { title: t('l1Detail.phoneCol'), dataIndex: 'phone_number', key: 'phone_number', width: 120 },
+    { title: t('l1Detail.extensionCol'), dataIndex: 'extension', key: 'extension', width: 90 },
+    { title: t('l1Detail.orgCol'), dataIndex: 'org_name', key: 'org_name', width: 200 },
+    { title: t('l1Detail.crbtFeeCol'), dataIndex: 'crbt_fee', key: 'crbt_fee', width: 100, align: 'right' as const, render: money },
+    { title: t('l1Detail.sourceCol'), dataIndex: 'ownership_source', key: 'ownership_source', width: 70 },
+  ];
+
+  const flashColumns = [
+    { title: t('l1Detail.phoneCol'), dataIndex: 'phone_number', key: 'phone_number', width: 120 },
+    { title: t('l1Detail.extensionCol'), dataIndex: 'extension', key: 'extension', width: 90 },
+    { title: t('l1Detail.orgCol'), dataIndex: 'org_name', key: 'org_name', width: 200 },
+    { title: t('l1Detail.flashMonthCol'), dataIndex: 'flash_month', key: 'flash_month', width: 90 },
+    { title: t('l1Detail.flashCountCol'), dataIndex: 'flash_count', key: 'flash_count', width: 90, align: 'right' as const, render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? String(Math.round(n)) : '-'; } },
+    { title: t('l1Detail.flashFeeCol'), dataIndex: 'flash_msg_fee', key: 'flash_msg_fee', width: 100, align: 'right' as const, render: money },
+    { title: t('l1Detail.sourceCol'), dataIndex: 'ownership_source', key: 'ownership_source', width: 70 },
+  ];
+
+  // 搜索过滤
+  const filteredDetailData = useMemo(() => {
+    const kw = detailSearch.trim().toLowerCase();
+    if (!kw) return detailData;
+    const filter = (rows: Record<string, unknown>[]) =>
+      rows.filter(r =>
+        String(r.phone_number || '').toLowerCase().includes(kw) ||
+        String(r.extension || '').toLowerCase().includes(kw) ||
+        String(r.org_name || '').toLowerCase().includes(kw)
+      );
+    return {
+      CALL: filter(detailData.CALL),
+      RECORDING: filter(detailData.RECORDING),
+      CRBT: filter(detailData["CRBT"]),
+      FLASH_MSG: filter(detailData.FLASH_MSG),
+    } as Record<SheetType, Record<string, unknown>[]>;
+  }, [detailData, detailSearch]);
+
+  // 统计卡片
+  const detailStats = useMemo(() => {
+    const sum = (data: Record<string, unknown>[], field: string) =>
+      data.reduce((s, r) => s + (Number(r[field]) || 0), 0);
+    return {
+      callCount: filteredDetailData.CALL.length,
+      callTotal: sum(filteredDetailData.CALL, 'total_fee'),
+      recCount: filteredDetailData.RECORDING.length,
+      recTotal: sum(filteredDetailData.RECORDING, 'recording_fee'),
+      crbtCount: filteredDetailData["CRBT"].length,
+      crbtTotal: sum(filteredDetailData["CRBT"], 'crbt_fee'),
+      flashCount: filteredDetailData.FLASH_MSG.length,
+      flashTotal: sum(filteredDetailData.FLASH_MSG, 'flash_msg_fee'),
+    };
+  }, [filteredDetailData]);
+
+  const renderDetailTab = (sheetType: SheetType) => {
+    const data = filteredDetailData[sheetType];
+    let columns;
+    let scrollX;
+    switch (sheetType) {
+      case 'CALL': columns = callColumns; scrollX = 1200; break;
+      case 'RECORDING': columns = recordingColumns; scrollX = 800; break;
+      case 'CRBT': columns = crbtColumns; scrollX = 600; break;
+      case 'FLASH_MSG': columns = flashColumns; scrollX = 700; break;
+    }
+    return (
+      <Table
+        columns={columns}
+        dataSource={data}
+        rowKey="id"
+        size="small"
+        loading={detailLoading}
+        pagination={{ pageSize: detailPageSize, showSizeChanger: true, pageSizeOptions: ['25', '50', '100'], onShowSizeChange: (_current, size) => setDetailPageSize(size), showTotal: (total) => t('common.paginationTotal', { total }) }}
+        scroll={{ x: scrollX }}
+      />
+    );
+  };
+
+  const mainTabs = [
+    {
+      key: 'summary',
+      label: t('l3SubBranch.summaryTab'),
+      children: (
+        <>
+          {selectedBatchId && selectedSubBranchId && childSummary.length > 0 && (
+            <Descriptions size="small" column={4} style={{ marginBottom: 16 }}>
+              <Descriptions.Item label={t('l3SubBranch.descMonth')}>{selectedBatch?.billing_month}</Descriptions.Item>
+              <Descriptions.Item label={t('l3SubBranch.descSubBranch')}>{selectedSubBranch?.name}</Descriptions.Item>
+              <Descriptions.Item label={t('l3SubBranch.descChildCount')}>{directChildren.length}</Descriptions.Item>
+              <Descriptions.Item label={t('l3SubBranch.descTotalFee')}>¥{branchTotal.toFixed(2)}</Descriptions.Item>
+            </Descriptions>
+          )}
+          {selectedBatchId && selectedSubBranchId && childSummary.length > 0 ? (
+            <Table
+              columns={columns}
+              dataSource={childSummary}
+              rowKey={r => r.child.id}
+              size="small"
+              loading={resultsLoading}
+              pagination={false}
+              summary={() => (
+                <Table.Summary.Row>
+                  <Table.Summary.Cell index={0} colSpan={4}><strong>{t('l3SubBranch.totalRow')}</strong></Table.Summary.Cell>
+                  <Table.Summary.Cell index={4} align="right">{money(branchMonthlyRent)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={5} align="right">{money(branchCallFee)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={6} align="right">{money(branchRecordingFee)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={7} align="right">{money(branchCrbtFee)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={8} align="right">{money(branchFlashFee)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={9}><strong>¥{branchTotal.toFixed(2)}</strong></Table.Summary.Cell>
+                  <Table.Summary.Cell index={10}><strong>{branchPhones}</strong></Table.Summary.Cell>
+                </Table.Summary.Row>
+              )}
+            />
+          ) : (
+            !resultsLoading && <Empty description={t('l3SubBranch.noData')} />
+          )}
+        </>
+      ),
+    },
+    {
+      key: 'detail',
+      label: t('l1Detail.title'),
+      children: (
+        <>
+          {detailLoaded && (
+            <Row gutter={16} style={{ marginBottom: 16 }}>
+              <Col span={6}><Statistic title={t('l1Detail.callTab')} value={detailStats.callCount} suffix={`¥${detailStats.callTotal.toFixed(2)}`} /></Col>
+              <Col span={6}><Statistic title={t('l1Detail.recordingTab')} value={detailStats.recCount} suffix={`¥${detailStats.recTotal.toFixed(2)}`} /></Col>
+              <Col span={6}><Statistic title={t('l1Detail.crbtTab')} value={detailStats.crbtCount} suffix={`¥${detailStats.crbtTotal.toFixed(2)}`} /></Col>
+              <Col span={6}><Statistic title={t('l1Detail.flashTab')} value={detailStats.flashCount} suffix={`¥${detailStats.flashTotal.toFixed(2)}`} /></Col>
+            </Row>
+          )}
+          <Input
+            prefix={<SearchOutlined />}
+            placeholder={t('l1Detail.searchPlaceholder')}
+            allowClear
+            value={detailSearch}
+            onChange={e => setDetailSearch(e.target.value)}
+            style={{ width: 320, marginBottom: 12 }}
+          />
+          <Tabs
+            type="card"
+            onTabClick={() => { if (!detailLoaded) fetchAllDetails(); }}
+            items={[
+              { key: 'CALL', label: t('l1Detail.callTab'), children: renderDetailTab('CALL') },
+              { key: 'RECORDING', label: t('l1Detail.recordingTab'), children: renderDetailTab('RECORDING') },
+              { key: 'CRBT', label: t('l1Detail.crbtTab'), children: renderDetailTab('CRBT') },
+              { key: 'FLASH_MSG', label: t('l1Detail.flashTab'), children: renderDetailTab('FLASH_MSG') },
+            ]}
+          />
+        </>
+      ),
+    },
+  ];
+
   return (
     <div>
       <Card>
         <Row gutter={16} align="middle" style={{ marginBottom: 16 }}>
           <Col>
             <span style={{ marginRight: 8 }}>{t('l3SubBranch.selectMonth')}</span>
-            <Select style={{ width: 220 }} placeholder="选择月份" loading={loading} value={selectedBatchId} onChange={setSelectedBatchId}
-              options={batches.sort((a, b) => b.billing_month.localeCompare(a.billing_month)).map(b => ({ label: `${b.billing_month}`, value: b.id }))} />
+            <Select style={{ width: 220 }} placeholder={t('l3SubBranch.selectMonthPlaceholder')} loading={loading} value={selectedBatchId} onChange={setSelectedBatchId}
+              options={[...batches].sort((a, b) => b.billing_month.localeCompare(a.billing_month)).map(b => ({ label: `${b.billing_month}`, value: b.id }))} />
           </Col>
           <Col>
             <span style={{ marginRight: 8 }}>{t('l3SubBranch.selectSubBranch')}</span>
-            <Select style={{ width: 200 }} placeholder="选择二级分行" value={selectedSubBranchId} onChange={setSelectedSubBranchId}
+            <Select style={{ width: 200 }} placeholder={t('l3SubBranch.selectSubBranchPlaceholder')} value={selectedSubBranchId} onChange={setSelectedSubBranchId}
               options={subBranchGroups} showSearch optionFilterProp="label" />
           </Col>
           <Col>
             {selectedBatchId && selectedSubBranchId && (
               <Button type="primary" icon={<DownloadOutlined />}
-                onClick={() => window.open(getL3SubBranchDetailUrl(selectedBatchId, selectedSubBranchId), '_blank')}>
+                onClick={() => window.open(getL3SubBranchDetailUrl(selectedBatchId, selectedSubBranchId), '_blank', 'noopener,noreferrer')}>
                 {t('l3SubBranch.exportL3')}
               </Button>
             )}
           </Col>
         </Row>
 
-        {selectedBatchId && selectedSubBranchId && childSummary.length > 0 && (
-          <Descriptions size="small" column={4} style={{ marginBottom: 16 }}>
-            <Descriptions.Item label={t('l3SubBranch.descMonth')}>{selectedBatch?.billing_month}</Descriptions.Item>
-            <Descriptions.Item label={t('l3SubBranch.descSubBranch')}>{selectedSubBranch?.name}</Descriptions.Item>
-            <Descriptions.Item label={t('l3SubBranch.descChildCount')}>{directChildren.length}</Descriptions.Item>
-            <Descriptions.Item label={t('l3SubBranch.descTotalFee')}>¥{branchTotal.toFixed(2)}</Descriptions.Item>
-          </Descriptions>
-        )}
-
-        {selectedBatchId && selectedSubBranchId && childSummary.length > 0 ? (
-          <Table
-            columns={columns}
-            dataSource={childSummary}
-            rowKey={r => r.child.id}
-            size="small"
-            loading={resultsLoading}
-            pagination={false}
-            summary={() => (
-              <Table.Summary.Row>
-                <Table.Summary.Cell index={0} colSpan={4}><strong>{t('l3SubBranch.totalRow')}</strong></Table.Summary.Cell>
-                <Table.Summary.Cell index={4} />
-                <Table.Summary.Cell index={5} />
-                <Table.Summary.Cell index={6} />
-                <Table.Summary.Cell index={7} />
-                <Table.Summary.Cell index={8} />
-                <Table.Summary.Cell index={9}><strong>¥{branchTotal.toFixed(2)}</strong></Table.Summary.Cell>
-                <Table.Summary.Cell index={10}><strong>{branchPhones}</strong></Table.Summary.Cell>
-              </Table.Summary.Row>
-            )}
+        {selectedBatchId && selectedSubBranchId && (
+          <Tabs
+            type="card"
+            onChange={(key) => { if (key === 'detail') fetchAllDetails(); }}
+            items={mainTabs}
           />
-        ) : (
-          !resultsLoading && <Empty description={t('l3SubBranch.noData')} />
         )}
       </Card>
     </div>
