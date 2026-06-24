@@ -1,5 +1,5 @@
 import { apiPost, apiGet, apiUpload } from '../lib/request';
-import type { ImportResult, MatchResult, OwnershipBatch, DirectoryBatch } from '../types/import';
+import type { ImportResult, MatchResult, OwnershipBatch, DirectoryBatch, DataSnapshot } from '../types/import';
 import type { BillBatch } from '../types/bill';
 
 // ==================== Ownership ====================
@@ -45,3 +45,11 @@ export const matchOwnership = (params: {
   ownership_batch_id?: number;
   directory_batch_id?: number;
 }) => apiPost<MatchResult>('/import/match-ownership', params);
+
+// ==================== Snapshot ====================
+
+export const getSnapshots = () =>
+  apiGet<DataSnapshot[]>('/import/snapshots');
+
+export const getSnapshot = (billBatchId: number) =>
+  apiGet<DataSnapshot>(`/import/snapshots/${billBatchId}`);

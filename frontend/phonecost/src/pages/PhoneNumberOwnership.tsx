@@ -1,14 +1,14 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Card, Table, Select, Tag, Descriptions, Row, Col, message, Empty, Input, Statistic } from 'antd';
-import { SearchOutlined } from '@ant-design/icons';
+import { Card, Table, Select, Tag, Row, Col, message, Empty, Input, Statistic, Tabs } from 'antd';
+import { SearchOutlined, CameraOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
-import type { OwnershipBatch, OwnershipEntry } from '../types/import';
+import type { OwnershipBatch, OwnershipEntry, DataSnapshot } from '../types/import';
 import { MATCH_LEVEL_MAP } from '../types/import';
-import { getOwnershipBatches } from '../api/import';
+import { getOwnershipBatches, getSnapshots, getBillBatches } from '../api/import';
 import { apiGet } from '../lib/request';
 import { getOrgTree } from '../api/org';
 import type { Organization } from '../types/organization';
-import { ORG_TYPE_LABELS } from '../types/organization';
+import type { BillBatch } from '../types/bill';
 
 export default function PhoneNumberOwnership() {
   const { t } = useTranslation();
@@ -21,6 +21,12 @@ export default function PhoneNumberOwnership() {
   const [entriesLoading, setEntriesLoading] = useState(false);
   const [search, setSearch] = useState('');
 
+  // Snapshot state
+  const [snapshots, setSnapshots] = useState<DataSnapshot[]>([]);
+  const [billBatches, setBillBatches] = useState<BillBatch[]>([]);
+  const [snapshotsLoading, setSnapshotsLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('current');
+
   const fetchBatches = useCallback(async () => {
     setLoading(true);
     try { setBatches(await getOwnershipBatches()); } catch { message.error(t('phoneOwnership.fetchFailed')); } finally { setLoading(false); }
@@ -30,7 +36,22 @@ export default function PhoneNumberOwnership() {
     try { setOrgList(await getOrgTree()); } catch { /* silent */ }
   }, []);
 
+  const fetchSnapshots = useCallback(async () => {
+    setSnapshotsLoading(true);
+    try {
+      const [snaps, bills] = await Promise.all([getSnapshots(), getBillBatches()]);
+      setSnapshots(snaps);
+      setBillBatches(bills);
+    } catch { message.error(t('phoneOwnership.snapshotFetchFailed')); } finally { setSnapshotsLoading(false); }
+  }, [t]);
+
   useEffect(() => { fetchBatches(); fetchOrgs(); }, [fetchBatches, fetchOrgs]);
+
+  useEffect(() => {
+    if (activeTab === 'snapshot' && snapshots.length === 0) {
+      fetchSnapshots();
+    }
+  }, [activeTab, snapshots.length, fetchSnapshots]);
 
   useEffect(() => {
     if (batches.length > 0 && !selectedBatchId) {
@@ -55,11 +76,15 @@ export default function PhoneNumberOwnership() {
     return m;
   }, [orgList]);
 
-  const selectedBatch = batches.find(b => b.id === selectedBatchId);
+  const billBatchMap = useMemo(() => {
+    const m = new Map<number, BillBatch>();
+    billBatches.forEach(b => m.set(b.id, b));
+    return m;
+  }, [billBatches]);
 
   const exceptionCount = useMemo(() => entries.filter(e => e.is_exception === 1).length, [entries]);
 
-  // 搜索过滤
+  // Search filter
   const filteredEntries = useMemo(() => {
     const kw = search.trim().toLowerCase();
     if (!kw) return entries;
@@ -104,49 +129,105 @@ export default function PhoneNumberOwnership() {
     },
   ];
 
+  // Snapshot columns
+  const snapshotColumns = [
+    {
+      title: t('phoneOwnership.snapshotBillMonth'), key: 'bill_month', width: 120,
+      render: (_: unknown, r: DataSnapshot) => {
+        const bill = billBatchMap.get(r.bill_batch_id);
+        return bill?.billing_month || '-';
+      },
+    },
+    {
+      title: t('phoneOwnership.snapshotBillBatch'), dataIndex: 'bill_batch_id', key: 'bill_batch_id', width: 120,
+      render: (v: number) => {
+        const bill = billBatchMap.get(v);
+        return bill ? `${bill.batch_no}` : String(v);
+      },
+    },
+    {
+      title: t('phoneOwnership.snapshotOwnershipBatch'), dataIndex: 'ownership_batch_id', key: 'ownership_batch_id', width: 150,
+      render: (v: number | null) => v != null ? `批次 #${v}` : '-',
+    },
+    {
+      title: t('phoneOwnership.snapshotDirectoryBatch'), dataIndex: 'directory_batch_id', key: 'directory_batch_id', width: 150,
+      render: (v: number | null) => v != null ? `批次 #${v}` : '-',
+    },
+    {
+      title: t('phoneOwnership.snapshotMatchedCount'), dataIndex: 'matched_count', key: 'matched_count', width: 100,
+      render: (v: number) => v.toLocaleString(),
+    },
+    {
+      title: t('phoneOwnership.snapshotTime'), dataIndex: 'created_at', key: 'created_at', width: 180,
+    },
+  ];
+
+  const currentDataContent = (
+    <>
+      <Row gutter={16} align="middle" style={{ marginBottom: 16 }}>
+        <Col>
+          <span style={{ marginRight: 8 }}>{t('phoneOwnership.selectBatch')}</span>
+          <Select style={{ width: 280 }} placeholder={t('phoneOwnership.selectBatchPlaceholder')} loading={loading}
+            value={selectedBatchId} onChange={setSelectedBatchId}
+            options={[...batches].sort((a, b) => b.id - a.id).map(b => ({ label: `${b.batch_no} (${b.total_count}条)`, value: b.id }))} />
+        </Col>
+      </Row>
+
+      {selectedBatchId && (
+        <Row gutter={16} style={{ marginBottom: 16 }}>
+          <Col span={4}><Statistic title={t('phoneOwnership.totalCount')} value={filteredEntries.length} /></Col>
+          <Col span={4}><Statistic title={t('phoneOwnership.exceptionCount')} value={exceptionCount} valueStyle={{ color: exceptionCount > 0 ? '#cf1322' : undefined }} /></Col>
+        </Row>
+      )}
+
+      {selectedBatchId && (
+        <Input
+          prefix={<SearchOutlined />}
+          placeholder={t('phoneOwnership.searchPlaceholder')}
+          allowClear
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{ width: 320, marginBottom: 12 }}
+        />
+      )}
+
+      {selectedBatchId && filteredEntries.length > 0 ? (
+        <Table
+          columns={columns}
+          dataSource={filteredEntries}
+          rowKey="id"
+          size="small"
+          loading={entriesLoading}
+          pagination={{ pageSize: 50, showSizeChanger: true, pageSizeOptions: ['25', '50', '100'], showTotal: (total) => t('common.paginationTotal', { total }) }}
+          scroll={{ x: 800 }}
+        />
+      ) : (
+        !entriesLoading && <Empty description={t('phoneOwnership.noData')} />
+      )}
+    </>
+  );
+
+  const snapshotContent = snapshots.length > 0 ? (
+    <Table
+      columns={snapshotColumns}
+      dataSource={snapshots}
+      rowKey="id"
+      size="small"
+      loading={snapshotsLoading}
+      pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (total) => t('common.paginationTotal', { total }) }}
+      scroll={{ x: 800 }}
+    />
+  ) : (
+    !snapshotsLoading && <Empty description={t('phoneOwnership.snapshotNoData')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+  );
+
   return (
     <div>
       <Card>
-        <Row gutter={16} align="middle" style={{ marginBottom: 16 }}>
-          <Col>
-            <span style={{ marginRight: 8 }}>{t('phoneOwnership.selectBatch')}</span>
-            <Select style={{ width: 280 }} placeholder={t('phoneOwnership.selectBatchPlaceholder')} loading={loading}
-              value={selectedBatchId} onChange={setSelectedBatchId}
-              options={[...batches].sort((a, b) => b.id - a.id).map(b => ({ label: `${b.batch_no} (${b.total_count}条)`, value: b.id }))} />
-          </Col>
-        </Row>
-
-        {selectedBatchId && (
-          <Row gutter={16} style={{ marginBottom: 16 }}>
-            <Col span={4}><Statistic title={t('phoneOwnership.totalCount')} value={filteredEntries.length} /></Col>
-            <Col span={4}><Statistic title={t('phoneOwnership.exceptionCount')} value={exceptionCount} valueStyle={{ color: exceptionCount > 0 ? '#cf1322' : undefined }} /></Col>
-          </Row>
-        )}
-
-        {selectedBatchId && (
-          <Input
-            prefix={<SearchOutlined />}
-            placeholder={t('phoneOwnership.searchPlaceholder')}
-            allowClear
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            style={{ width: 320, marginBottom: 12 }}
-          />
-        )}
-
-        {selectedBatchId && filteredEntries.length > 0 ? (
-          <Table
-            columns={columns}
-            dataSource={filteredEntries}
-            rowKey="id"
-            size="small"
-            loading={entriesLoading}
-            pagination={{ pageSize: 50, showSizeChanger: true, pageSizeOptions: ['25', '50', '100'], showTotal: (total) => t('common.paginationTotal', { total }) }}
-            scroll={{ x: 800 }}
-          />
-        ) : (
-          !entriesLoading && <Empty description={t('phoneOwnership.noData')} />
-        )}
+        <Tabs activeKey={activeTab} onChange={setActiveTab} items={[
+          { key: 'current', label: t('phoneOwnership.currentDataTab'), children: currentDataContent },
+          { key: 'snapshot', label: <><CameraOutlined /> {t('phoneOwnership.snapshotTab')}</>, children: snapshotContent },
+        ]} />
       </Card>
     </div>
   );

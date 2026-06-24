@@ -17,6 +17,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * 数据导入Controller
@@ -39,6 +40,7 @@ public class DataImportController {
     private final DirectoryEntryRepository directoryEntryRepository;
     private final BillBatchRepository billBatchRepository;
     private final BillDetailRepository billDetailRepository;
+    private final DataSnapshotRepository dataSnapshotRepository;
 
     // ==================== 号码归属导入 ====================
 
@@ -170,9 +172,42 @@ public class DataImportController {
         int matched = ownershipMatchService.matchOwnershipForBillBatch(
                 billBatchId, ownershipBatchId, directoryBatchId);
 
+        // Save or update snapshot record
+        Optional<DataSnapshot> existing = dataSnapshotRepository.findByBillBatchIdAndDeletedAtIsNull(billBatchId);
+        DataSnapshot snapshot;
+        if (existing.isPresent()) {
+            snapshot = existing.get();
+            snapshot.setOwnershipBatchId(ownershipBatchId);
+            snapshot.setDirectoryBatchId(directoryBatchId);
+            snapshot.setMatchedCount(matched);
+        } else {
+            snapshot = DataSnapshot.builder()
+                    .billBatchId(billBatchId)
+                    .ownershipBatchId(ownershipBatchId)
+                    .directoryBatchId(directoryBatchId)
+                    .matchedCount(matched)
+                    .build();
+        }
+        dataSnapshotRepository.save(snapshot);
+
         return ResponseEntity.ok(ApiResponse.ok(Map.of(
                 "bill_batch_id", billBatchId,
                 "matched_count", matched
         )));
+    }
+
+    // ==================== 数据快照 ====================
+
+    @GetMapping("/snapshots")
+    public ResponseEntity<ApiResponse<List<DataSnapshot>>> listSnapshots() {
+        List<DataSnapshot> snapshots = dataSnapshotRepository.findAllByDeletedAtIsNullOrderByCreatedAtDesc();
+        return ResponseEntity.ok(ApiResponse.ok(snapshots));
+    }
+
+    @GetMapping("/snapshots/{billBatchId}")
+    public ResponseEntity<ApiResponse<DataSnapshot>> getSnapshot(@PathVariable Long billBatchId) {
+        DataSnapshot snapshot = dataSnapshotRepository.findByBillBatchIdAndDeletedAtIsNull(billBatchId)
+                .orElseThrow(() -> new IllegalArgumentException("未找到账单批次 " + billBatchId + " 的快照记录"));
+        return ResponseEntity.ok(ApiResponse.ok(snapshot));
     }
 }

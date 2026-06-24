@@ -307,6 +307,17 @@ export default {
     searchPlaceholder: '搜索号码/描述/组织',
     noData: '暂无号码归属数据',
     fetchFailed: '获取数据失败',
+    // Snapshot tab
+    currentDataTab: '当前数据',
+    snapshotTab: '快照',
+    snapshotBillMonth: '账单月份',
+    snapshotBillBatch: '账单批次',
+    snapshotOwnershipBatch: '号码归属批次',
+    snapshotDirectoryBatch: '通讯录批次',
+    snapshotMatchedCount: '匹配条数',
+    snapshotTime: '快照时间',
+    snapshotNoData: '暂无快照数据，执行归属匹配后将自动生成快照',
+    snapshotFetchFailed: '获取快照数据失败',
   },
 
   // ==================== Cost Center (成本中心) ====================
@@ -344,6 +355,17 @@ export default {
     searchPlaceholder: '搜索号码/姓名/分机/组织',
     noData: '暂无通讯录数据',
     fetchFailed: '获取数据失败',
+    // Snapshot tab
+    currentDataTab: '当前数据',
+    snapshotTab: '快照',
+    snapshotBillMonth: '账单月份',
+    snapshotBillBatch: '账单批次',
+    snapshotOwnershipBatch: '号码归属批次',
+    snapshotDirectoryBatch: '通讯录批次',
+    snapshotMatchedCount: '匹配条数',
+    snapshotTime: '快照时间',
+    snapshotNoData: '暂无快照数据，执行归属匹配后将自动生成快照',
+    snapshotFetchFailed: '获取快照数据失败',
   },
 
   // ==================== L3 Sub-branch Detail (二级分行) ====================

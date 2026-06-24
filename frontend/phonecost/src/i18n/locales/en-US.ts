@@ -292,6 +292,17 @@ export default {
     searchPlaceholder: 'Search phone/description/org',
     noData: 'No ownership data',
     fetchFailed: 'Failed to fetch data',
+    // Snapshot tab
+    currentDataTab: 'Current Data',
+    snapshotTab: 'Snapshot',
+    snapshotBillMonth: 'Bill Month',
+    snapshotBillBatch: 'Bill Batch',
+    snapshotOwnershipBatch: 'Ownership Batch',
+    snapshotDirectoryBatch: 'Directory Batch',
+    snapshotMatchedCount: 'Matched Count',
+    snapshotTime: 'Snapshot Time',
+    snapshotNoData: 'No snapshots yet. Snapshots are created automatically after ownership matching.',
+    snapshotFetchFailed: 'Failed to fetch snapshot data',
   },
 
   // ==================== Cost Center ====================
@@ -329,6 +340,17 @@ export default {
     searchPlaceholder: 'Search phone/name/ext/org',
     noData: 'No directory data',
     fetchFailed: 'Failed to fetch data',
+    // Snapshot tab
+    currentDataTab: 'Current Data',
+    snapshotTab: 'Snapshot',
+    snapshotBillMonth: 'Bill Month',
+    snapshotBillBatch: 'Bill Batch',
+    snapshotOwnershipBatch: 'Ownership Batch',
+    snapshotDirectoryBatch: 'Directory Batch',
+    snapshotMatchedCount: 'Matched Count',
+    snapshotTime: 'Snapshot Time',
+    snapshotNoData: 'No snapshots yet. Snapshots are created automatically after ownership matching.',
+    snapshotFetchFailed: 'Failed to fetch snapshot data',
   },
 
   // ==================== L3 Sub-branch Detail ====================

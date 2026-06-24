@@ -65,6 +65,17 @@ export interface MatchResult {
   matched_count: number;
 }
 
+// Data snapshot
+export interface DataSnapshot {
+  id: number;
+  bill_batch_id: number;
+  ownership_batch_id: number | null;
+  directory_batch_id: number | null;
+  matched_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export const IMPORT_STATUS_MAP: Record<number, { label: string; color: string }> = {
   0: { label: '处理中', color: 'processing' },
   1: { label: '成功', color: 'success' },
