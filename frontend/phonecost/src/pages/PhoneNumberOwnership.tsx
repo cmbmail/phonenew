@@ -13,6 +13,7 @@ import type { BillBatch } from '../types/bill';
 export default function PhoneNumberOwnership() {
   const { t } = useTranslation();
 
+  // Current data state
   const [batches, setBatches] = useState<OwnershipBatch[]>([]);
   const [selectedBatchId, setSelectedBatchId] = useState<number | null>(null);
   const [entries, setEntries] = useState<OwnershipEntry[]>([]);
@@ -26,6 +27,10 @@ export default function PhoneNumberOwnership() {
   const [billBatches, setBillBatches] = useState<BillBatch[]>([]);
   const [snapshotsLoading, setSnapshotsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('current');
+  const [selectedSnapshotMonth, setSelectedSnapshotMonth] = useState<string | null>(null);
+  const [snapshotEntries, setSnapshotEntries] = useState<OwnershipEntry[]>([]);
+  const [snapshotEntriesLoading, setSnapshotEntriesLoading] = useState(false);
+  const [snapshotSearch, setSnapshotSearch] = useState('');
 
   const fetchBatches = useCallback(async () => {
     setLoading(true);
@@ -48,10 +53,10 @@ export default function PhoneNumberOwnership() {
   useEffect(() => { fetchBatches(); fetchOrgs(); }, [fetchBatches, fetchOrgs]);
 
   useEffect(() => {
-    if (activeTab === 'snapshot' && snapshots.length === 0) {
+    if (activeTab === 'snapshot') {
       fetchSnapshots();
     }
-  }, [activeTab, snapshots.length, fetchSnapshots]);
+  }, [activeTab, fetchSnapshots]);
 
   useEffect(() => {
     if (batches.length > 0 && !selectedBatchId) {
@@ -70,21 +75,51 @@ export default function PhoneNumberOwnership() {
     }
   }, [selectedBatchId, t]);
 
+  // Snapshot month → bill_batch_id mapping
+  const snapshotMonthOptions = useMemo(() => {
+    const m = new Map<string, string>();
+    snapshots.forEach(s => {
+      const bill = billBatches.find(b => b.id === s.bill_batch_id);
+      if (bill?.billing_month) m.set(bill.billing_month, bill.billing_month);
+    });
+    return [...m.keys()].sort().reverse().map(month => ({ label: month, value: month }));
+  }, [snapshots, billBatches]);
+
+  // Auto-select first month
+  useEffect(() => {
+    if (activeTab === 'snapshot' && snapshotMonthOptions.length > 0 && !selectedSnapshotMonth) {
+      setSelectedSnapshotMonth(snapshotMonthOptions[0].value);
+    }
+  }, [activeTab, snapshotMonthOptions, selectedSnapshotMonth]);
+
+  // Fetch snapshot entries when month selected
+  useEffect(() => {
+    if (activeTab !== 'snapshot' || !selectedSnapshotMonth) return;
+    const snap = snapshots.find(s => {
+      const bill = billBatches.find(b => b.id === s.bill_batch_id);
+      return bill?.billing_month === selectedSnapshotMonth;
+    });
+    if (!snap?.ownership_batch_id) {
+      setSnapshotEntries([]);
+      return;
+    }
+    setSnapshotEntriesLoading(true);
+    apiGet<OwnershipEntry[]>(`/import/ownership/entries/${snap.ownership_batch_id}`)
+      .then(setSnapshotEntries)
+      .catch(() => { message.error(t('phoneOwnership.fetchFailed')); setSnapshotEntries([]); })
+      .finally(() => setSnapshotEntriesLoading(false));
+  }, [activeTab, selectedSnapshotMonth, snapshots, billBatches, t]);
+
   const orgMap = useMemo(() => {
     const m = new Map<number, Organization>();
     orgList.forEach(o => m.set(o.id, o));
     return m;
   }, [orgList]);
 
-  const billBatchMap = useMemo(() => {
-    const m = new Map<number, BillBatch>();
-    billBatches.forEach(b => m.set(b.id, b));
-    return m;
-  }, [billBatches]);
-
   const exceptionCount = useMemo(() => entries.filter(e => e.is_exception === 1).length, [entries]);
+  const snapshotExceptionCount = useMemo(() => snapshotEntries.filter(e => e.is_exception === 1).length, [snapshotEntries]);
 
-  // Search filter
+  // Search filter - current data
   const filteredEntries = useMemo(() => {
     const kw = search.trim().toLowerCase();
     if (!kw) return entries;
@@ -96,6 +131,28 @@ export default function PhoneNumberOwnership() {
         orgName.toLowerCase().includes(kw);
     });
   }, [entries, search, orgMap]);
+
+  // Search filter - snapshot data
+  const filteredSnapshotEntries = useMemo(() => {
+    const kw = snapshotSearch.trim().toLowerCase();
+    if (!kw) return snapshotEntries;
+    return snapshotEntries.filter(e => {
+      const org = e.org_id ? orgMap.get(e.org_id) : null;
+      const orgName = org ? org.name : '';
+      return String(e.phone_number || '').toLowerCase().includes(kw) ||
+        String(e.description || '').toLowerCase().includes(kw) ||
+        orgName.toLowerCase().includes(kw);
+    });
+  }, [snapshotEntries, snapshotSearch, orgMap]);
+
+  // Current snapshot info
+  const selectedSnapshot = useMemo(() => {
+    if (!selectedSnapshotMonth) return null;
+    return snapshots.find(s => {
+      const bill = billBatches.find(b => b.id === s.bill_batch_id);
+      return bill?.billing_month === selectedSnapshotMonth;
+    }) || null;
+  }, [selectedSnapshotMonth, snapshots, billBatches]);
 
   const columns = [
     { title: t('phoneOwnership.phoneCol'), dataIndex: 'phone_number', key: 'phone_number', width: 130, fixed: 'left' as const },
@@ -129,39 +186,6 @@ export default function PhoneNumberOwnership() {
     },
   ];
 
-  // Snapshot columns
-  const snapshotColumns = [
-    {
-      title: t('phoneOwnership.snapshotBillMonth'), key: 'bill_month', width: 120,
-      render: (_: unknown, r: DataSnapshot) => {
-        const bill = billBatchMap.get(r.bill_batch_id);
-        return bill?.billing_month || '-';
-      },
-    },
-    {
-      title: t('phoneOwnership.snapshotBillBatch'), dataIndex: 'bill_batch_id', key: 'bill_batch_id', width: 120,
-      render: (v: number) => {
-        const bill = billBatchMap.get(v);
-        return bill ? `${bill.batch_no}` : String(v);
-      },
-    },
-    {
-      title: t('phoneOwnership.snapshotOwnershipBatch'), dataIndex: 'ownership_batch_id', key: 'ownership_batch_id', width: 150,
-      render: (v: number | null) => v != null ? `批次 #${v}` : '-',
-    },
-    {
-      title: t('phoneOwnership.snapshotDirectoryBatch'), dataIndex: 'directory_batch_id', key: 'directory_batch_id', width: 150,
-      render: (v: number | null) => v != null ? `批次 #${v}` : '-',
-    },
-    {
-      title: t('phoneOwnership.snapshotMatchedCount'), dataIndex: 'matched_count', key: 'matched_count', width: 100,
-      render: (v: number) => v.toLocaleString(),
-    },
-    {
-      title: t('phoneOwnership.snapshotTime'), dataIndex: 'created_at', key: 'created_at', width: 180,
-    },
-  ];
-
   const currentDataContent = (
     <>
       <Row gutter={16} align="middle" style={{ marginBottom: 16 }}>
@@ -172,59 +196,63 @@ export default function PhoneNumberOwnership() {
             options={[...batches].sort((a, b) => b.id - a.id).map(b => ({ label: `${b.batch_no} (${b.total_count}条)`, value: b.id }))} />
         </Col>
       </Row>
-
       {selectedBatchId && (
         <Row gutter={16} style={{ marginBottom: 16 }}>
           <Col span={4}><Statistic title={t('phoneOwnership.totalCount')} value={filteredEntries.length} /></Col>
           <Col span={4}><Statistic title={t('phoneOwnership.exceptionCount')} value={exceptionCount} valueStyle={{ color: exceptionCount > 0 ? '#cf1322' : undefined }} /></Col>
         </Row>
       )}
-
       {selectedBatchId && (
-        <Input
-          prefix={<SearchOutlined />}
-          placeholder={t('phoneOwnership.searchPlaceholder')}
-          allowClear
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          style={{ width: 320, marginBottom: 12 }}
-        />
+        <Input prefix={<SearchOutlined />} placeholder={t('phoneOwnership.searchPlaceholder')} allowClear value={search}
+          onChange={e => setSearch(e.target.value)} style={{ width: 320, marginBottom: 12 }} />
       )}
-
       {selectedBatchId && filteredEntries.length > 0 ? (
-        <Table
-          columns={columns}
-          dataSource={filteredEntries}
-          rowKey="id"
-          size="small"
-          loading={entriesLoading}
+        <Table columns={columns} dataSource={filteredEntries} rowKey="id" size="small" loading={entriesLoading}
           pagination={{ pageSize: 50, showSizeChanger: true, pageSizeOptions: ['25', '50', '100'], showTotal: (total) => t('common.paginationTotal', { total }) }}
-          scroll={{ x: 800 }}
-        />
-      ) : (
-        !entriesLoading && <Empty description={t('phoneOwnership.noData')} />
-      )}
+          scroll={{ x: 800 }} />
+      ) : (!entriesLoading && <Empty description={t('phoneOwnership.noData')} />)}
     </>
   );
 
-  const snapshotContent = snapshots.length > 0 ? (
-    <Table
-      columns={snapshotColumns}
-      dataSource={snapshots}
-      rowKey="id"
-      size="small"
-      loading={snapshotsLoading}
-      pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (total) => t('common.paginationTotal', { total }) }}
-      scroll={{ x: 800 }}
-    />
+  const snapshotContent = snapshots.length === 0 && !snapshotsLoading ? (
+    <Empty description={t('phoneOwnership.snapshotNoData')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
   ) : (
-    !snapshotsLoading && <Empty description={t('phoneOwnership.snapshotNoData')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+    <>
+      <Row gutter={16} align="middle" style={{ marginBottom: 16 }}>
+        <Col>
+          <span style={{ marginRight: 8 }}>{t('phoneOwnership.snapshotSelectMonth')}</span>
+          <Select style={{ width: 160 } } placeholder={t('phoneOwnership.snapshotMonthPlaceholder')} loading={snapshotsLoading}
+            value={selectedSnapshotMonth} onChange={setSelectedSnapshotMonth}
+            options={snapshotMonthOptions} />
+        </Col>
+        {selectedSnapshot && (
+          <Col style={{ color: '#888', fontSize: 13 }}>
+            {t('phoneOwnership.snapshotBatchInfo', { ownershipBatch: selectedSnapshot.ownership_batch_id ?? '-', matched: selectedSnapshot.matched_count })}
+          </Col>
+        )}
+      </Row>
+      {selectedSnapshotMonth && (
+        <Row gutter={16} style={{ marginBottom: 16 }}>
+          <Col span={4}><Statistic title={t('phoneOwnership.totalCount')} value={filteredSnapshotEntries.length} /></Col>
+          <Col span={4}><Statistic title={t('phoneOwnership.exceptionCount')} value={snapshotExceptionCount} valueStyle={{ color: snapshotExceptionCount > 0 ? '#cf1322' : undefined }} /></Col>
+        </Row>
+      )}
+      {selectedSnapshotMonth && (
+        <Input prefix={<SearchOutlined />} placeholder={t('phoneOwnership.searchPlaceholder')} allowClear value={snapshotSearch}
+          onChange={e => setSnapshotSearch(e.target.value)} style={{ width: 320, marginBottom: 12 }} />
+      )}
+      {selectedSnapshotMonth && filteredSnapshotEntries.length > 0 ? (
+        <Table columns={columns} dataSource={filteredSnapshotEntries} rowKey="id" size="small" loading={snapshotEntriesLoading}
+          pagination={{ pageSize: 50, showSizeChanger: true, pageSizeOptions: ['25', '50', '100'], showTotal: (total) => t('common.paginationTotal', { total }) }}
+          scroll={{ x: 800 }} />
+      ) : (!snapshotEntriesLoading && selectedSnapshotMonth && <Empty description={t('phoneOwnership.noData')} />)}
+    </>
   );
 
   return (
     <div>
       <Card>
-        <Tabs activeKey={activeTab} onChange={setActiveTab} items={[
+        <Tabs activeKey={activeTab} onChange={(key) => { setActiveTab(key); if (key === 'snapshot') setSelectedSnapshotMonth(null); }} items={[
           { key: 'current', label: t('phoneOwnership.currentDataTab'), children: currentDataContent },
           { key: 'snapshot', label: <><CameraOutlined /> {t('phoneOwnership.snapshotTab')}</>, children: snapshotContent },
         ]} />

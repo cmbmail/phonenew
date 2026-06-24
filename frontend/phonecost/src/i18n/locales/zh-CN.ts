@@ -318,6 +318,9 @@ export default {
     snapshotTime: '快照时间',
     snapshotNoData: '暂无快照数据，执行归属匹配后将自动生成快照',
     snapshotFetchFailed: '获取快照数据失败',
+    snapshotSelectMonth: '选择月份：',
+    snapshotMonthPlaceholder: '选择月份',
+    snapshotBatchInfo: '归属批次 #{{ownershipBatch}}，匹配 {{matched}} 条',
   },
 
   // ==================== Cost Center (成本中心) ====================
@@ -366,6 +369,9 @@ export default {
     snapshotTime: '快照时间',
     snapshotNoData: '暂无快照数据，执行归属匹配后将自动生成快照',
     snapshotFetchFailed: '获取快照数据失败',
+    snapshotSelectMonth: '选择月份：',
+    snapshotMonthPlaceholder: '选择月份',
+    snapshotBatchInfo: '通讯录批次 #{{directoryBatch}}，匹配 {{matched}} 条',
   },
 
   // ==================== L3 Sub-branch Detail (二级分行) ====================

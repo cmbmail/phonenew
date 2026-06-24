@@ -303,6 +303,9 @@ export default {
     snapshotTime: 'Snapshot Time',
     snapshotNoData: 'No snapshots yet. Snapshots are created automatically after ownership matching.',
     snapshotFetchFailed: 'Failed to fetch snapshot data',
+    snapshotSelectMonth: 'Month:',
+    snapshotMonthPlaceholder: 'Select month',
+    snapshotBatchInfo: 'Ownership batch #{{ownershipBatch}}, {{matched}} matched',
   },
 
   // ==================== Cost Center ====================
@@ -351,6 +354,9 @@ export default {
     snapshotTime: 'Snapshot Time',
     snapshotNoData: 'No snapshots yet. Snapshots are created automatically after ownership matching.',
     snapshotFetchFailed: 'Failed to fetch snapshot data',
+    snapshotSelectMonth: 'Month:',
+    snapshotMonthPlaceholder: 'Select month',
+    snapshotBatchInfo: 'Directory batch #{{directoryBatch}}, {{matched}} matched',
   },
 
   // ==================== L3 Sub-branch Detail ====================
