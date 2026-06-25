@@ -91,6 +91,7 @@ export default {
     withdrawSuccess: '撤回成功',
     withdrawFailed: '撤回失败',
     withdrawReasonRequired: '请输入撤回原因',
+    withdrawOkText: '确认撤回',
     confirmWithdraw: '确认撤回',
     withdrawDesc: '撤回后该组织的分摊结果将变为"已撤回"状态，如需重新确认请再次操作。',
     withdrawReasonPlaceholder: '请输入撤回原因（必填）',
@@ -582,5 +583,9 @@ export default {
   // ==================== Common / Shared ====================
   common: {
     paginationTotal: '共 {{total}} 条',
+    status: '状态',
+    actions: '操作',
+    failed: '操作失败',
+    unknown: '未知',
   },
 };

@@ -86,6 +86,7 @@ export default {
     withdrawSuccess: 'Withdrawn',
     withdrawFailed: 'Withdraw failed',
     withdrawReasonRequired: 'Please enter a reason for withdrawal',
+    withdrawOkText: 'Confirm',
     confirmWithdraw: 'Confirm Withdrawal',
     withdrawDesc: 'After withdrawal, this organization\'s allocation status will become "Withdrawn". Please re-confirm if needed.',
     withdrawReasonPlaceholder: 'Enter withdrawal reason (required)',
@@ -546,5 +547,9 @@ export default {
   // ==================== Common / Shared ====================
   common: {
     paginationTotal: '{{total}} records',
+    status: 'Status',
+    actions: 'Actions',
+    failed: 'Operation failed',
+    unknown: 'Unknown',
   },
 };

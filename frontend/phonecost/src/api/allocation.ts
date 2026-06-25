@@ -72,7 +72,7 @@ export const getExportDetailUrl = (batchId: number, branchOrgId?: number) => {
 
 export const getBranchBillUrl = (batchId: number, branchOrgId?: number) => {
   const token = useAuthStore.getState().token;
-  let url = `/api/allocation/export/branch-bill?batchId=${batchId}&token=${token}`;
+  let url = `/api/allocation/export/l2-branch-detail?batchId=${batchId}&token=${token}`;
   if (branchOrgId) url += `&branchOrgId=${branchOrgId}`;
   return url;
 };

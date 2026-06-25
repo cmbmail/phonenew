@@ -388,7 +388,7 @@ export default function L3SubBranchPage() {
               onChange={e => setDetailSearch(e.target.value)}
               style={{ width: 320 }}
             />
-            {detailLoaded && detailData.CALL.length + detailData.RECORDING.length + detailData.CALL.length + detailData.FLASH_MSG.length > 0 && (
+            {detailLoaded && detailData.CALL.length + detailData.RECORDING.length + detailData.CRBT.length + detailData.FLASH_MSG.length > 0 && (
               <Button icon={<DownloadOutlined />} onClick={() => {
                 const batch = batches.find(b => b.id === selectedBatchId);
                 const subBranch = selectedSubBranch?.name || '';

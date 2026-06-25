@@ -663,13 +663,14 @@ public class BranchBillExportService {
      * Each row is a Map with phone_number, org_name, ownership_source, and fields from raw_data.
      */
     public List<Map<String, Object>> getL1DetailData(Long batchId, String sheetType) {
+        String upperSheetType = sheetType.toUpperCase();
         List<BillDetail> details = billDetailRepository.findByBatchIdAndDeletedAtIsNull(batchId)
                 .stream()
-                .filter(d -> sheetType.equals(d.getSheetType()))
+                .filter(d -> upperSheetType.equals(d.getSheetType()))
                 .collect(Collectors.toList());
 
         Map<Long, SysOrganization> orgMap = buildOrgMap();
-        return buildDetailRows(details, sheetType, orgMap);
+        return buildDetailRows(details, upperSheetType, orgMap);
     }
 
     /**
@@ -677,6 +678,7 @@ public class BranchBillExportService {
      * filtered to only include details belonging to the branch's org subtree.
      */
     public List<Map<String, Object>> getL2DetailData(Long batchId, Long branchOrgId, String sheetType) {
+        String upperSheetType = sheetType.toUpperCase();
         Map<Long, SysOrganization> orgMap = buildOrgMap();
         SysOrganization branch = orgMap.get(branchOrgId);
         if (branch == null) return Collections.emptyList();
@@ -684,11 +686,11 @@ public class BranchBillExportService {
 
         List<BillDetail> details = billDetailRepository.findByBatchIdAndDeletedAtIsNull(batchId)
                 .stream()
-                .filter(d -> sheetType.equals(d.getSheetType()))
+                .filter(d -> upperSheetType.equals(d.getSheetType()))
                 .filter(d -> isInPath(d.getOrgId(), pathPrefix, orgMap))
                 .collect(Collectors.toList());
 
-        return buildDetailRows(details, sheetType, orgMap);
+        return buildDetailRows(details, upperSheetType, orgMap);
     }
 
     /**
@@ -696,6 +698,7 @@ public class BranchBillExportService {
      * filtered to only include details belonging to the sub-branch's org subtree.
      */
     public List<Map<String, Object>> getL3DetailData(Long batchId, Long subBranchOrgId, String sheetType) {
+        String upperSheetType = sheetType.toUpperCase();
         Map<Long, SysOrganization> orgMap = buildOrgMap();
         SysOrganization subBranch = orgMap.get(subBranchOrgId);
         if (subBranch == null) return Collections.emptyList();
@@ -703,11 +706,11 @@ public class BranchBillExportService {
 
         List<BillDetail> details = billDetailRepository.findByBatchIdAndDeletedAtIsNull(batchId)
                 .stream()
-                .filter(d -> sheetType.equals(d.getSheetType()))
+                .filter(d -> upperSheetType.equals(d.getSheetType()))
                 .filter(d -> isInPath(d.getOrgId(), pathPrefix, orgMap))
                 .collect(Collectors.toList());
 
-        return buildDetailRows(details, sheetType, orgMap);
+        return buildDetailRows(details, upperSheetType, orgMap);
     }
 
     /** Shared helper to build detail row maps from a filtered list of BillDetail */
