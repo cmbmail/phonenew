@@ -308,18 +308,17 @@ export default {
 
   // ==================== Cost Center ====================
   costCenter: {
-    typeCol: 'Org Type',
-    nameCol: 'Name',
-    fullPathCol: 'Full Path',
-    codeCol: 'Cost Center Code',
-    parentCol: 'Parent Org',
+    branchCol: 'Branch',
+    branchCodeCol: 'Org Code',
+    deptNameCol: 'Department',
+    costCenterCol: 'Cost Center',
     typeFilter: 'Type:',
     typeFilterPlaceholder: 'All types',
     totalOrgs: 'Total Orgs',
     branchCount: 'Branches',
     deptCount: 'Departments',
     costCenterCount: 'With Cost Center',
-    searchPlaceholder: 'Search name/code/path',
+    searchPlaceholder: 'Search branch/code/name',
     noData: 'No organization data',
     fetchFailed: 'Failed to fetch data',
     export: 'Export Mapping',

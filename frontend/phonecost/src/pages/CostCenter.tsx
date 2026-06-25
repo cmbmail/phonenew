@@ -40,15 +40,18 @@ export default function CostCenter() {
     return m;
   }, [orgList]);
 
-  // 扁平化组织列表（排除集团），带上完整路径
+  // 扁平化组织列表（排除集团），计算所属分行信息
   const flatOrgs = useMemo(() => {
     return orgList
       .filter(o => o.type !== 1)
-      .map(o => ({
-        ...o,
-        full_path: buildFullOrgPath(o.id, orgMap),
-        parent_name: o.parent_id ? orgMap.get(o.parent_id)?.name || '' : '',
-      }));
+      .map(o => {
+        const branch = findBranch(o.id, orgMap);
+        return {
+          ...o,
+          branch_name: branch?.name || '',
+          branch_code: branch?.code || '',
+        };
+      });
   }, [orgList, orgMap]);
 
   // 筛选
@@ -62,10 +65,14 @@ export default function CostCenter() {
       result = result.filter(o =>
         o.name.toLowerCase().includes(kw) ||
         (o.code || '').toLowerCase().includes(kw) ||
-        o.full_path.toLowerCase().includes(kw)
+        o.branch_name.toLowerCase().includes(kw) ||
+        (o.branch_code || '').toLowerCase().includes(kw)
       );
     }
     return result.sort((a, b) => {
+      // 按分行名称分组，同分行内按类型再按名称排序
+      const ba = a.branch_name, bb = b.branch_name;
+      if (ba !== bb) return ba.localeCompare(bb);
       const ta = a.type || 99, tb = b.type || 99;
       return ta !== tb ? ta - tb : a.name.localeCompare(b.name);
     });
@@ -78,11 +85,17 @@ export default function CostCenter() {
   const orgTypeLabel = (type: number) => ORG_TYPE_LABELS[type] || '-';
 
   const columns = [
-    { title: t('costCenter.typeCol'), key: 'type', width: 90, render: (_: unknown, r: typeof flatOrgs[0]) => <Tag>{orgTypeLabel(r.type)}</Tag> },
-    { title: t('costCenter.nameCol'), dataIndex: 'name', key: 'name', width: 160 },
-    { title: t('costCenter.fullPathCol'), dataIndex: 'full_path', key: 'full_path', width: 260, ellipsis: true },
-    { title: t('costCenter.codeCol'), dataIndex: 'code', key: 'code', width: 120, render: (v: string) => v || <span style={{ color: '#999' }}>-</span> },
-    { title: t('costCenter.parentCol'), dataIndex: 'parent_name', key: 'parent_name', width: 140, render: (v: string) => v || '-' },
+    { title: t('costCenter.branchCol'), key: 'branch_name', width: 160,
+      render: (_: unknown, r: typeof flatOrgs[0]) => r.branch_name || <span style={{ color: '#999' }}>-</span> },
+    { title: t('costCenter.branchCodeCol'), key: 'branch_code', width: 140,
+      render: (_: unknown, r: typeof flatOrgs[0]) => r.branch_code || <span style={{ color: '#999' }}>-</span> },
+    { title: t('costCenter.deptNameCol'), dataIndex: 'name', key: 'name', width: 200,
+      render: (name: string, r: typeof flatOrgs[0]) => (
+        <span>{name} <Tag style={{ marginLeft: 6 }}>{orgTypeLabel(r.type)}</Tag></span>
+      ),
+    },
+    { title: t('costCenter.costCenterCol'), dataIndex: 'code', key: 'code', width: 140,
+      render: (v: string) => v || <span style={{ color: '#999' }}>-</span> },
   ];
 
   return (
@@ -118,7 +131,7 @@ export default function CostCenter() {
           allowClear
           value={search}
           onChange={e => setSearch(e.target.value)}
-          style={{ width: 320, marginBottom: 12 }}
+          style={{ width: 360, marginBottom: 12 }}
         />
 
         {filteredOrgs.length > 0 ? (
@@ -129,7 +142,7 @@ export default function CostCenter() {
             size="small"
             loading={loading}
             pagination={{ pageSize: 50, showSizeChanger: true, pageSizeOptions: ['25', '50', '100'], showTotal: (total) => t('common.paginationTotal', { total }) }}
-            scroll={{ x: 780 }}
+            scroll={{ x: 680 }}
           />
         ) : (
           !loading && <Empty description={t('costCenter.noData')} />
@@ -139,16 +152,15 @@ export default function CostCenter() {
   );
 }
 
-function buildFullOrgPath(orgId: number, orgMap: Map<number, Organization>): string {
-  const names: string[] = [];
+/** 沿 parent 向上查找所属一级分行(type=2) */
+function findBranch(orgId: number, orgMap: Map<number, Organization>): Organization | null {
   const visited = new Set<number>();
   let org = orgMap.get(orgId);
   while (org && !visited.has(org.id)) {
-    if (org.type === 1) break;
-    names.unshift(org.name);
+    if (org.type === 2) return org;
     visited.add(org.id);
     if (!org.parent_id) break;
     org = orgMap.get(org.parent_id);
   }
-  return names.join('/');
+  return null;
 }

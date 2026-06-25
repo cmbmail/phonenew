@@ -365,18 +365,17 @@ export default {
 
   // ==================== Cost Center ====================
   costCenter: {
-    typeCol: '组织类型',
-    nameCol: '名称',
-    fullPathCol: '完整路径',
-    codeCol: '成本中心编码',
-    parentCol: '上级组织',
+    branchCol: '分行',
+    branchCodeCol: '组织机构代码',
+    deptNameCol: '部门名称',
+    costCenterCol: '成本中心',
     typeFilter: '类型：',
     typeFilterPlaceholder: '全部类型',
     totalOrgs: '组织总数',
     branchCount: '分行数',
     deptCount: '部门数',
     costCenterCount: '有成本中心',
-    searchPlaceholder: '搜索名称/编码/路径',
+    searchPlaceholder: '搜索分行/编码/名称',
     noData: '暂无组织数据',
     fetchFailed: '获取数据失败',
     export: '导出映射',
