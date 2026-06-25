@@ -87,6 +87,7 @@ public class AllocationService {
                     .batchId(billBatchId)
                     .orgId(orgId)
                     .orgName(org != null ? org.getName() : "未知组织")
+                    .costCenter(org != null ? org.getCostCenter() : null)
                     .monthlyRent(fees.monthlyRent)
                     .callFee(fees.callFee)
                     .recordingFee(fees.recordingFee)
@@ -105,6 +106,7 @@ public class AllocationService {
                     .batchId(billBatchId)
                     .orgId(-1L) // sentinel for unassigned
                     .orgName("未归属号码")
+                    .costCenter(null)
                     .monthlyRent(unassigned.monthlyRent)
                     .callFee(unassigned.callFee)
                     .recordingFee(unassigned.recordingFee)
@@ -180,6 +182,7 @@ public class AllocationService {
                     .batchId(batchId)
                     .orgId(parentId)
                     .orgName(parent.getName())
+                    .costCenter(parent.getCostCenter())
                     .monthlyRent(parentFees.monthlyRent)
                     .callFee(parentFees.callFee)
                     .recordingFee(parentFees.recordingFee)

@@ -3,6 +3,7 @@ export interface AllocationResult {
   batch_id: number;
   org_id: number;
   org_name: string;
+  cost_center: string | null;
   monthly_rent: number;
   call_fee: number;
   recording_fee: number;
@@ -39,6 +40,7 @@ export interface AllocationAdjustment {
 
 export interface L1SummaryRow {
   branch_name: string;
+  cost_center: string;
   platform_fee: number;
   monthly_rent_code: number;
   domestic_duration: number;

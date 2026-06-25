@@ -24,7 +24,7 @@ import java.util.stream.Collectors;
  * V2格式（匹配银行财务系统实际模板）：
  * - 分行费用分摊汇总.xlsx: 成本中心 + 费用小计(单位：元)
  * - 分行费用分摊明细.xlsx: 号码 + 成本中心 + 费用小计(单位：元)
- * 成本中心 = sys_organization.code
+ * 成本中心 = sys_organization.cost_center
  */
 @Slf4j
 @Service
@@ -67,10 +67,10 @@ public class AllocationExportService {
             int rowIdx = 1;
             for (AllocationResult r : filtered) {
                 SysOrganization org = orgMap.get(r.getOrgId());
-                String code = org != null ? org.getCode() : "";
+                String costCenter = org != null ? org.getCostCenter() : "";
 
                 Row row = sheet.createRow(rowIdx++);
-                row.createCell(0).setCellValue(code);
+                row.createCell(0).setCellValue(costCenter);
                 Cell feeCell = row.createCell(1);
                 feeCell.setCellValue(r.getTotalFee() != null ? r.getTotalFee().doubleValue() : 0);
             }
@@ -161,11 +161,11 @@ public class AllocationExportService {
 
                 Long orgId = phoneOrgMap.get(phone);
                 SysOrganization org = orgId != null ? orgMap.get(orgId) : null;
-                String code = org != null ? org.getCode() : "";
+                String costCenter = org != null ? org.getCostCenter() : "";
 
                 Row row = sheet.createRow(rowIdx++);
                 row.createCell(0).setCellValue(phone);
-                row.createCell(1).setCellValue(code);
+                row.createCell(1).setCellValue(costCenter);
                 Cell feeCell = row.createCell(2);
                 feeCell.setCellValue(fee.doubleValue());
             }

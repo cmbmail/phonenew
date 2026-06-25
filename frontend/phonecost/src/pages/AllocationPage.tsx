@@ -202,7 +202,7 @@ export default function AllocationPage() {
   // ========== 报销单数据 ==========
   const reimbursementData = useMemo(() => {
     const orgCodeMap = new Map<number, string>();
-    orgList.forEach(o => { if (o.code) orgCodeMap.set(o.id, o.code); });
+    orgList.forEach(o => { if (o.cost_center) orgCodeMap.set(o.id, o.cost_center); });
     const m = new Map<string, number>();
     results.forEach(r => {
       if (r.org_id === -1) return;
@@ -230,6 +230,10 @@ export default function AllocationPage() {
       title: t('allocation.orgName'), dataIndex: 'org_name', key: 'org_name', width: 180,
       render: (name: string, r: AllocationResult) =>
         r.org_id === -1 ? <Tag color="red">{t('bill.unassigned')}</Tag> : name,
+    },
+    {
+      title: t('allocation.costCenterCol'), dataIndex: 'cost_center', key: 'cost_center', width: 100,
+      render: (v: string | null) => v || '-',
     },
     {
       title: t('allocation.monthlyRentFee'), dataIndex: 'monthly_rent', key: 'monthly_rent', width: 100,

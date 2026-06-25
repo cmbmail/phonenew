@@ -25,6 +25,9 @@ public class AllocationResult extends BaseEntity {
     @ColumnDefault("''")
     private String orgName;
 
+    @Column(name = "cost_center")
+    private String costCenter;
+
     @Column(name = "monthly_rent", precision = 12, scale = 2)
     @ColumnDefault("0.00")
     private BigDecimal monthlyRent;

@@ -159,6 +159,7 @@ export default {
     reasonRequired: '请输入调整原因',
     // Columns
     orgName: '组织名称',
+    costCenterCol: '成本中心',
     monthlyRentFee: '月租费',
     callFeeCol: '通话费',
     recordingFeeCol: '录音费',
@@ -205,6 +206,7 @@ export default {
     noData: '暂无分摊数据，请先导入账单并执行分摊计算',
     exportL1: '导出汇总',
     branchCol: '一级分行',
+    costCenterCol: '成本中心',
     platformFeeCol: '平台使用费',
     monthlyRentCodeCol: '码号月租费',
     domesticDurationCol: '国内呼时长(分)',

@@ -93,7 +93,7 @@ public class BranchBillExportService {
 
                 Row row = sheet.createRow(rowIdx++);
                 row.createCell(0).setCellValue(branch.getName());
-                row.createCell(1).setCellValue(branch.getCode() != null ? branch.getCode() : "");
+                row.createCell(1).setCellValue(branch.getCostCenter() != null ? branch.getCostCenter() : "");
 
                 // 从bill_detail按原始列聚合费用（需要raw_data）
                 AggregatedFees fees = aggregateFeesByOrgPath(batchId, branchPath, orgMap);
@@ -299,7 +299,7 @@ public class BranchBillExportService {
             row.createCell(0).setCellValue(seq);
             row.createCell(1).setCellValue(orgTypeLabel(child.getType()));
             row.createCell(2).setCellValue(child.getName());
-            row.createCell(3).setCellValue(child.getCode() != null ? child.getCode() : "");
+            row.createCell(3).setCellValue(child.getCostCenter() != null ? child.getCostCenter() : "");
 
             // 从bill_detail聚合原始费用
             AggregatedFees fees = aggregateFeesByOrgId(batchId, child.getId(), orgMap);
@@ -380,7 +380,7 @@ public class BranchBillExportService {
             row.createCell(0).setCellValue(seq);
             row.createCell(1).setCellValue(orgTypeLabel(child.getType()));
             row.createCell(2).setCellValue(child.getName());
-            row.createCell(3).setCellValue(child.getCode() != null ? child.getCode() : "");
+            row.createCell(3).setCellValue(child.getCostCenter() != null ? child.getCostCenter() : "");
 
             AggregatedFees fees = aggregateFeesByOrgId(batchId, child.getId(), orgMap);
             setCurrencyCell(row.createCell(4), fees.platformFee, numberStyle);
@@ -590,7 +590,7 @@ public class BranchBillExportService {
                 SysOrganization org = d.getOrgId() != null ? orgMap.get(d.getOrgId()) : null;
                 row.createCell(2).setCellValue(org != null && org.getCode() != null ? org.getCode() : "");
                 row.createCell(3).setCellValue(org != null ? buildFullNamePath(d.getOrgId(), orgMap) : "");
-                row.createCell(4).setCellValue(org != null && org.getCode() != null ? org.getCode() : "");
+                row.createCell(4).setCellValue(org != null && org.getCostCenter() != null ? org.getCostCenter() : "");
                 row.createCell(5).setCellValue(d.getIsException() != null && d.getIsException() == 1 ? "是" : "否");
                 String remark = "";
                 if (d.getIsSeconded() != null && d.getIsSeconded() == 1) remark = "借调";
@@ -724,6 +724,7 @@ public class BranchBillExportService {
             row.put("org_name", buildFullNamePath(d.getOrgId(), orgMap));
             SysOrganization org = orgMap.get(d.getOrgId());
             row.put("org_code", org != null && org.getCode() != null ? org.getCode() : "");
+            row.put("cost_center", org != null && org.getCostCenter() != null ? org.getCostCenter() : "");
             row.put("ownership_source", d.getOwnershipSource() != null ? d.getOwnershipSource() : "");
 
             String raw = d.getRawData();
@@ -807,6 +808,7 @@ public class BranchBillExportService {
 
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("branch_name", branch.getName());
+            row.put("cost_center", branch.getCostCenter() != null ? branch.getCostCenter() : "");
             row.put("platform_fee", fees.platformFee);
             row.put("monthly_rent_code", fees.monthlyRentCode);
             row.put("domestic_duration", fees.domesticDuration);

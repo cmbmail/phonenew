@@ -166,7 +166,7 @@ export default function L3SubBranchPage() {
     { title: t('l3SubBranch.seqCol'), key: 'seq', width: 50, render: (_: unknown, __: unknown, i: number) => i + 1 },
     { title: t('l3SubBranch.orgTypeCol'), key: 'orgType', width: 80, render: (_: unknown, r: typeof childSummary[0]) => orgTypeLabel(r.child.type) },
     { title: t('l3SubBranch.orgNameCol'), key: 'orgName', width: 140, render: (_: unknown, r: typeof childSummary[0]) => r.child.name },
-    { title: t('l3SubBranch.costCenterCol'), key: 'costCenter', width: 90, render: (_: unknown, r: typeof childSummary[0]) => (r.child.type === 2 || r.child.type === 3) ? '-' : (r.child.code || '-') },
+    { title: t('l3SubBranch.costCenterCol'), key: 'costCenter', width: 90, render: (_: unknown, r: typeof childSummary[0]) => r.child.cost_center || '-' },
     { title: t('l3SubBranch.monthlyRentCodeCol'), key: 'monthlyRent', width: 100, dataIndex: 'monthlyRent', render: money },
     { title: t('l3SubBranch.domesticFeeCol'), key: 'callFee', width: 100, dataIndex: 'callFee', render: money },
     { title: t('l3SubBranch.recordingFeeCol'), key: 'recordingFee', width: 100, dataIndex: 'recordingFee', render: money },
@@ -183,7 +183,7 @@ export default function L3SubBranchPage() {
     { title: t('l1Detail.phoneCol'), dataIndex: 'phone_number', key: 'phone_number', width: 120, fixed: 'left' as const },
     { title: t('l1Detail.extensionCol'), dataIndex: 'extension', key: 'extension', width: 90 },
     { title: t('l1Detail.orgCol'), dataIndex: 'org_name', key: 'org_name', width: 180 },
-    { title: t('l1Detail.orgCodeCol'), dataIndex: 'org_code', key: 'org_code', width: 100 },
+    { title: t('l1Detail.orgCodeCol'), dataIndex: 'cost_center', key: 'cost_center', width: 100 },
     { title: t('l1Detail.platformFeeCol'), dataIndex: 'platform_fee', key: 'platform_fee', width: 100, align: 'right' as const, render: money },
     { title: t('l1Detail.monthlyRentCodeCol'), dataIndex: 'monthly_rent_code', key: 'monthly_rent_code', width: 100, align: 'right' as const, render: money },
     { title: t('l1Detail.domesticDurationCol'), dataIndex: 'domestic_duration', key: 'domestic_duration', width: 110, align: 'right' as const, render: dur },
@@ -199,7 +199,7 @@ export default function L3SubBranchPage() {
     { title: t('l1Detail.extensionCol'), dataIndex: 'extension', key: 'extension', width: 90 },
     { title: t('l1Detail.phoneCol'), dataIndex: 'phone_number', key: 'phone_number', width: 120 },
     { title: t('l1Detail.orgCol'), dataIndex: 'org_name', key: 'org_name', width: 200 },
-    { title: t('l1Detail.orgCodeCol'), dataIndex: 'org_code', key: 'org_code', width: 100 },
+    { title: t('l1Detail.orgCodeCol'), dataIndex: 'cost_center', key: 'cost_center', width: 100 },
     { title: t('l1Detail.recordingDirCol'), dataIndex: 'recording_dir', key: 'recording_dir', width: 200 },
     { title: t('l1Detail.recordingFeeCol'), dataIndex: 'recording_fee', key: 'recording_fee', width: 100, align: 'right' as const, render: money },
     { title: t('l1Detail.sourceCol'), dataIndex: 'ownership_source', key: 'ownership_source', width: 70 },
@@ -209,7 +209,7 @@ export default function L3SubBranchPage() {
     { title: t('l1Detail.phoneCol'), dataIndex: 'phone_number', key: 'phone_number', width: 120 },
     { title: t('l1Detail.extensionCol'), dataIndex: 'extension', key: 'extension', width: 90 },
     { title: t('l1Detail.orgCol'), dataIndex: 'org_name', key: 'org_name', width: 200 },
-    { title: t('l1Detail.orgCodeCol'), dataIndex: 'org_code', key: 'org_code', width: 100 },
+    { title: t('l1Detail.orgCodeCol'), dataIndex: 'cost_center', key: 'cost_center', width: 100 },
     { title: t('l1Detail.crbtFeeCol'), dataIndex: 'crbt_fee', key: 'crbt_fee', width: 100, align: 'right' as const, render: money },
     { title: t('l1Detail.sourceCol'), dataIndex: 'ownership_source', key: 'ownership_source', width: 70 },
   ];
@@ -218,7 +218,7 @@ export default function L3SubBranchPage() {
     { title: t('l1Detail.phoneCol'), dataIndex: 'phone_number', key: 'phone_number', width: 120 },
     { title: t('l1Detail.extensionCol'), dataIndex: 'extension', key: 'extension', width: 90 },
     { title: t('l1Detail.orgCol'), dataIndex: 'org_name', key: 'org_name', width: 200 },
-    { title: t('l1Detail.orgCodeCol'), dataIndex: 'org_code', key: 'org_code', width: 100 },
+    { title: t('l1Detail.orgCodeCol'), dataIndex: 'cost_center', key: 'cost_center', width: 100 },
     { title: t('l1Detail.flashMonthCol'), dataIndex: 'flash_month', key: 'flash_month', width: 90 },
     { title: t('l1Detail.flashCountCol'), dataIndex: 'flash_count', key: 'flash_count', width: 90, align: 'right' as const, render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? String(Math.round(n)) : '-'; } },
     { title: t('l1Detail.flashFeeCol'), dataIndex: 'flash_msg_fee', key: 'flash_msg_fee', width: 100, align: 'right' as const, render: money },
@@ -234,6 +234,7 @@ export default function L3SubBranchPage() {
         String(r.phone_number || '').toLowerCase().includes(kw) ||
         String(r.extension || '').toLowerCase().includes(kw) ||
         String(r.org_name || '').toLowerCase().includes(kw) ||
+        String(r.cost_center || '').toLowerCase().includes(kw) ||
         String(r.org_code || '').toLowerCase().includes(kw)
       );
     return {
@@ -286,8 +287,8 @@ export default function L3SubBranchPage() {
   // ========== 报销单数据 ==========
   const reimbursementData = useMemo(() => {
     return childSummary
-      .filter(c => c.child.code && c.child.type !== 2 && c.child.type !== 3)
-      .map((c, i) => ({ key: i, cost_center: c.child.code!, fee_subtotal: c.totalFee }))
+      .filter(c => c.child.cost_center && c.child.type !== 2 && c.child.type !== 3)
+      .map((c, i) => ({ key: i, cost_center: c.child.cost_center!, fee_subtotal: c.totalFee }))
       .sort((a, b) => a.cost_center.localeCompare(b.cost_center));
   }, [childSummary]);
 
@@ -326,7 +327,7 @@ export default function L3SubBranchPage() {
                     { title: t('l3SubBranch.seqCol'), dataIndex: 'seq', render: (_: unknown, __: unknown, i: number) => i + 1 },
                     { title: t('l3SubBranch.orgTypeCol'), dataIndex: 'orgType', render: (_: unknown, r: typeof childSummary[0]) => orgTypeLabel(r.child.type) },
                     { title: t('l3SubBranch.orgNameCol'), dataIndex: 'orgName', render: (_: unknown, r: typeof childSummary[0]) => r.child.name },
-                    { title: t('l3SubBranch.costCenterCol'), dataIndex: 'costCenter', render: (_: unknown, r: typeof childSummary[0]) => (r.child.type === 2 || r.child.type === 3) ? '-' : (r.child.code || '-') },
+                    { title: t('l3SubBranch.costCenterCol'), dataIndex: 'costCenter', render: (_: unknown, r: typeof childSummary[0]) => r.child.cost_center || '-' },
                     { title: t('l3SubBranch.monthlyRentCodeCol'), dataIndex: 'monthlyRent', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
                     { title: t('l3SubBranch.domesticFeeCol'), dataIndex: 'callFee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
                     { title: t('l3SubBranch.recordingFeeCol'), dataIndex: 'recordingFee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
@@ -407,7 +408,7 @@ export default function L3SubBranchPage() {
                     { title: t('l1Detail.phoneCol'), dataIndex: 'phone_number' },
                     { title: t('l1Detail.extensionCol'), dataIndex: 'extension' },
                     { title: t('l1Detail.orgCol'), dataIndex: 'org_name' },
-                    { title: t('l1Detail.orgCodeCol'), dataIndex: 'org_code' },
+                    { title: t('l1Detail.orgCodeCol'), dataIndex: 'cost_center' },
                     { title: t('l1Detail.platformFeeCol'), dataIndex: 'platform_fee', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? n.toFixed(2) : ''; } },
                     { title: t('l1Detail.monthlyRentCodeCol'), dataIndex: 'monthly_rent_code', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? n.toFixed(2) : ''; } },
                     { title: t('l1Detail.domesticDurationCol'), dataIndex: 'domestic_duration', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? n.toFixed(1) : ''; } },
