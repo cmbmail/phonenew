@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { COLORS } from '../theme/morandi';
 import { Card, Table, Select, Tag, Row, Col, message, Empty, Input, Statistic, Tabs } from 'antd';
 import { SearchOutlined, CameraOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
@@ -159,12 +160,12 @@ export default function PhoneNumberOwnership() {
     { title: t('phoneOwnership.descCol'), dataIndex: 'description', key: 'description', width: 150, ellipsis: true },
     {
       title: t('phoneOwnership.exceptionCol'), dataIndex: 'is_exception', key: 'is_exception', width: 80,
-      render: (v: number) => v === 1 ? <Tag color="red">P0</Tag> : '-',
+      render: (v: number) => v === 1 ? <Tag color={COLORS.danger}>P0</Tag> : '-',
     },
     {
       title: t('phoneOwnership.orgCol'), key: 'org_name', width: 200,
       render: (_: unknown, r: OwnershipEntry) => {
-        if (!r.org_id) return <span style={{ color: '#999' }}>-</span>;
+        if (!r.org_id) return <span style={{ color: COLORS.textMuted }}>-</span>;
         const org = orgMap.get(r.org_id);
         return org ? buildFullOrgPath(r.org_id, orgMap) : String(r.org_id);
       },
@@ -199,7 +200,7 @@ export default function PhoneNumberOwnership() {
       {selectedBatchId && (
         <Row gutter={16} style={{ marginBottom: 16 }}>
           <Col span={4}><Statistic title={t('phoneOwnership.totalCount')} value={filteredEntries.length} /></Col>
-          <Col span={4}><Statistic title={t('phoneOwnership.exceptionCount')} value={exceptionCount} valueStyle={{ color: exceptionCount > 0 ? '#cf1322' : undefined }} /></Col>
+          <Col span={4}><Statistic title={t('phoneOwnership.exceptionCount')} value={exceptionCount} valueStyle={{ color: exceptionCount > 0 ? COLORS.danger : undefined }} /></Col>
         </Row>
       )}
       {selectedBatchId && (
@@ -226,7 +227,7 @@ export default function PhoneNumberOwnership() {
             options={snapshotMonthOptions} />
         </Col>
         {selectedSnapshot && (
-          <Col style={{ color: '#888', fontSize: 13 }}>
+          <Col style={{ color: COLORS.textMuted, fontSize: 13 }}>
             {t('phoneOwnership.snapshotBatchInfo', { ownershipBatch: selectedSnapshot.ownership_batch_id ?? '-', matched: selectedSnapshot.matched_count })}
           </Col>
         )}

@@ -1,3 +1,5 @@
+import { COLORS } from '../theme/morandi';
+
 export interface AllocationResult {
   id: number;
   batch_id: number;
@@ -60,6 +62,6 @@ export interface L1SummaryRow {
 
 export const CONFIRM_STATUS_MAP: Record<number, { label: string; color: string }> = {
   0: { label: '待确认', color: 'default' },
-  1: { label: '已确认', color: 'success' },
-  2: { label: '已撤回', color: 'warning' },
+  1: { label: '已确认', color: COLORS.confirmed },
+  2: { label: '已撤回', color: COLORS.pending },
 };

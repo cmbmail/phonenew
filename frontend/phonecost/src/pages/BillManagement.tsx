@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { COLORS } from '../theme/morandi';
 import { Card, Table, Tag, Button, Space, Modal, Input, message, Descriptions } from 'antd';
 import { CheckOutlined, UndoOutlined, DownloadOutlined, CalculatorOutlined } from '@ant-design/icons';
 import type { BillBatch } from '../types/bill';
@@ -153,7 +154,7 @@ export default function BillManagement() {
     {
       title: t('bill.orgLabel'), dataIndex: 'org_name', key: 'org_name', width: 180,
       render: (name: string, r: AllocationResult) =>
-        r.org_id === -1 ? <Tag color="red">{t('bill.unassigned')}</Tag> : name,
+        r.org_id === -1 ? <Tag color={COLORS.danger}>{t('bill.unassigned')}</Tag> : name,
     },
     { title: t('bill.phoneCount'), dataIndex: 'phone_count', key: 'phone_count', width: 80 },
     {

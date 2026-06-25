@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { COLORS } from '../theme/morandi';
 import {
   Card,
   Table,
@@ -151,7 +152,7 @@ export default function UserManagement() {
     },
     {
       title: t('user.colMustChangePwd'), dataIndex: 'must_change_pwd', key: 'must_change_pwd', width: 80,
-      render: (v: number) => v === 1 ? <Tag color="orange">{t('user.yes')}</Tag> : <Tag color="default">{t('user.no')}</Tag>,
+      render: (v: number) => v === 1 ? <Tag color={COLORS.pending}>{t('user.yes')}</Tag> : <Tag color="default">{t('user.no')}</Tag>,
     },
     {
       title: t('user.colCreatedAt'), dataIndex: 'created_at', key: 'created_at', width: 150,

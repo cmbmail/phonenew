@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { COLORS } from '../theme/morandi';
 import { Card, Table, Select, Tag, Row, Col, message, Empty, Input, Statistic, Tabs } from 'antd';
 import { SearchOutlined, CameraOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
@@ -165,7 +166,7 @@ export default function DepartmentOwnership() {
     {
       title: t('deptOwnership.orgCol'), key: 'org_name', width: 200,
       render: (_: unknown, r: DirectoryEntry) => {
-        if (!r.org_id) return <span style={{ color: '#999' }}>-</span>;
+        if (!r.org_id) return <span style={{ color: COLORS.textMuted }}>-</span>;
         const org = orgMap.get(r.org_id);
         return org ? buildFullOrgPath(r.org_id, orgMap) : String(r.org_id);
       },
@@ -183,7 +184,7 @@ export default function DepartmentOwnership() {
       title: t('deptOwnership.secondedCol'), dataIndex: 'is_seconded', key: 'is_seconded', width: 80,
       render: (v: number) => {
         if (v !== 1) return '-';
-        return <Tag color="orange">借调</Tag>;
+        return <Tag color={COLORS.pending}>借调</Tag>;
       },
     },
   ];
@@ -201,7 +202,7 @@ export default function DepartmentOwnership() {
       {selectedBatchId && (
         <Row gutter={16} style={{ marginBottom: 16 }}>
           <Col span={4}><Statistic title={t('deptOwnership.totalCount')} value={filteredEntries.length} /></Col>
-          <Col span={4}><Statistic title={t('deptOwnership.secondedCount')} value={secondedCount} valueStyle={{ color: secondedCount > 0 ? '#d46b08' : undefined }} /></Col>
+          <Col span={4}><Statistic title={t('deptOwnership.secondedCount')} value={secondedCount} valueStyle={{ color: secondedCount > 0 ? COLORS.pending : undefined }} /></Col>
         </Row>
       )}
       {selectedBatchId && (
@@ -228,7 +229,7 @@ export default function DepartmentOwnership() {
             options={snapshotMonthOptions} />
         </Col>
         {selectedSnapshot && (
-          <Col style={{ color: '#888', fontSize: 13 }}>
+          <Col style={{ color: COLORS.textMuted, fontSize: 13 }}>
             {t('deptOwnership.snapshotBatchInfo', { directoryBatch: selectedSnapshot.directory_batch_id ?? '-', matched: selectedSnapshot.matched_count })}
           </Col>
         )}

@@ -6,6 +6,7 @@ export const COLORS = {
   charcoal: '#3D4248',    // Dark charcoal grey — sidebar, stat cards
   sage: '#8B9D9E',        // Muted sage green — primary action color
   taupe: '#C4B5A0',       // Warm taupe/beige — accents
+  mauve: '#9B8AA4',       // Muted mauve — purple category
   slate: '#7B8FA1',       // Dusty slate blue — secondary
   cream: '#F5F2ED',       // Light cream — page background
   white: '#FFFFFF',

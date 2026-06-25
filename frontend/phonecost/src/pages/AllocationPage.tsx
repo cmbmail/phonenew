@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { COLORS } from '../theme/morandi';
 import { Card, Table, Tag, Button, Space, Modal, Input, Select, message, Descriptions, Tabs, Form, TreeSelect, Row, Col } from 'antd';
 import { CheckOutlined, UndoOutlined, DownloadOutlined, SwapOutlined, HistoryOutlined, FileTextOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
@@ -239,7 +240,7 @@ export default function AllocationPage() {
     {
       title: t('allocation.orgName'), dataIndex: 'org_name', key: 'org_name', width: 180,
       render: (name: string, r: AllocationResult) =>
-        r.org_id === -1 ? <Tag color="red">{t('bill.unassigned')}</Tag> : name,
+        r.org_id === -1 ? <Tag color={COLORS.danger}>{t('bill.unassigned')}</Tag> : name,
     },
     {
       title: t('allocation.costCenterCol'), dataIndex: 'cost_center', key: 'cost_center', width: 100,

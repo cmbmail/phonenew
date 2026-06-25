@@ -250,7 +250,7 @@ export default function Dashboard() {
       key: 'confirm_status',
       width: 100,
       render: (s: number) =>
-        s === 1 ? <Tag color="green">{t('dashboard.confirmed')}</Tag> : <Tag color="orange">{t('dashboard.pending')}</Tag>,
+        s === 1 ? <Tag color={COLORS.confirmed}>{t('dashboard.confirmed')}</Tag> : <Tag color={COLORS.pending}>{t('dashboard.pending')}</Tag>,
     },
   ];
 

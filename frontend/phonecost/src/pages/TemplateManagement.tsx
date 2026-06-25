@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { COLORS } from '../theme/morandi';
 import {
   Card,
   Table,
@@ -261,7 +262,7 @@ export default function TemplateManagement() {
       width: 70,
       render: (_, r) =>
         r.is_active === 1 ? (
-          <Tag color="green" icon={<CheckCircleOutlined />}>
+          <Tag color={COLORS.confirmed} icon={<CheckCircleOutlined />}>
             {t('template.activeTag')}
           </Tag>
         ) : (
@@ -413,7 +414,7 @@ export default function TemplateManagement() {
               <Descriptions.Item label={t('template.operator')}>{OPERATOR_LABELS[detailTemplate.operator] || detailTemplate.operator}</Descriptions.Item>
               <Descriptions.Item label={t('template.monthPattern')}>{detailTemplate.month_pattern || '-'}</Descriptions.Item>
               <Descriptions.Item label={t('template.statusField')}>
-                {detailTemplate.is_active === 1 ? <Tag color="green">{t('template.statusActive')}</Tag> : <Tag>{t('template.statusInactive')}</Tag>}
+                {detailTemplate.is_active === 1 ? <Tag color={COLORS.confirmed}>{t('template.statusActive')}</Tag> : <Tag>{t('template.statusInactive')}</Tag>}
               </Descriptions.Item>
               <Descriptions.Item label={t('template.description')} span={2}>{detailTemplate.description || '-'}</Descriptions.Item>
               <Descriptions.Item label={t('template.createdAtField')} span={2}>{new Date(detailTemplate.created_at).toLocaleString()}</Descriptions.Item>
@@ -426,9 +427,9 @@ export default function TemplateManagement() {
                 size="small"
                 title={
                   <Space>
-                    <Tag color="blue">{SHEET_TYPE_LABELS[sheet.sheetType] || sheet.sheetType}</Tag>
+                    <Tag color={COLORS.slate}>{SHEET_TYPE_LABELS[sheet.sheetType] || sheet.sheetType}</Tag>
                     <Text type="secondary">{t('template.matchLabel')} {sheet.sheetNamePattern}</Text>
-                    {sheet.isQuarterly && <Tag color="orange">{t('template.quarterlyTag')}</Tag>}
+                    {sheet.isQuarterly && <Tag color={COLORS.pending}>{t('template.quarterlyTag')}</Tag>}
                   </Space>
                 }
                 style={{ marginBottom: 8 }}
@@ -443,7 +444,7 @@ export default function TemplateManagement() {
                   <div style={{ marginTop: 8 }}>
                     <Text strong>{t('template.columnDefTitle')}</Text>
                     <pre style={{
-                      background: '#f5f5f5', padding: 8, borderRadius: 4,
+                      background: COLORS.cream, padding: 8, borderRadius: 4,
                       fontSize: 11, marginTop: 4, overflow: 'auto', maxHeight: 150,
                     }}>
                       {JSON.stringify(sheet.columns, null, 2)}
@@ -454,7 +455,7 @@ export default function TemplateManagement() {
                   <div style={{ marginTop: 8 }}>
                     <Text strong>{t('template.computedFieldsTitle')}</Text>
                     <pre style={{
-                      background: '#f5f5f5', padding: 8, borderRadius: 4,
+                      background: COLORS.cream, padding: 8, borderRadius: 4,
                       fontSize: 11, marginTop: 4, overflow: 'auto', maxHeight: 100,
                     }}>
                       {JSON.stringify(sheet.computedFields, null, 2)}
@@ -471,7 +472,7 @@ export default function TemplateManagement() {
             <Typography.Title level={5} style={{ marginTop: 16 }}>{t('template.rawJsonTitle')}</Typography.Title>
             <Paragraph>
               <pre style={{
-                background: '#f5f5f5', padding: 12, borderRadius: 6,
+                background: COLORS.cream, padding: 12, borderRadius: 6,
                 fontSize: 11, overflow: 'auto', maxHeight: 400,
               }}>
                 {(() => {

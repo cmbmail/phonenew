@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { COLORS } from '../theme/morandi';
 import {
   Card,
   Tree,
@@ -39,12 +40,12 @@ import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
 
 const ORG_TYPE_COLORS: Record<number, string> = {
-  1: 'red',
-  2: 'orange',
-  3: 'blue',
-  4: 'green',
-  5: 'purple',
-  6: 'cyan',
+  1: COLORS.danger,
+  2: COLORS.pending,
+  3: COLORS.slate,
+  4: COLORS.confirmed,
+  5: COLORS.mauve,
+  6: COLORS.sage,
 };
 
 function buildTree(list: Organization[]): DataNode[] {
@@ -403,7 +404,7 @@ export default function OrganizationPage() {
             </Card>
           ) : (
             <Card styles={{ body: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 400 } }}>
-              <ApartmentOutlined style={{ fontSize: 48, color: '#d9d9d9', marginBottom: 16 }} />
+              <ApartmentOutlined style={{ fontSize: 48, color: COLORS.border, marginBottom: 16 }} />
               <Typography.Text type="secondary" style={{ fontSize: 14 }}>{t('org.selectNodeHint')}</Typography.Text>
             </Card>
           )}
