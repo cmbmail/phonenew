@@ -93,6 +93,7 @@ export default function OrganizationPage() {
     if (org) {
       editForm.setFieldsValue({
         name: org.name,
+        type: org.type,
         code: org.code || '',
         cost_center: org.cost_center || '',
         is_active: org.is_active === 1,
@@ -135,6 +136,7 @@ export default function OrganizationPage() {
       const values = await editForm.validateFields();
       await updateOrg(selectedOrg.id, {
         name: values.name,
+        type: values.type,
         code: values.code,
         cost_center: values.cost_center,
         is_active: values.is_active ? 1 : 0,
@@ -272,13 +274,15 @@ export default function OrganizationPage() {
                     <span className="org-tree-actions" style={{ opacity: 0, transition: 'opacity 0.15s' }}>
                       {org && (
                         <>
-                          <Button
-                            type="link"
-                            size="small"
-                            icon={<PlusOutlined />}
-                            onClick={(e) => { e.stopPropagation(); handleAddChild(org.id); }}
-                            title={t('org.addChild')}
-                          />
+                          {node.children && node.children.length > 0 && (
+                            <Button
+                              type="link"
+                              size="small"
+                              icon={<PlusOutlined />}
+                              onClick={(e) => { e.stopPropagation(); handleAddChild(org.id); }}
+                              title={t('org.addChild')}
+                            />
+                          )}
                           <Popconfirm
                             title={t('org.deleteConfirm')}
                             onConfirm={(e) => {
@@ -320,6 +324,9 @@ export default function OrganizationPage() {
                 <Form form={editForm} layout="inline" onFinish={handleEdit}>
                   <Form.Item name="name" rules={[{ required: true, message: t('org.nameRequired') }]}>
                     <Input placeholder={t('org.name')} />
+                  </Form.Item>
+                  <Form.Item name="type" rules={[{ required: true, message: t('org.typeRequired') }]}>
+                    <Select options={ORG_TYPE_OPTIONS} style={{ width: 130 }} />
                   </Form.Item>
                   <Form.Item name="code">
                     <Input placeholder={t('org.code')} />
