@@ -104,21 +104,23 @@ public class OrganizationController {
             headerStyle.setAlignment(HorizontalAlignment.CENTER);
 
             // Headers
-            String[] headers = {"组织名称", "组织类型", "组织代码", "上级代码", "排序"};
+            String[] headers = {"组织名称", "组织代码", "成本中心"};
             Row headerRow = sheet.createRow(0);
             for (int i = 0; i < headers.length; i++) {
                 Cell cell = headerRow.createCell(i);
                 cell.setCellValue(headers[i]);
                 cell.setCellStyle(headerStyle);
-                sheet.setColumnWidth(i, 4000);
             }
+            sheet.setColumnWidth(0, 12000);
+            sheet.setColumnWidth(1, 5000);
+            sheet.setColumnWidth(2, 5000);
 
             // Sample rows
             String[][] samples = {
-                {"集团总部", "集团", "GROUP001", "", "1"},
-                {"北京分行", "一级分行", "BR001", "GROUP001", "2"},
-                {"海淀支行", "二级分行", "SUB001", "BR001", "1"},
-                {"科技部", "部门", "DEPT001", "SUB001", "1"},
+                {"集团总部", "001", "CC001"},
+                {"集团总部/北京分行", "002", "CC002"},
+                {"集团总部/北京分行/海淀支行", "003", "CC003"},
+                {"集团总部/北京分行/海淀支行/科技部", "004", "CC004"},
             };
             for (int i = 0; i < samples.length; i++) {
                 Row row = sheet.createRow(i + 1);
@@ -135,9 +137,9 @@ public class OrganizationController {
             noteFont.setItalic(true);
             noteStyle.setFont(noteFont);
             Cell noteCell = noteRow.createCell(0);
-            noteCell.setCellValue("说明：组织类型支持数字(1-6)或中文名称(集团/一级分行/二级分行/部门/综合支行/零专支行)；上级代码为空表示顶级节点");
+            noteCell.setCellValue("说明：组织名称为必填项，各级以 / 分隔（如 集团总部/北京分行/海淀支行）；组织代码和成本中心选填，为空时显示为 \"-\"");
             noteCell.setCellStyle(noteStyle);
-            sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(samples.length + 2, samples.length + 2, 0, 4));
+            sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(samples.length + 2, samples.length + 2, 0, 2));
 
             wb.write(out);
 

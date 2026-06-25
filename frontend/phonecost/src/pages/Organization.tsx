@@ -89,7 +89,8 @@ export default function OrganizationPage() {
     if (org) {
       editForm.setFieldsValue({
         name: org.name,
-        code: org.code,
+        code: org.code || '',
+        cost_center: org.cost_center || '',
         is_active: org.is_active === 1,
       });
     }
@@ -122,6 +123,7 @@ export default function OrganizationPage() {
       await updateOrg(selectedOrg.id, {
         name: values.name,
         code: values.code,
+        cost_center: values.cost_center,
         is_active: values.is_active ? 1 : 0,
       });
       message.success(t('org.updateSuccess'));
@@ -192,8 +194,8 @@ export default function OrganizationPage() {
   const childColumns = [
     { title: t('org.colName'), dataIndex: 'name', key: 'name' },
     { title: t('org.colType'), dataIndex: 'type', key: 'type', render: (v: number) => ORG_TYPE_LABELS[v] || '-' },
-    { title: t('org.colCode'), dataIndex: 'code', key: 'code' },
-    { title: t('org.colCostCenter'), dataIndex: 'code', key: 'cost_center' },
+    { title: t('org.colCode'), dataIndex: 'code', key: 'code', align: 'center' as const, render: (v: string | null) => v || '-' },
+    { title: t('org.colCostCenter'), dataIndex: 'cost_center', key: 'cost_center', align: 'center' as const, render: (v: string | null) => v || '-' },
     { title: t('org.colStatus'), dataIndex: 'is_active', key: 'is_active', render: (v: number) => v === 1 ? <Tag color="green">{t('org.statusEnabled')}</Tag> : <Tag color="red">{t('org.statusDisabled')}</Tag> },
     {
       title: t('org.colActions'), key: 'actions', width: 80,
@@ -267,6 +269,9 @@ export default function OrganizationPage() {
                   <Form.Item name="code">
                     <Input placeholder={t('org.code')} />
                   </Form.Item>
+                  <Form.Item name="cost_center">
+                    <Input placeholder={t('org.costCenter')} />
+                  </Form.Item>
                   <Form.Item name="is_active" valuePropName="checked">
                     <Switch checkedChildren={t('org.statusEnabled')} unCheckedChildren={t('org.statusDisabled')} />
                   </Form.Item>
@@ -311,6 +316,9 @@ export default function OrganizationPage() {
           </Form.Item>
           <Form.Item name="code" label={t('org.code')}>
             <Input placeholder={t('org.codePlaceholder')} />
+          </Form.Item>
+          <Form.Item name="cost_center" label={t('org.costCenter')}>
+            <Input placeholder={t('org.costCenterPlaceholder')} />
           </Form.Item>
           <Form.Item name="parent_id" label={t('org.parentOrg')}>
             <Select

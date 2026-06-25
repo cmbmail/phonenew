@@ -22,6 +22,9 @@ public class SysOrganization extends BaseEntity {
     @Column(name = "code")
     private String code;
 
+    @Column(name = "cost_center")
+    private String costCenter;
+
     @Column(name = "parent_id")
     private Long parentId;
 
