@@ -5,6 +5,7 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
 import { getErrorMessage } from '../types/api';
 import { apiPost } from '../lib/request';
+import { COLORS } from '../theme/morandi';
 const { Sider, Header, Content } = Layout;
 const { Text } = Typography;
 
@@ -93,17 +94,17 @@ const AppLayout: React.FC = () => {
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Sider collapsible collapsed={collapsed} onCollapse={setCollapsed} style={{ overflow: 'auto', height: '100vh', position: 'fixed', left: 0 }}>
-        <div style={{ height: 32, margin: 16, background: 'rgba(255,255,255,0.2)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ color: '#fff', fontSize: collapsed ? 14 : 16, fontWeight: 'bold' }}>{collapsed ? 'PC' : '费用分摊'}</Text>
+      <Sider collapsible collapsed={collapsed} onCollapse={setCollapsed} style={{ overflow: 'auto', height: '100vh', position: 'fixed', left: 0, background: COLORS.charcoal }}>
+        <div style={{ height: 36, margin: '16px 12px', background: 'rgba(139,157,158,0.25)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ color: '#fff', fontSize: collapsed ? 14 : 15, fontWeight: 600, letterSpacing: 1 }}>{collapsed ? 'PC' : '费用分摊'}</Text>
         </div>
         <Menu theme="dark" mode="inline" selectedKeys={[location.pathname]} defaultOpenKeys={['/allocation-group']} items={menuItems} onClick={({ key }) => navigate(key)} />
       </Sider>
-      <Layout style={{ marginLeft: collapsed ? 80 : 200, transition: 'margin-left 0.2s' }}>
-        <Header style={{ padding: '0 24px', background: '#fff', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', borderBottom: '1px solid #f0f0f0', gap: 16 }}>
-          <Dropdown menu={userMenu}><div style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}><Avatar size="small">{(realName || username || '?')[0]}</Avatar><Text>{realName || username}</Text></div></Dropdown>
+      <Layout style={{ marginLeft: collapsed ? 80 : 200, transition: 'margin-left 0.2s', background: COLORS.cream }}>
+        <Header style={{ padding: '0 24px', background: COLORS.white, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', borderBottom: `1px solid ${COLORS.border}`, gap: 16, boxShadow: '0 1px 4px rgba(0,0,0,0.03)' }}>
+          <Dropdown menu={userMenu}><div style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}><Avatar size="small" style={{ background: COLORS.sage }}>{(realName || username || '?')[0]}</Avatar><Text>{realName || username}</Text></div></Dropdown>
         </Header>
-        <Content style={{ margin: 24, padding: 24, background: '#fff', borderRadius: 8, minHeight: 360 }}><Outlet /></Content>
+        <Content style={{ margin: 20, padding: 24, background: COLORS.white, borderRadius: 12, minHeight: 360, boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}><Outlet /></Content>
       </Layout>
       <Modal title="修改密码" open={changePwdOpen || mustChangePwd} onCancel={mustChangePwd ? undefined : () => setChangePwdOpen(false)} footer={null} closable={!mustChangePwd} maskClosable={!mustChangePwd}>
         {mustChangePwd && <Typography.Paragraph type="warning" style={{ marginBottom: 16 }}>首次登录需要修改密码后才能使用系统</Typography.Paragraph>}
@@ -111,7 +112,7 @@ const AppLayout: React.FC = () => {
           <Form.Item name="old_password" label="原密码" rules={[{ required: true, message: '请输入原密码' }]}><Input.Password /></Form.Item>
           <Form.Item name="new_password" label="新密码" rules={[{ required: true, message: '请输入新密码' }, { min: 6, message: '密码至少6位' }]}><Input.Password /></Form.Item>
           <Form.Item name="confirm_password" label="确认新密码" dependencies={['new_password']} rules={[{ required: true, message: '请确认新密码' }, ({ getFieldValue }) => ({ validator(_, value) { return value && value !== getFieldValue('new_password') ? Promise.reject('两次密码不一致') : Promise.resolve(); } })]}><Input.Password /></Form.Item>
-          <Form.Item><button type="submit" style={{ width: '100%', padding: '8px 16px', background: '#1677ff', color: '#fff', border: 'none', borderRadius: 6, cursor: changePwdLoading ? 'not-allowed' : 'pointer' }} disabled={changePwdLoading}>{changePwdLoading ? '提交中...' : '确定'}</button></Form.Item>
+          <Form.Item><button type="submit" style={{ width: '100%', padding: '8px 16px', background: COLORS.sage, color: '#fff', border: 'none', borderRadius: 8, cursor: changePwdLoading ? 'not-allowed' : 'pointer', fontSize: 14 }} disabled={changePwdLoading}>{changePwdLoading ? '提交中...' : '确定'}</button></Form.Item>
         </Form>
       </Modal>
     </Layout>

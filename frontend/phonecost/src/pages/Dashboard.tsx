@@ -3,24 +3,9 @@ import { Card, Table, Tag, Typography, Empty, Spin } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { getDashboardStats } from '../api/dashboard';
 import type { BranchSummaryItem, FeeBreakdownItem } from '../api/dashboard';
+import { COLORS } from '../theme/morandi';
 
 const { Title } = Typography;
-
-// Morandi color palette
-const COLORS = {
-  charcoal: '#3D4248',
-  sage: '#8B9D9E',
-  taupe: '#C4B5A0',
-  slate: '#7B8FA1',
-  cream: '#F5F2ED',
-  white: '#FFFFFF',
-  textDark: '#2C2C2C',
-  textLight: '#FFFFFF',
-  textMuted: '#8C8C8C',
-  border: '#E8E5E0',
-  confirmed: '#7BA586',
-  pending: '#D4A574',
-};
 
 const formatMoney = (v: number) => {
   if (!v || v === 0) return '¥0';

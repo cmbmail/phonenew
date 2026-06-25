@@ -5,6 +5,7 @@ import { ConfigProvider } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import enUS from 'antd/locale/en_US';
 import { useTranslation } from 'react-i18next';
+import { morandiTheme } from './theme/morandi';
 import { useAuthStore } from './store/auth';
 import AppLayout from './components/AppLayout';
 import Login from './pages/Login';
@@ -30,7 +31,7 @@ const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 const AntdLocaleWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { i18n } = useTranslation();
   const locale = i18n.language?.startsWith('en') ? enUS : zhCN;
-  return <ConfigProvider locale={locale}>{children}</ConfigProvider>;
+  return <ConfigProvider locale={locale} theme={morandiTheme}>{children}</ConfigProvider>;
 };
 
 const App: React.FC = () => (
