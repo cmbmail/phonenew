@@ -137,7 +137,7 @@ public class OrganizationController {
             Cell noteCell = noteRow.createCell(0);
             noteCell.setCellValue("说明：组织类型支持数字(1-6)或中文名称(集团/一级分行/二级分行/部门/综合支行/零专支行)；上级代码为空表示顶级节点");
             noteCell.setCellStyle(noteStyle);
-            sheet.addMergedRegion(new org.apache.poi.util.CellRangeAddress(samples.length + 2, samples.length + 2, 0, 4));
+            sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(samples.length + 2, samples.length + 2, 0, 4));
 
             wb.write(out);
 
