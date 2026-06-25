@@ -14,7 +14,6 @@ import {
   Col,
   message,
   Popconfirm,
-  Switch,
   Tag,
   Dropdown,
   Typography,
@@ -115,7 +114,6 @@ export default function OrganizationPage() {
         type: org.type,
         code: org.code || '',
         cost_center: org.cost_center || '',
-        is_active: org.is_active === 1,
       });
     }
   };
@@ -158,7 +156,6 @@ export default function OrganizationPage() {
         type: values.type,
         code: values.code,
         cost_center: values.cost_center,
-        is_active: values.is_active ? 1 : 0,
       });
       message.success(t('org.updateSuccess'));
       fetchOrgTree();
@@ -227,10 +224,6 @@ export default function OrganizationPage() {
     },
     { title: t('org.colCode'), dataIndex: 'code', key: 'code', align: 'center' as const, render: (v: string | null) => v || '-' },
     { title: t('org.colCostCenter'), dataIndex: 'cost_center', key: 'cost_center', align: 'center' as const, render: (v: string | null) => v || '-' },
-    {
-      title: t('org.colStatus'), dataIndex: 'is_active', key: 'is_active', align: 'center' as const, width: 80,
-      render: (v: number) => v === 1 ? <Tag color="green">{t('org.statusEnabled')}</Tag> : <Tag color="red">{t('org.statusDisabled')}</Tag>,
-    },
   ];
 
   return (
@@ -349,11 +342,7 @@ export default function OrganizationPage() {
                   <span style={{ fontSize: 15 }}>{selectedOrg.name}</span>
                 </span>
               }
-              extra={
-                selectedOrg.is_active === 1
-                  ? <Tag color="green">{t('org.statusEnabled')}</Tag>
-                  : <Tag color="red">{t('org.statusDisabled')}</Tag>
-              }
+              extra={null}
             >
               {/* Info row */}
               <div className="org-detail-row">
@@ -390,9 +379,6 @@ export default function OrganizationPage() {
                 </Form.Item>
                 <Form.Item name="cost_center">
                   <Input placeholder={t('org.costCenter')} style={{ width: 120 }} />
-                </Form.Item>
-                <Form.Item name="is_active" valuePropName="checked">
-                  <Switch checkedChildren={t('org.statusEnabled')} unCheckedChildren={t('org.statusDisabled')} />
                 </Form.Item>
                 <Form.Item>
                   <Button type="primary" htmlType="submit" icon={<EditOutlined />}>{t('org.saveBtn')}</Button>
