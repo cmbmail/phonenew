@@ -252,7 +252,7 @@ export default function OrganizationPage() {
       />
 
       <Row gutter={16}>
-        <Col span={10}>
+        <Col span={6}>
           <Card
             title={
               <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -332,7 +332,7 @@ export default function OrganizationPage() {
             />
           </Card>
         </Col>
-        <Col span={14}>
+        <Col span={18}>
           {selectedOrg ? (
             <Card
               size="small"
