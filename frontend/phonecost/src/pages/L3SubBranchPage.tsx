@@ -91,11 +91,14 @@ export default function L3SubBranchPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBatchId]);
 
-  // 切换二级分行时重置明细
+  // 切换二级分行/月份时重置明细，若已加载过则自动重新加载
   useEffect(() => {
+    const wasDetailLoaded = detailLoaded;
     setDetailData({ CALL: [], RECORDING: [], CRBT: [], FLASH_MSG: [] });
     setDetailLoaded(false);
     setDetailSearch('');
+    if (wasDetailLoaded && selectedBatchId && selectedSubBranchId) fetchAllDetails();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSubBranchId, selectedBatchId]);
 
   const selectedSubBranch = orgMap.get(selectedSubBranchId || 0);
@@ -146,7 +149,7 @@ export default function L3SubBranchPage() {
 
   // ========== 加载全部4种明细数据 ==========
   const fetchAllDetails = useCallback(async () => {
-    if (!selectedBatchId || !selectedSubBranchId || detailLoaded) return;
+    if (!selectedBatchId || !selectedSubBranchId) return;
     setDetailLoading(true);
     try {
       const detailResults = await Promise.all(
@@ -161,7 +164,7 @@ export default function L3SubBranchPage() {
     } finally {
       setDetailLoading(false);
     }
-  }, [selectedBatchId, selectedSubBranchId, detailLoaded, t]);
+  }, [selectedBatchId, selectedSubBranchId, t]);
 
   // ========== 分摊汇总 columns ==========
   const columns = [
@@ -502,7 +505,7 @@ export default function L3SubBranchPage() {
         {selectedBatchId && selectedSubBranchId && (
           <Tabs
             type="card"
-            onChange={(key) => { if (key === 'detail') fetchAllDetails(); }}
+            onChange={(key) => { if (key === 'detail' && !detailLoaded) fetchAllDetails(); }}
             items={mainTabs}
           />
         )}

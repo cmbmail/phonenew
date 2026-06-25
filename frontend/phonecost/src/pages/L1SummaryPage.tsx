@@ -51,6 +51,7 @@ export default function L1SummaryPage() {
 
   useEffect(() => {
     if (selectedBatchId) {
+      const wasDetailLoaded = detailLoaded;
       setRows([]); // 立即清空旧数据，让刷新可见
       setRowsLoading(true);
       getL1SummaryData(selectedBatchId)
@@ -61,13 +62,15 @@ export default function L1SummaryPage() {
       setDetailData({ CALL: [], RECORDING: [], CRBT: [], FLASH_MSG: [] });
       setDetailLoaded(false);
       setDetailSearch('');
+      // 如果明细已加载过，切换月份后自动重新加载
+      if (wasDetailLoaded) fetchAllDetails();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBatchId]);
 
   // 加载全部4种明细数据
   const fetchAllDetails = useCallback(async () => {
-    if (!selectedBatchId || detailLoaded) return;
+    if (!selectedBatchId) return;
     setDetailLoading(true);
     try {
       const results = await Promise.all(
@@ -82,7 +85,7 @@ export default function L1SummaryPage() {
     } finally {
       setDetailLoading(false);
     }
-  }, [selectedBatchId, detailLoaded, t]);
+  }, [selectedBatchId, t]);
 
   const selectedBatch = batches.find(b => b.id === selectedBatchId);
 
@@ -375,7 +378,7 @@ export default function L1SummaryPage() {
         {selectedBatchId && (
           <Tabs
             type="card"
-            onChange={(key) => { if (key === 'detail') fetchAllDetails(); }}
+            onChange={(key) => { if (key === 'detail' && !detailLoaded) fetchAllDetails(); }}
             items={mainTabs}
           />
         )}
