@@ -37,13 +37,11 @@ public class AllocationService {
             throw new IllegalArgumentException("账单已确认或已锁定，不能重新分摊");
         }
 
-        // Delete existing allocation results for this batch (if recalculating)
-        List<AllocationResult> existing = allocationResultRepository.findByBatchIdAndDeletedAtIsNull(billBatchId);
-        if (!existing.isEmpty()) {
-            existing.forEach(r -> r.setDeletedAt(java.time.LocalDateTime.now()));
-            allocationResultRepository.saveAll(existing);
-            log.info("Cleared {} existing allocation results for batch {}", existing.size(), billBatchId);
-        }
+        // Hard-delete existing allocation results for this batch (if recalculating)
+        // Must use hard delete because unique constraint uk_batch_org(batch_id, org_id) 
+        // does not include deleted_at, so soft-deleted rows would block new inserts
+        allocationResultRepository.hardDeleteByBatchId(billBatchId);
+        log.info("Hard-deleted existing allocation results for batch {}", billBatchId);
 
         // Get all bill details
         List<BillDetail> details = billDetailRepository.findByBatchIdAndDeletedAtIsNull(billBatchId);

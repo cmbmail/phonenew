@@ -2,6 +2,8 @@ package com.phonecost.repository;
 
 import com.phonecost.domain.AllocationResult;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -13,4 +15,8 @@ public interface AllocationResultRepository extends JpaRepository<AllocationResu
     Optional<AllocationResult> findByBatchIdAndOrgIdAndDeletedAtIsNull(Long batchId, Long orgId);
     List<AllocationResult> findByBatchIdAndConfirmStatusAndDeletedAtIsNull(Long batchId, Byte confirmStatus);
     List<AllocationResult> findByBatchIdAndOrgIdInAndDeletedAtIsNull(Long batchId, List<Long> orgIds);
+
+    @Modifying
+    @Query(value = "DELETE FROM allocation_result WHERE batch_id = :batchId", nativeQuery = true)
+    void hardDeleteByBatchId(Long batchId);
 }
