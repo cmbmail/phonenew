@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Card, Table, Tag, Button, Space, Modal, Input, message, Descriptions, Tooltip } from 'antd';
+import { Card, Table, Tag, Button, Space, Modal, Input, message, Descriptions } from 'antd';
 import { CheckOutlined, UndoOutlined, DownloadOutlined, CalculatorOutlined } from '@ant-design/icons';
 import type { BillBatch } from '../types/bill';
 import type { AllocationResult } from '../types/allocation';

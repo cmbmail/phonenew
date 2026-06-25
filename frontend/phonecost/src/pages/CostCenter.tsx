@@ -3,17 +3,14 @@ import { Card, Table, Select, Tag, Row, Col, message, Empty, Input, Statistic, B
 import { SearchOutlined, DownloadOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { getOrgTree } from '../api/org';
-import { getCostCenterMappingUrl } from '../api/allocation';
-import { getBillBatches } from '../api/allocation';
+import { getCostCenterMappingUrl, getBillBatches } from '../api/allocation';
 import type { Organization } from '../types/organization';
 import { ORG_TYPE_LABELS } from '../types/organization';
-import type { BillBatch } from '../types/bill';
 
 export default function CostCenter() {
   const { t } = useTranslation();
 
   const [orgList, setOrgList] = useState<Organization[]>([]);
-  const [batches, setBatches] = useState<BillBatch[]>([]);
   const [selectedBatchId, setSelectedBatchId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
@@ -27,7 +24,6 @@ export default function CostCenter() {
   const fetchBatches = useCallback(async () => {
     try {
       const data = await getBillBatches();
-      setBatches(data);
       if (data.length > 0 && !selectedBatchId) {
         const sorted = [...data].sort((a, b) => b.billing_month.localeCompare(a.billing_month));
         setSelectedBatchId(sorted[0].id);

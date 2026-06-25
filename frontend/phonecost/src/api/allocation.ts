@@ -1,15 +1,12 @@
 import { apiGet, apiPost } from '../lib/request';
 import { useAuthStore } from '../store/auth';
-import type { BillBatch, BillDetail } from '../types/bill';
+import type { BillBatch } from '../types/bill';
 import type { AllocationResult, AllocationAdjustment, L1SummaryRow } from '../types/allocation';
 
 // ==================== Bill ====================
 
 export const getBillBatches = () =>
   apiGet<BillBatch[]>('/import/bill/batches');
-
-export const getBillDetails = (batchId: number) =>
-  apiGet<BillDetail[]>(`/import/bill/details/${batchId}`);
 
 // ==================== Allocation ====================
 
@@ -83,16 +80,6 @@ export const getBranchBillUrl = (batchId: number, branchOrgId?: number) => {
 export const getL1SummaryUrl = (batchId: number) => {
   const token = useAuthStore.getState().token;
   return `/api/allocation/export/l1-summary?batchId=${batchId}&token=${token}`;
-};
-
-export const getL2BranchDetailUrl = (batchId: number, branchOrgId: number) => {
-  const token = useAuthStore.getState().token;
-  return `/api/allocation/export/l2-branch-detail?batchId=${batchId}&branchOrgId=${branchOrgId}&token=${token}`;
-};
-
-export const getL3SubBranchDetailUrl = (batchId: number, subBranchOrgId: number) => {
-  const token = useAuthStore.getState().token;
-  return `/api/allocation/export/l3-sub-branch-detail?batchId=${batchId}&subBranchOrgId=${subBranchOrgId}&token=${token}`;
 };
 
 export const getCostCenterMappingUrl = (batchId: number, branchOrgId?: number) => {

@@ -3,8 +3,6 @@ import type { Organization } from '../types/organization';
 
 export const getOrgTree = () => apiGet<Organization[]>('/org/tree');
 
-export const getOrg = (id: number) => apiGet<Organization>(`/org/${id}`);
-
 export const createOrg = (data: Partial<Organization>) =>
   apiPost<Organization>('/org', data);
 

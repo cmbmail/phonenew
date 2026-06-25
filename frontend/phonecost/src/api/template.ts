@@ -3,10 +3,6 @@ import type { BillTemplate } from '../types/template';
 
 export const getTemplates = () => apiGet<BillTemplate[]>('/templates');
 
-export const getTemplate = (id: number) => apiGet<BillTemplate>(`/templates/${id}`);
-
-export const getActiveTemplate = () => apiGet<BillTemplate>('/templates/active');
-
 export const createTemplate = (body: {
   name: string;
   operator?: string;

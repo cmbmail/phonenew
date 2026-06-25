@@ -14,8 +14,6 @@ export interface UserItem {
 
 export const getUsers = () => apiGet<UserItem[]>('/users');
 
-export const getUser = (id: number) => apiGet<UserItem>(`/users/${id}`);
-
 export const createUser = (data: {
   username: string;
   password: string;

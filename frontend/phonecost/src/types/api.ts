@@ -3,13 +3,6 @@ export interface ApiResponse<T> {
   message: string;
   data: T;
 }
-export interface PagedData<T> {
-  content: T[];
-  page: number;
-  size: number;
-  total: number;
-  total_pages: number;
-}
 
 /** Shared error shape for Axios catch blocks */
 export interface ApiError {

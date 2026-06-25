@@ -5,7 +5,6 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
 import { getErrorMessage } from '../types/api';
 import { apiPost } from '../lib/request';
-import { useTranslation } from 'react-i18next';
 const { Sider, Header, Content } = Layout;
 const { Text } = Typography;
 
@@ -54,7 +53,6 @@ const AppLayout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { username, realName, role, mustChangePwd, clearMustChangePwd, logout } = useAuthStore();
-  const { t, i18n } = useTranslation();
 
   // Filter menu items by role
   const menuItems = useMemo(() => {

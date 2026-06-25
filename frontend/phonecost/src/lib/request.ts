@@ -70,4 +70,3 @@ export async function apiUpload<T>(url: string, formData: FormData): Promise<T> 
   const { data } = await instance.post<ApiResponse<T>>(url, formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 });
   return data.data;
 }
-export { instance };

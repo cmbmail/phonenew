@@ -2,8 +2,6 @@ export default {
   // ==================== App Layout ====================
   app: {
     title: '费用分摊',
-    logout: '退出登录',
-    changePwd: '修改密码',
   },
 
   // ==================== Login ====================
@@ -206,7 +204,6 @@ export default {
     noData: '暂无分摊数据，请先导入账单并执行分摊计算',
     exportL1: '导出汇总',
     branchCol: '一级分行',
-    costCenterCol: '成本中心',
     platformFeeCol: '平台使用费',
     monthlyRentCodeCol: '码号月租费',
     domesticDurationCol: '国内呼时长(分)',
@@ -222,7 +219,6 @@ export default {
     phoneCountCol: '号码数',
     confirmedCol: '已确认',
     pendingCol: '待确认',
-    callFeeCol: '通话费',
     grandTotalRow: '合计',
     descMonth: '月份',
     descTotalFee: '总费用',
@@ -266,24 +262,19 @@ export default {
 
   // ==================== L2 Branch Detail (一级分行) ====================
   l2Branch: {
-    title: '一级分行',
     selectBranch: '选择一级分行：',
     selectBranchPlaceholder: '选择分行',
     selectMonth: '选择月份：',
     selectMonthPlaceholder: '选择月份',
     noData: '暂无数据',
-    exportL2: '导出分行明细',
     summaryTab: '分摊汇总',
     // Summary table columns
     seqCol: '序号',
     orgTypeCol: '组织类型',
     orgNameCol: '组织名称',
     costCenterCol: '成本中心',
-    platformFeeCol: '平台使用费',
     monthlyRentCodeCol: '码号月租费',
     domesticFeeCol: '国内费用',
-    intlFeeCol: '国际费用',
-    callSubtotalCol: '通话费小计',
     recordingFeeCol: '录音费用',
     crbtFeeCol: '彩铃费用',
     flashFeeCol: '闪信费用',
@@ -296,7 +287,6 @@ export default {
     descChildCount: '下级组织数',
     descTotalFee: '费用合计',
     fetchFailed: '获取数据失败',
-    fetchBranchesFailed: '获取分行列表失败',
     // Reimbursement
     reimbursementTab: '报销单',
     reimbursementCostCenter: '成本中心',
@@ -311,24 +301,19 @@ export default {
 
   // ==================== L3 Sub-branch Detail (二级分行) ====================
   l3SubBranch: {
-    title: '二级分行',
     selectSubBranch: '选择二级分行：',
     selectSubBranchPlaceholder: '选择二级分行',
     selectMonth: '选择月份：',
     selectMonthPlaceholder: '选择月份',
     noData: '暂无数据',
-    exportL3: '导出明细',
     summaryTab: '分摊汇总',
     // Same columns as L2 (reuse keys)
     seqCol: '序号',
     orgTypeCol: '组织类型',
     orgNameCol: '组织名称',
     costCenterCol: '成本中心',
-    platformFeeCol: '平台使用费',
     monthlyRentCodeCol: '码号月租费',
     domesticFeeCol: '国内费用',
-    intlFeeCol: '国际费用',
-    callSubtotalCol: '通话费小计',
     recordingFeeCol: '录音费用',
     crbtFeeCol: '彩铃费用',
     flashFeeCol: '闪信费用',
@@ -340,7 +325,6 @@ export default {
     descChildCount: '下属组织数',
     descTotalFee: '费用合计',
     fetchFailed: '获取数据失败',
-    fetchSubBranchesFailed: '获取二级分行列表失败',
     // Reimbursement
     reimbursementTab: '报销单',
     reimbursementCostCenter: '成本中心',
@@ -371,12 +355,6 @@ export default {
     // Snapshot tab
     currentDataTab: '当前数据',
     snapshotTab: '快照',
-    snapshotBillMonth: '账单月份',
-    snapshotBillBatch: '账单批次',
-    snapshotOwnershipBatch: '号码归属批次',
-    snapshotDirectoryBatch: '通讯录批次',
-    snapshotMatchedCount: '匹配数',
-    snapshotTime: '快照时间',
     snapshotNoData: '暂无快照数据。快照在执行归属匹配后自动创建。',
     snapshotFetchFailed: '获取快照数据失败',
     snapshotSelectMonth: '月份：',
@@ -422,12 +400,6 @@ export default {
     // Snapshot tab
     currentDataTab: '当前数据',
     snapshotTab: '快照',
-    snapshotBillMonth: '账单月份',
-    snapshotBillBatch: '账单批次',
-    snapshotOwnershipBatch: '号码归属批次',
-    snapshotDirectoryBatch: '通讯录批次',
-    snapshotMatchedCount: '匹配数',
-    snapshotTime: '快照时间',
     snapshotNoData: '暂无快照数据。快照在执行归属匹配后自动创建。',
     snapshotFetchFailed: '获取快照数据失败',
     snapshotSelectMonth: '月份：',
@@ -560,7 +532,6 @@ export default {
     activateBtn: '激活',
     deleteBtn: '删除',
     deleteConfirm: '确定删除此模板？',
-    cannotDeleteActive: '不能删除当前活跃模板，请先切换到其他模板',
     // Create/Edit modal
     editTitle: '编辑模板',
     createTitle: '新建模板',
@@ -604,38 +575,12 @@ export default {
     chinaTelecom: '中国电信',
     chinaMobile: '中国移动',
     chinaUnicom: '中国联通',
-    // Sheet types
-    sheetCall: '按号码费用',
-    sheetRecording: '录音费',
-    sheetCrbt: '彩铃费',
-    sheetFlash: '闪信费',
     copySuffix: '副本',
     fetchFailed: '获取模板列表失败',
   },
 
   // ==================== Common / Shared ====================
   common: {
-    status: '状态',
-    actions: '操作',
-    langSwitch: '语言',
-    langZh: '中文',
-    langEn: 'English',
-    firstLoginChangePwd: '首次登录需要修改密码后才能使用系统',
-    submitting: '提交中...',
-    confirm: '确定',
-    cancel: '取消',
-    loading: '加载中...',
-    noData: '暂无数据',
-    search: '搜索',
-    reset: '重置',
-    close: '关闭',
-    ok: '确定',
-    yes: '是',
-    no: '否',
-    warning: '警告',
-    error: '错误',
-    success: '成功',
-    failed: '失败',
     paginationTotal: '共 {{total}} 条',
   },
 };

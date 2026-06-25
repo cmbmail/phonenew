@@ -1,4 +1,3 @@
 export interface BillBatch { id: number; batch_no: string; billing_month: string; file_name: string; template_id: number; status: number; total_amount: string; total_count: number; import_status: number; error_message: string | null; imported_by: number; confirmed_at: string | null; confirmed_by: number | null; locked_at: string | null; created_at: string; }
 export const BILL_STATUS_LABELS: Record<number, string> = { 0: '草稿', 1: '已分摊', 2: '已确认', 3: '已锁定' };
 export const BILL_STATUS_COLORS: Record<number, string> = { 0: 'default', 1: 'processing', 2: 'success', 3: 'warning' };
-export interface BillDetail { id: number; batch_id: number; phone_number: string; extension: string; sheet_type: string; monthly_rent: string; call_fee: string; recording_fee: string; crbt_fee: string; flash_msg_fee: string; total_fee: string; ownership_source: string; is_exception: number; is_seconded: number; org_id: number | null; }

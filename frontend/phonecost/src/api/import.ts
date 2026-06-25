@@ -50,6 +50,3 @@ export const matchOwnership = (params: {
 
 export const getSnapshots = () =>
   apiGet<DataSnapshot[]>('/import/snapshots');
-
-export const getSnapshot = (billBatchId: number) =>
-  apiGet<DataSnapshot>(`/import/snapshots/${billBatchId}`);
