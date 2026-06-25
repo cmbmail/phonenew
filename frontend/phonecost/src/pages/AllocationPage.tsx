@@ -120,12 +120,22 @@ export default function AllocationPage() {
 
   useEffect(() => { fetchBatches(); fetchOrgTree(); }, [fetchBatches, fetchOrgTree]);
 
+  // 自动选最近月份
+  useEffect(() => {
+    if (batches.length > 0 && !selectedBatchId) {
+      const sorted = [...batches].sort((a, b) => b.billing_month.localeCompare(a.billing_month));
+      setSelectedBatchId(sorted[0].id);
+    }
+  }, [batches, selectedBatchId]);
+
   useEffect(() => {
     if (selectedBatchId) {
+      setResults([]); // 立即清空旧数据，让刷新可见
       fetchResults(selectedBatchId);
       if (activeTab === 'adjustments') fetchAdjustments(selectedBatchId);
     }
-  }, [selectedBatchId, fetchResults, fetchAdjustments, activeTab]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBatchId, activeTab]);
 
   const treeData = useMemo(() => buildTreeData(orgList), [orgList]);
 

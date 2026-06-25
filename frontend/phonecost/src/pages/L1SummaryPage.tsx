@@ -51,6 +51,7 @@ export default function L1SummaryPage() {
 
   useEffect(() => {
     if (selectedBatchId) {
+      setRows([]); // 立即清空旧数据，让刷新可见
       setRowsLoading(true);
       getL1SummaryData(selectedBatchId)
         .then(setRows)
@@ -61,7 +62,8 @@ export default function L1SummaryPage() {
       setDetailLoaded(false);
       setDetailSearch('');
     }
-  }, [selectedBatchId, t]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBatchId]);
 
   // 加载全部4种明细数据
   const fetchAllDetails = useCallback(async () => {

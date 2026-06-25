@@ -66,13 +66,15 @@ export default function L2BranchPage() {
 
   useEffect(() => {
     if (selectedBatchId) {
+      setResults([]); // 立即清空旧数据，让刷新可见
       setResultsLoading(true);
       getAllocationResults(selectedBatchId)
         .then(setResults)
         .catch(() => message.error(t('l2Branch.fetchFailed')))
         .finally(() => setResultsLoading(false));
     }
-  }, [selectedBatchId, t]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBatchId]);
 
   // 切换分行时重置明细
   useEffect(() => {
