@@ -443,7 +443,8 @@ export default {
     // Table columns
     colName: '名称',
     colType: '类型',
-    colCode: '编码',
+    colCode: '组织机构代码',
+    colCostCenter: '成本中心',
     colStatus: '状态',
     colActions: '操作',
     // Details

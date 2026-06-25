@@ -183,6 +183,7 @@ export default function OrganizationPage() {
     { title: t('org.colName'), dataIndex: 'name', key: 'name' },
     { title: t('org.colType'), dataIndex: 'type', key: 'type', render: (v: number) => ORG_TYPE_LABELS[v] || '-' },
     { title: t('org.colCode'), dataIndex: 'code', key: 'code' },
+    { title: t('org.colCostCenter'), dataIndex: 'code', key: 'cost_center' },
     { title: t('org.colStatus'), dataIndex: 'is_active', key: 'is_active', render: (v: number) => v === 1 ? <Tag color="green">{t('org.statusEnabled')}</Tag> : <Tag color="red">{t('org.statusDisabled')}</Tag> },
     {
       title: t('org.colActions'), key: 'actions', width: 80,
