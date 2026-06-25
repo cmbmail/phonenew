@@ -459,6 +459,9 @@ export default {
     importFailed: '导入失败',
     deleteFailed: '删除失败',
     rebuildFailed: '重建失败',
+    downloadTemplate: '下载模板',
+    templateDownloaded: '模板下载成功',
+    templateDownloadFailed: '模板下载失败',
   },
 
   // ==================== User Management ====================

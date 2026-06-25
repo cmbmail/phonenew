@@ -27,12 +27,13 @@ import {
   DeleteOutlined,
   RetweetOutlined,
   ApartmentOutlined,
+  DownloadOutlined,
 } from '@ant-design/icons';
 import type { UploadFile } from 'antd';
 import type { TreeDataNode } from 'antd';
 import type { Organization } from '../types/organization';
 import { ORG_TYPE_LABELS, ORG_TYPE_OPTIONS } from '../types/organization';
-import { getOrgTree, createOrg, updateOrg, deleteOrg, importOrg, rebuildOrgPaths } from '../api/org';
+import { getOrgTree, createOrg, updateOrg, deleteOrg, importOrg, rebuildOrgPaths, downloadOrgTemplate } from '../api/org';
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
 
@@ -175,6 +176,15 @@ export default function OrganizationPage() {
     }
   };
 
+  const handleDownloadTemplate = async () => {
+    try {
+      await downloadOrgTemplate();
+      message.success(t('org.templateDownloaded'));
+    } catch (err) {
+      message.error(getErrorMessage(err, t('org.templateDownloadFailed')));
+    }
+  };
+
   const childOrgs = selectedOrg
     ? orgList.filter((o) => o.parent_id === selectedOrg.id)
     : [];
@@ -198,6 +208,9 @@ export default function OrganizationPage() {
   return (
     <div>
       <Space style={{ marginBottom: 16 }} wrap>
+        <Button icon={<DownloadOutlined />} onClick={handleDownloadTemplate}>
+          {t('org.downloadTemplate')}
+        </Button>
         <Upload
           accept=".xlsx,.xls"
           maxCount={1}

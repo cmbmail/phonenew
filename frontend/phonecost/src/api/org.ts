@@ -1,4 +1,4 @@
-import { apiGet, apiPost, apiPut, apiDelete, apiUpload } from '../lib/request';
+import { apiGet, apiPost, apiPut, apiDelete, apiUpload, apiDownload } from '../lib/request';
 import type { Organization } from '../types/organization';
 
 export const getOrgTree = () => apiGet<Organization[]>('/org/tree');
@@ -18,3 +18,5 @@ export const importOrg = (file: File) => {
 };
 
 export const rebuildOrgPaths = () => apiPost<void>('/org/rebuild-paths');
+
+export const downloadOrgTemplate = () => apiDownload('/org/import-template', '组织机构导入模板.xlsx');

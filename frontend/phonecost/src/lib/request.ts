@@ -70,3 +70,13 @@ export async function apiUpload<T>(url: string, formData: FormData): Promise<T> 
   const { data } = await instance.post<ApiResponse<T>>(url, formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 });
   return data.data;
 }
+
+export async function apiDownload(url: string, filename: string): Promise<void> {
+  const response = await instance.get(url, { responseType: 'blob' });
+  const blob = new Blob([response.data]);
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}

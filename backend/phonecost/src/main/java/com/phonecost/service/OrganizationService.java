@@ -178,9 +178,10 @@ public class OrganizationService {
         orgRepository.saveAll(saved);
 
         log.info("Organization import completed: total={}, skipped={}", rows.size(), skipped);
+        int created = rows.size() - skipped;
         auditLogService.log(0L, "system", "ORG_IMPORT", "organization", null,
                 "{\"total_count\":" + rows.size() + ",\"skipped_count\":" + skipped + "}");
-        return Map.of("total_count", rows.size(), "skipped_count", skipped);
+        return Map.of("total", rows.size(), "created", created, "skipped", skipped);
     }
 
     private String resolvePath(Long orgId, List<ImportRow> rows, List<SysOrganization> saved,
