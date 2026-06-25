@@ -18,6 +18,7 @@ import {
   Switch,
   Tag,
   Descriptions,
+  Dropdown,
 } from 'antd';
 import { getErrorMessage } from '../types/api';
 import {
@@ -69,9 +70,9 @@ export default function OrganizationPage() {
   const [addParentId, setAddParentId] = useState<number | null>(null);
   const [editForm] = Form.useForm();
   const [addForm] = Form.useForm();
-  const [importFileList, setImportFileList] = useState<UploadFile[]>([]);
   const [importing, setImporting] = useState(false);
   const [rebuilding, setRebuilding] = useState(false);
+  const importRef = useRef<HTMLInputElement>(null);
 
   const fetchOrgTree = useCallback(async () => {
     try {
@@ -157,18 +158,11 @@ export default function OrganizationPage() {
     }
   };
 
-  const handleImport = async () => {
-    if (importFileList.length === 0) {
-      message.warning(t('org.selectFileFirst'));
-      return;
-    }
+  const handleImportFile = async (file: File) => {
     setImporting(true);
     try {
-      const file = importFileList[0].originFileObj;
-      if (!file) { message.warning(t('org.selectFileFirst')); return; }
       const result = await importOrg(file);
       message.success(t('org.importSuccess', { total: result.total, created: result.created, skipped: result.skipped }));
-      setImportFileList([]);
       fetchOrgTree();
     } catch (err) {
       message.error(getErrorMessage(err, t('org.importFailed')));
@@ -225,22 +219,18 @@ export default function OrganizationPage() {
         .org-tree-node:hover .org-tree-actions { opacity: 1 !important; }
         .org-tree-actions .ant-btn-link { padding: 0 2px; }
       `}</style>
+      <input
+        ref={importRef}
+        type="file"
+        accept=".xlsx,.xls"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleImportFile(file);
+          e.target.value = '';
+        }}
+      />
       <Space style={{ marginBottom: 16 }} wrap>
-        <Button icon={<DownloadOutlined />} onClick={handleDownloadTemplate}>
-          {t('org.downloadTemplate')}
-        </Button>
-        <Upload
-          accept=".xlsx,.xls"
-          maxCount={1}
-          fileList={importFileList}
-          beforeUpload={() => false}
-          onChange={({ fileList: fl }) => setImportFileList(fl)}
-        >
-          <Button icon={<UploadOutlined />}>{t('org.importOrg')}</Button>
-        </Upload>
-        <Button type="primary" onClick={handleImport} loading={importing} disabled={importFileList.length === 0}>
-          {t('org.startImport')}
-        </Button>
         <Popconfirm title={t('org.rebuildConfirm')} onConfirm={handleRebuild}>
           <Button icon={<RetweetOutlined />} loading={rebuilding}>{t('org.rebuildPath')}</Button>
         </Popconfirm>
@@ -252,9 +242,18 @@ export default function OrganizationPage() {
             title={<span><ApartmentOutlined /> {t('org.treeTitle')}</span>}
             size="small"
             extra={
-              <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => { setAddParentId(null); setAddModalOpen(true); }}>
-                {t('org.addBtn')}
-              </Button>
+              <Dropdown
+                menu={{
+                  items: [
+                    { key: 'download', label: t('org.downloadTemplate'), icon: <DownloadOutlined />, onClick: handleDownloadTemplate },
+                    { key: 'import', label: t('org.importOrg'), icon: <UploadOutlined />, onClick: () => importRef.current?.click() },
+                  ],
+                }}
+              >
+                <Button size="small" type="primary" icon={<UploadOutlined />}>
+                  {t('org.importMenu')}
+                </Button>
+              </Dropdown>
             }
           >
             <Tree

@@ -466,6 +466,7 @@ export default {
     templateDownloadFailed: '模板下载失败',
     addChild: '增加子组织',
     deleteOrg: '删除组织',
+    importMenu: '导入组织机构',
   },
 
   // ==================== User Management ====================

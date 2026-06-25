@@ -440,6 +440,7 @@ export default {
     templateDownloadFailed: 'Template download failed',
     addChild: 'Add child org',
     deleteOrg: 'Delete org',
+    importMenu: 'Import Org',
   },
 
   // ==================== User Management ====================
