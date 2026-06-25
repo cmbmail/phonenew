@@ -1,12 +1,6 @@
 import { apiGet, apiPost } from '../lib/request';
 import { useAuthStore } from '../store/auth';
-import type { BillBatch } from '../types/bill';
 import type { AllocationResult, AllocationAdjustment, L1SummaryRow } from '../types/allocation';
-
-// ==================== Bill ====================
-
-export const getBillBatches = () =>
-  apiGet<BillBatch[]>('/import/bill/batches');
 
 // ==================== Allocation ====================
 

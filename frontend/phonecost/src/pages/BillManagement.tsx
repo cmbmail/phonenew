@@ -6,7 +6,6 @@ import type { AllocationResult } from '../types/allocation';
 import { BILL_STATUS_LABELS, BILL_STATUS_COLORS } from '../types/bill';
 import { CONFIRM_STATUS_MAP } from '../types/allocation';
 import {
-  getBillBatches,
   getAllocationResults,
   calculateAllocation,
   confirmAllocation,
@@ -15,6 +14,7 @@ import {
   getExportSummaryUrl,
   getExportDetailUrl,
 } from '../api/allocation';
+import { getBillBatches } from '../api/import';
 import { useTranslation } from 'react-i18next';
 import { getErrorMessage } from '../types/api';
 import dayjs from 'dayjs';

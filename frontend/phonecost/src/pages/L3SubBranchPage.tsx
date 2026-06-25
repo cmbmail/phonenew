@@ -4,7 +4,8 @@ import { DownloadOutlined, SearchOutlined, FileTextOutlined } from '@ant-design/
 import { useTranslation } from 'react-i18next';
 import type { BillBatch } from '../types/bill';
 import type { AllocationResult } from '../types/allocation';
-import { getBillBatches, getAllocationResults, getL3DetailData } from '../api/allocation';
+import { getAllocationResults, getL3DetailData } from '../api/allocation';
+import { getBillBatches } from '../api/import';
 import { getOrgTree } from '../api/org';
 import type { Organization } from '../types/organization';
 import { ORG_TYPE_LABELS } from '../types/organization';
@@ -139,7 +140,7 @@ export default function L3SubBranchPage() {
     const n = Number(v);
     return !isNaN(n) && n !== 0 ? n.toFixed(1) : '-';
   };
-  const orgTypeLabel = (type: number) => ORG_TYPE_LABELS[type] || '其他';
+  const orgTypeLabel = (type: number) => ORG_TYPE_LABELS[type] || '-';
 
   // ========== 加载全部4种明细数据 ==========
   const fetchAllDetails = useCallback(async () => {

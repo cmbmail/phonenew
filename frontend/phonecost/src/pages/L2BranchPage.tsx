@@ -5,7 +5,8 @@ import { useTranslation } from 'react-i18next';
 import type { BillBatch } from '../types/bill';
 import type { AllocationResult } from '../types/allocation';
 import { CONFIRM_STATUS_MAP } from '../types/allocation';
-import { getBillBatches, getAllocationResults, getL2DetailData } from '../api/allocation';
+import { getAllocationResults, getL2DetailData } from '../api/allocation';
+import { getBillBatches } from '../api/import';
 import { getOrgTree } from '../api/org';
 import type { Organization } from '../types/organization';
 import { ORG_TYPE_LABELS } from '../types/organization';
@@ -137,7 +138,7 @@ export default function L2BranchPage() {
     const n = Number(v);
     return !isNaN(n) && n !== 0 ? n.toFixed(1) : '-';
   };
-  const orgTypeLabel = (type: number) => ORG_TYPE_LABELS[type] || '其他';
+  const orgTypeLabel = (type: number) => ORG_TYPE_LABELS[type] || '-';
 
   // ========== 加载全部4种明细数据 ==========
   const fetchAllDetails = useCallback(async () => {
@@ -176,7 +177,7 @@ export default function L2BranchPage() {
     { title: t('l2Branch.confirmStatusCol'), key: 'confirmStatus', width: 90,
       render: (_: unknown, r: typeof childSummary[0]) => {
         if (r.confirmStatus < 0) return '-';
-        const info = CONFIRM_STATUS_MAP[r.confirmStatus] || { label: '未知', color: 'default' };
+        const info = CONFIRM_STATUS_MAP[r.confirmStatus] || { label: '-', color: 'default' };
         return <Tag color={info.color}>{info.label}</Tag>;
       },
     },

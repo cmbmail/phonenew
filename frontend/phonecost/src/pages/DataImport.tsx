@@ -196,8 +196,8 @@ export default function DataImport() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
+  // Preload directory and bill batches on mount (ownership is fetched by activeTab effect above)
   useEffect(() => {
-    fetchOwnershipBatches();
     fetchDirectoryBatches();
     fetchBillBatches();
     // eslint-disable-next-line react-hooks/exhaustive-deps

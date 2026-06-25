@@ -4,7 +4,8 @@ import { DownloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import type { BillBatch } from '../types/bill';
 import type { L1SummaryRow } from '../types/allocation';
-import { getBillBatches, getL1SummaryData, getL1DetailData, getL1SummaryUrl } from '../api/allocation';
+import { getL1SummaryData, getL1DetailData, getL1SummaryUrl } from '../api/allocation';
+import { getBillBatches } from '../api/import';
 
 const SHEET_TYPES = ['CALL', 'RECORDING', 'CRBT', 'FLASH_MSG'] as const;
 type SheetType = typeof SHEET_TYPES[number];

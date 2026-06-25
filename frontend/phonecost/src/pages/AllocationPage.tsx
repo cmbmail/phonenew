@@ -9,7 +9,6 @@ import type { Organization } from '../types/organization';
 import type { TreeNode } from '../types/api';
 import { getErrorMessage } from '../types/api';
 import {
-  getBillBatches,
   getAllocationResults,
   confirmAllocation,
   confirmAllAllocation,
@@ -20,6 +19,7 @@ import {
   adjustAllocation,
   getAdjustments,
 } from '../api/allocation';
+import { getBillBatches } from '../api/import';
 import { getOrgTree } from '../api/org';
 import { useAuthStore } from '../store/auth';
 import { exportCSV } from '../lib/export';

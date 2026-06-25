@@ -3,9 +3,10 @@ import { Card, Table, Select, Tag, Row, Col, message, Empty, Input, Statistic, B
 import { SearchOutlined, DownloadOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { getOrgTree } from '../api/org';
-import { getCostCenterMappingUrl, getBillBatches } from '../api/allocation';
+import { getCostCenterMappingUrl } from '../api/allocation';
+import { getBillBatches } from '../api/import';
 import type { Organization } from '../types/organization';
-import { ORG_TYPE_LABELS } from '../types/organization';
+import { ORG_TYPE_LABELS, ORG_TYPE_OPTIONS } from '../types/organization';
 
 export default function CostCenter() {
   const { t } = useTranslation();
@@ -74,7 +75,7 @@ export default function CostCenter() {
   const branchCount = useMemo(() => flatOrgs.filter(o => o.type === 2).length, [flatOrgs]);
   const deptCount = useMemo(() => flatOrgs.filter(o => o.type === 4).length, [flatOrgs]);
 
-  const orgTypeLabel = (type: number) => ORG_TYPE_LABELS[type] || '其他';
+  const orgTypeLabel = (type: number) => ORG_TYPE_LABELS[type] || '-';
 
   const columns = [
     { title: t('costCenter.typeCol'), key: 'type', width: 90, render: (_: unknown, r: typeof flatOrgs[0]) => <Tag>{orgTypeLabel(r.type)}</Tag> },
@@ -92,13 +93,7 @@ export default function CostCenter() {
             <span style={{ marginRight: 8 }}>{t('costCenter.typeFilter')}</span>
             <Select style={{ width: 140 }} allowClear placeholder={t('costCenter.typeFilterPlaceholder')}
               value={orgTypeFilter} onChange={setOrgTypeFilter}
-              options={[
-                { value: 2, label: '一级分行' },
-                { value: 3, label: '二级分行' },
-                { value: 4, label: '部门' },
-                { value: 5, label: '综合支行' },
-                { value: 6, label: '零专支行' },
-              ]} />
+              options={ORG_TYPE_OPTIONS.filter(o => o.value !== 1)} />
           </Col>
           <Col>
             {selectedBatchId && (
