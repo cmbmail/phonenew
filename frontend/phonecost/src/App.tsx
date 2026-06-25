@@ -16,7 +16,6 @@ import L2BranchPage from './pages/L2BranchPage';
 import L3SubBranchPage from './pages/L3SubBranchPage';
 import Organization from './pages/Organization';
 import PhoneNumberOwnership from './pages/PhoneNumberOwnership';
-import CostCenter from './pages/CostCenter';
 import DepartmentOwnership from './pages/DepartmentOwnership';
 import UserManagement from './pages/UserManagement';
 import TemplateManagement from './pages/TemplateManagement';
@@ -49,7 +48,6 @@ const App: React.FC = () => (
             <Route path="allocation/sub-branch" element={<L3SubBranchPage />} />
             <Route path="org" element={<Organization />} />
             <Route path="base/phone-ownership" element={<PhoneNumberOwnership />} />
-            <Route path="base/cost-center" element={<CostCenter />} />
             <Route path="base/dept-ownership" element={<DepartmentOwnership />} />
             <Route path="settings" element={<UserManagement />} />
             <Route path="templates" element={<TemplateManagement />} />

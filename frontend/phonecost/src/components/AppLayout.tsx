@@ -37,7 +37,6 @@ const allMenuItems: MenuItemDef[] = [
     label: '基础数据',
     children: [
       { key: '/base/phone-ownership', icon: <NumberOutlined />, label: '号码归属' },
-      { key: '/base/cost-center', icon: <ApartmentOutlined />, label: '成本中心' },
       { key: '/base/dept-ownership', icon: <UserSwitchOutlined />, label: '部门归属' },
     ],
   },
