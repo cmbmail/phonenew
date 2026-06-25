@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Card,
   Tree,
@@ -28,23 +28,25 @@ import {
   RetweetOutlined,
   ApartmentOutlined,
   DownloadOutlined,
+  MinusCircleOutlined,
 } from '@ant-design/icons';
 import type { UploadFile } from 'antd';
-import type { TreeDataNode } from 'antd';
+import type { TreeDataNode, DataNode } from 'antd';
 import type { Organization } from '../types/organization';
 import { ORG_TYPE_LABELS, ORG_TYPE_OPTIONS } from '../types/organization';
 import { getOrgTree, createOrg, updateOrg, deleteOrg, importOrg, rebuildOrgPaths, downloadOrgTemplate } from '../api/org';
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
 
-function buildTree(list: Organization[]): TreeDataNode[] {
-  const map = new Map<number, TreeDataNode>();
-  const roots: TreeDataNode[] = [];
+function buildTree(list: Organization[]): DataNode[] {
+  const map = new Map<number, DataNode>();
+  const roots: DataNode[] = [];
   list.forEach((org) => {
     map.set(org.id, {
       key: org.id,
       title: `${org.name} [${ORG_TYPE_LABELS[org.type] || '?'}]`,
       children: [],
+      isLeaf: false,
     });
   });
   list.forEach((org) => {
@@ -64,6 +66,7 @@ export default function OrganizationPage() {
   const [treeData, setTreeData] = useState<TreeDataNode[]>([]);
   const [selectedOrg, setSelectedOrg] = useState<Organization | null>(null);
   const [addModalOpen, setAddModalOpen] = useState(false);
+  const [addParentId, setAddParentId] = useState<number | null>(null);
   const [editForm] = Form.useForm();
   const [addForm] = Form.useForm();
   const [importFileList, setImportFileList] = useState<UploadFile[]>([]);
@@ -96,6 +99,13 @@ export default function OrganizationPage() {
     }
   };
 
+  const handleAddChild = (parentId: number) => {
+    setAddParentId(parentId);
+    addForm.resetFields();
+    addForm.setFieldsValue({ parent_id: parentId });
+    setAddModalOpen(true);
+  };
+
   const handleAdd = async () => {
     try {
       const values = await addForm.validateFields();
@@ -103,11 +113,13 @@ export default function OrganizationPage() {
         name: values.name,
         type: values.type,
         code: values.code,
-        parent_id: values.parent_id || null,
+        cost_center: values.cost_center,
+        parent_id: addParentId || values.parent_id || null,
         sort_order: values.sort_order || 0,
       });
       message.success(t('org.createSuccess'));
       setAddModalOpen(false);
+      setAddParentId(null);
       addForm.resetFields();
       fetchOrgTree();
     } catch (err) {
@@ -209,6 +221,10 @@ export default function OrganizationPage() {
 
   return (
     <div>
+      <style>{`
+        .org-tree-node:hover .org-tree-actions { opacity: 1 !important; }
+        .org-tree-actions .ant-btn-link { padding: 0 2px; }
+      `}</style>
       <Space style={{ marginBottom: 16 }} wrap>
         <Button icon={<DownloadOutlined />} onClick={handleDownloadTemplate}>
           {t('org.downloadTemplate')}
@@ -236,7 +252,7 @@ export default function OrganizationPage() {
             title={<span><ApartmentOutlined /> {t('org.treeTitle')}</span>}
             size="small"
             extra={
-              <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => setAddModalOpen(true)}>
+              <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => { setAddParentId(null); setAddModalOpen(true); }}>
                 {t('org.addBtn')}
               </Button>
             }
@@ -246,6 +262,46 @@ export default function OrganizationPage() {
               defaultExpandAll
               onSelect={handleSelect}
               showLine
+              titleRender={(node: DataNode) => {
+                const org = orgList.find((o) => o.id === (node.key as number));
+                return (
+                  <span
+                    className="org-tree-node"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, width: '100%' }}
+                  >
+                    <span>{node.title as string}</span>
+                    <span className="org-tree-actions" style={{ opacity: 0, transition: 'opacity 0.15s' }}>
+                      {org && (
+                        <>
+                          <Button
+                            type="link"
+                            size="small"
+                            icon={<PlusOutlined />}
+                            onClick={(e) => { e.stopPropagation(); handleAddChild(org.id); }}
+                            title={t('org.addChild')}
+                          />
+                          <Popconfirm
+                            title={t('org.deleteConfirm')}
+                            onConfirm={(e) => {
+                              e?.stopPropagation();
+                              handleDelete(org.id);
+                            }}
+                          >
+                            <Button
+                              type="link"
+                              size="small"
+                              danger
+                              icon={<MinusCircleOutlined />}
+                              onClick={(e) => e.stopPropagation()}
+                              title={t('org.deleteOrg')}
+                            />
+                          </Popconfirm>
+                        </>
+                      )}
+                    </span>
+                  </span>
+                );
+              }}
             />
           </Card>
         </Col>
@@ -304,7 +360,7 @@ export default function OrganizationPage() {
         title={t('org.addModalTitle')}
         open={addModalOpen}
         onOk={handleAdd}
-        onCancel={() => { setAddModalOpen(false); addForm.resetFields(); }}
+        onCancel={() => { setAddModalOpen(false); setAddParentId(null); addForm.resetFields(); }}
         okText={t('org.createBtn')}
       >
         <Form form={addForm} layout="vertical">

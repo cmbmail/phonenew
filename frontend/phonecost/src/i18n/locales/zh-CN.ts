@@ -464,6 +464,8 @@ export default {
     downloadTemplate: '下载模板',
     templateDownloaded: '模板下载成功',
     templateDownloadFailed: '模板下载失败',
+    addChild: '增加子组织',
+    deleteOrg: '删除组织',
   },
 
   // ==================== User Management ====================

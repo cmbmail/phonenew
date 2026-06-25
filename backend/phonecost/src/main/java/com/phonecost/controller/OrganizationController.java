@@ -117,10 +117,10 @@ public class OrganizationController {
 
             // Sample rows
             String[][] samples = {
-                {"集团总部", "001", "CC001"},
-                {"集团总部/北京分行", "002", "CC002"},
-                {"集团总部/北京分行/海淀支行", "003", "CC003"},
-                {"集团总部/北京分行/海淀支行/科技部", "004", "CC004"},
+                {"/北京分行", "002", "CC002"},
+                {"/北京分行/海淀支行", "003", "CC003"},
+                {"/北京分行/海淀支行/科技部", "004", "CC004"},
+                {"/上海分行", "010", "CC010"},
             };
             for (int i = 0; i < samples.length; i++) {
                 Row row = sheet.createRow(i + 1);
@@ -137,7 +137,7 @@ public class OrganizationController {
             noteFont.setItalic(true);
             noteStyle.setFont(noteFont);
             Cell noteCell = noteRow.createCell(0);
-            noteCell.setCellValue("说明：组织名称为必填项，各级以 / 分隔（如 集团总部/北京分行/海淀支行）；组织代码和成本中心选填，为空时显示为 \"-\"");
+            noteCell.setCellValue("说明：组织名称为必填项，以 / 开头，各级以 / 分隔（如 /北京分行/海淀支行/科技部）；集团隐含，第一段为一级分行；组织代码和成本中心选填，为空时显示为 \"-\"");
             noteCell.setCellStyle(noteStyle);
             sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(samples.length + 2, samples.length + 2, 0, 2));
 

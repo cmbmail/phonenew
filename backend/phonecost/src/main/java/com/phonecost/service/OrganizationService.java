@@ -126,25 +126,39 @@ public class OrganizationService {
 
         // Load existing orgs into cache: "parentId:name" → SysOrganization
         Map<String, SysOrganization> existingCache = new HashMap<>();
+        // Find the root (集团, type=1, no parent)
+        Long rootId = null;
         for (SysOrganization org : orgRepository.findAll()) {
             if (org.getDeletedAt() != null) continue;
+            if (org.getType() == 1 && org.getParentId() == null) {
+                rootId = org.getId();
+            }
             String key = (org.getParentId() == null ? "null" : org.getParentId().toString()) + ":" + org.getName();
             existingCache.put(key, org);
+        }
+        if (rootId == null) {
+            throw new IllegalArgumentException("未找到根组织（集团），请先创建");
         }
 
         int created = 0;
         int updated = 0;
 
         for (String[] r : rows) {
-            String[] segments = r[0].split("/");
-            Long parentId = null;
+            // Strip leading "/" and split
+            String pathStr = r[0];
+            if (pathStr.startsWith("/")) {
+                pathStr = pathStr.substring(1);
+            }
+            String[] segments = pathStr.split("/");
+            Long parentId = rootId; // start from 集团
 
             for (int d = 0; d < segments.length; d++) {
                 String name = segments[d].trim();
                 if (name.isEmpty()) continue;
 
-                byte type = (byte) Math.min(d + 1, 6);
-                String key = (parentId == null ? "null" : parentId.toString()) + ":" + name;
+                // depth 0 → 一级分行(type=2), depth 1 → 二级分行(type=3), ...
+                byte type = (byte) Math.min(d + 2, 6);
+                String key = parentId.toString() + ":" + name;
                 boolean isLeaf = (d == segments.length - 1);
 
                 SysOrganization org = existingCache.get(key);

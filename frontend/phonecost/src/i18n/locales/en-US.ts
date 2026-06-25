@@ -438,6 +438,8 @@ export default {
     downloadTemplate: 'Download Template',
     templateDownloaded: 'Template downloaded successfully',
     templateDownloadFailed: 'Template download failed',
+    addChild: 'Add child org',
+    deleteOrg: 'Delete org',
   },
 
   // ==================== User Management ====================
