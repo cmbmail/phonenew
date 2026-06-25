@@ -50,6 +50,7 @@ public class BillImportService {
     private final BillBatchRepository batchRepository;
     private final BillDetailRepository detailRepository;
     private final BillTemplateRepository templateRepository;
+    private final DirectoryEntryRepository directoryEntryRepository;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final DateTimeFormatter DTF = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
@@ -122,6 +123,9 @@ public class BillImportService {
             if (!allDetails.isEmpty()) {
                 detailRepository.saveAll(allDetails);
             }
+
+            // Backfill extensions from directory for sheets without extension column (CALL, FLASH_MSG)
+            backfillExtensionsFromDirectory(batch.getId());
 
             // Calculate totals
             List<BillDetail> allSaved = detailRepository.findByBatchIdAndDeletedAtIsNull(batch.getId());
@@ -418,6 +422,36 @@ public class BillImportService {
             try { return new BigDecimal(s); } catch (Exception e) { return null; }
         }
         return null;
+    }
+
+    /**
+     * Backfill extension numbers from directory_entry for bill details that have empty extensions.
+     * CALL and FLASH_MSG sheets typically don't have extension columns in the source Excel,
+     * so we look up the phone number in the latest directory batch and copy the extension.
+     */
+    private void backfillExtensionsFromDirectory(Long batchId) {
+        List<BillDetail> details = detailRepository.findByBatchIdAndDeletedAtIsNull(batchId);
+        List<BillDetail> toUpdate = new ArrayList<>();
+        int filled = 0;
+
+        for (BillDetail d : details) {
+            if (d.getExtension() == null || d.getExtension().isEmpty()) {
+                List<DirectoryEntry> entries = directoryEntryRepository.findByPhoneNumberAndDeletedAtIsNull(d.getPhoneNumber());
+                if (!entries.isEmpty()) {
+                    String ext = entries.get(0).getExtension();
+                    if (ext != null && !ext.isEmpty()) {
+                        d.setExtension(ext);
+                        toUpdate.add(d);
+                        filled++;
+                    }
+                }
+            }
+        }
+
+        if (!toUpdate.isEmpty()) {
+            detailRepository.saveAll(toUpdate);
+            log.info("Backfilled {} bill details with extensions from directory for batch {}", filled, batchId);
+        }
     }
 
     private BillDetail fillDefaults(BillDetail detail) {
