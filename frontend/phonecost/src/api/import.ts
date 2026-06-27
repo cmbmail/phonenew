@@ -24,6 +24,21 @@ export const importDirectory = (file: File) => {
 export const getDirectoryBatches = () =>
   apiGet<DirectoryBatch[]>('/import/directory/batches');
 
+export const setDirectoryMonth = (batchId: number, billingMonth: string) =>
+  apiPut<DirectoryBatch>(`/import/directory/batches/${batchId}/month`, { billing_month: billingMonth });
+
+export const getDirectorySnapshots = () =>
+  apiGet<DirectoryBatch[]>('/import/directory/snapshots');
+
+export const clearDirectoryException = (id: number) =>
+  apiPut<DirectoryEntry>(`/import/directory/entries/${id}/clear-exception`);
+
+export const syncDirectoryFromMatch = (id: number) =>
+  apiPut<DirectoryEntry>(`/import/directory/entries/${id}/sync-from-match`);
+
+export const batchClearDirectoryException = (ids: number[]) =>
+  apiPut<{ cleared: number }>('/import/directory/entries/batch-clear-exception', { ids });
+
 // ==================== Bill ====================
 
 export const importBill = (file: File) => {

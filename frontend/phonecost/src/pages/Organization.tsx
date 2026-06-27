@@ -84,6 +84,7 @@ export default function OrganizationPage() {
   const { t } = useTranslation();
   const [orgList, setOrgList] = useState<Organization[]>([]);
   const [treeData, setTreeData] = useState<DataNode[]>([]);
+  const [expandedKeys, setExpandedKeys] = useState<React.Key[]>([]);
   const [selectedOrg, setSelectedOrg] = useState<Organization | null>(null);
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [addParentId, setAddParentId] = useState<number | null>(null);
@@ -97,7 +98,25 @@ export default function OrganizationPage() {
     try {
       const data = await getOrgTree();
       setOrgList(data);
-      setTreeData(buildTree(data));
+      const tree = buildTree(data);
+      setTreeData(tree);
+      // Expand first level: only root node (集团), so 一级分行 are visible but collapsed
+      const rootKeys = tree.map(n => n.key);
+      setExpandedKeys([...rootKeys]);
+      // Auto-select root node
+      if (tree.length > 0) {
+        const rootId = tree[0].key as number;
+        const rootOrg = data.find((o: Organization) => o.id === rootId) || null;
+        if (rootOrg) {
+          setSelectedOrg(rootOrg);
+          editForm.setFieldsValue({
+            name: rootOrg.name,
+            type: rootOrg.type,
+            code: rootOrg.code || '',
+            cost_center: rootOrg.cost_center || '',
+          });
+        }
+      }
     } catch {
       message.error(t('org.fetchFailed'));
     }
@@ -288,7 +307,8 @@ export default function OrganizationPage() {
           >
             <Tree
               treeData={treeData}
-              defaultExpandAll
+              expandedKeys={expandedKeys}
+              onExpand={setExpandedKeys}
               onSelect={handleSelect}
               showLine
               selectedKeys={selectedOrg ? [selectedOrg.id] : []}

@@ -243,10 +243,6 @@ export default function AllocationPage() {
         r.org_id === -1 ? <Tag color={COLORS.danger}>{t('bill.unassigned')}</Tag> : name,
     },
     {
-      title: t('allocation.costCenterCol'), dataIndex: 'cost_center', key: 'cost_center', width: 100,
-      render: (v: string | null) => v || '-',
-    },
-    {
       title: t('allocation.monthlyRentFee'), dataIndex: 'monthly_rent', key: 'monthly_rent', width: 100,
       render: (v: number) => v != null && v !== 0 ? `¥${v.toFixed(2)}` : '-',
     },

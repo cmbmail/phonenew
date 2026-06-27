@@ -18,6 +18,7 @@ import L3SubBranchPage from './pages/L3SubBranchPage';
 import Organization from './pages/Organization';
 import PhoneNumberOwnership from './pages/PhoneNumberOwnership';
 import DepartmentOwnership from './pages/DepartmentOwnership';
+import DirectoryPage from './pages/DirectoryPage';
 import UserManagement from './pages/UserManagement';
 import TemplateManagement from './pages/TemplateManagement';
 
@@ -50,6 +51,7 @@ const App: React.FC = () => (
             <Route path="org" element={<Organization />} />
             <Route path="base/phone-ownership" element={<PhoneNumberOwnership />} />
             <Route path="base/dept-ownership" element={<DepartmentOwnership />} />
+            <Route path="base/directory" element={<DirectoryPage />} />
             <Route path="settings" element={<UserManagement />} />
             <Route path="templates" element={<TemplateManagement />} />
           </Route>

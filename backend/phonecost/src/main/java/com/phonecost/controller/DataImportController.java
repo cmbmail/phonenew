@@ -196,6 +196,83 @@ public class DataImportController {
         )));
     }
 
+    // ==================== 通讯录快照 ====================
+
+    @PutMapping("/directory/entries/{id}/clear-exception")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_BRANCH')")
+    public ResponseEntity<ApiResponse<DirectoryEntry>> clearException(@PathVariable Long id) {
+        DirectoryEntry entry = directoryEntryRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("记录不存在: " + id));
+        entry.setIsSeconded((byte) 0);
+        entry.setSecondedKeyword("");
+        directoryEntryRepository.save(entry);
+        return ResponseEntity.ok(ApiResponse.ok(entry));
+    }
+
+    @PutMapping("/directory/entries/{id}/sync-from-match")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_BRANCH')")
+    public ResponseEntity<ApiResponse<DirectoryEntry>> syncFromMatch(@PathVariable Long id) {
+        DirectoryEntry entry = directoryEntryRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("记录不存在: " + id));
+        // Find matching non-exception entry by phone number in same batch
+        List<DirectoryEntry> matches = directoryEntryRepository.findByBatchIdAndDeletedAtIsNull(entry.getBatchId());
+        DirectoryEntry match = matches.stream()
+                .filter(e -> e.getPhoneNumber().equals(entry.getPhoneNumber()) && !e.getId().equals(id) && e.getIsSeconded() == 0)
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("未找到匹配的当前数据记录"));
+        entry.setDeptPath(match.getDeptPath());
+        entry.setUsername(match.getUsername());
+        entry.setExtension(match.getExtension());
+        entry.setIsSeconded((byte) 0);
+        entry.setSecondedKeyword("");
+        directoryEntryRepository.save(entry);
+        return ResponseEntity.ok(ApiResponse.ok(entry));
+    }
+
+    @PutMapping("/directory/entries/batch-clear-exception")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_BRANCH')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> batchClearException(@RequestBody Map<String, List<Long>> body) {
+        List<Long> ids = body.get("ids");
+        if (ids == null || ids.isEmpty()) {
+            throw new IllegalArgumentException("ids 不能为空");
+        }
+        int count = 0;
+        for (Long id : ids) {
+            DirectoryEntry entry = directoryEntryRepository.findById(id).orElse(null);
+            if (entry != null) {
+                entry.setIsSeconded((byte) 0);
+                entry.setSecondedKeyword("");
+                directoryEntryRepository.save(entry);
+                count++;
+            }
+        }
+        return ResponseEntity.ok(ApiResponse.ok(Map.of("cleared", count)));
+    }
+
+    @PutMapping("/directory/batches/{id}/month")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_BRANCH')")
+    public ResponseEntity<ApiResponse<DirectoryBatch>> setDirectoryMonth(
+            @PathVariable Long id,
+            @RequestBody Map<String, String> body) {
+        DirectoryBatch batch = directoryBatchRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("批次不存在: " + id));
+        String month = body.get("billing_month");
+        if (month == null || !month.matches("\\d{4}-\\d{2}")) {
+            throw new IllegalArgumentException("月份格式错误，应为 yyyy-MM");
+        }
+        batch.setBillingMonth(month);
+        directoryBatchRepository.save(batch);
+        return ResponseEntity.ok(ApiResponse.ok(batch));
+    }
+
+    @GetMapping("/directory/snapshots")
+    public ResponseEntity<ApiResponse<List<DirectoryBatch>>> listDirectorySnapshots() {
+        List<DirectoryBatch> snapshots = directoryBatchRepository.findAll().stream()
+                .filter(b -> b.getBillingMonth() != null)
+                .toList();
+        return ResponseEntity.ok(ApiResponse.ok(snapshots));
+    }
+
     // ==================== 数据快照 ====================
 
     @GetMapping("/snapshots")

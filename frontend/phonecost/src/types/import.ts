@@ -30,6 +30,7 @@ export interface DirectoryBatch {
   file_name: string;
   total_count: number;
   seconded_count: number;
+  billing_month: string | null;
   import_status: number;
   error_message: string | null;
   imported_by: number;

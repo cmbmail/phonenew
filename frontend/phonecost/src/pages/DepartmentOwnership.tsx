@@ -184,7 +184,7 @@ export default function DepartmentOwnership() {
       title: t('deptOwnership.secondedCol'), dataIndex: 'is_seconded', key: 'is_seconded', width: 80,
       render: (v: number) => {
         if (v !== 1) return '-';
-        return <Tag color={COLORS.pending}>借调</Tag>;
+        return <Tag color={COLORS.pending}>例外</Tag>;
       },
     },
   ];

@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Layout, Menu, Avatar, Dropdown, Typography, Popconfirm, Modal, Form, Input, message } from 'antd';
-import { DashboardOutlined, FileTextOutlined, PhoneOutlined, TeamOutlined, SettingOutlined, LogoutOutlined, ImportOutlined, ToolOutlined, BankOutlined, BranchesOutlined, DatabaseOutlined, NumberOutlined, ApartmentOutlined, UserSwitchOutlined } from '@ant-design/icons';
+import { DashboardOutlined, FileTextOutlined, PhoneOutlined, TeamOutlined, SettingOutlined, LogoutOutlined, ImportOutlined, ToolOutlined, BankOutlined, BranchesOutlined, DatabaseOutlined, NumberOutlined, ApartmentOutlined, UserSwitchOutlined, BookOutlined } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
 import { getErrorMessage } from '../types/api';
@@ -38,6 +38,7 @@ const allMenuItems: MenuItemDef[] = [
     label: '基础数据',
     children: [
       { key: '/base/phone-ownership', icon: <NumberOutlined />, label: '号码归属' },
+      { key: '/base/directory', icon: <BookOutlined />, label: '通讯录' },
       { key: '/base/dept-ownership', icon: <UserSwitchOutlined />, label: '部门归属' },
     ],
   },
@@ -46,7 +47,7 @@ const allMenuItems: MenuItemDef[] = [
 ];
 
 const AppLayout: React.FC = () => {
-  const [collapsed, setCollapsed] = useState(true);
+  const [collapsed, setCollapsed] = useState(false);
   const [changePwdOpen, setChangePwdOpen] = useState(false);
   const [changePwdLoading, setChangePwdLoading] = useState(false);
   const [form] = Form.useForm();
