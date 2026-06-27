@@ -10,4 +10,5 @@ import java.util.List;
 public interface BillDetailRepository extends JpaRepository<BillDetail, Long> {
     List<BillDetail> findByBatchIdAndDeletedAtIsNull(Long batchId);
     List<BillDetail> findByPhoneNumberAndBatchIdAndDeletedAtIsNull(String phoneNumber, Long batchId);
+    List<BillDetail> findByPhoneNumberAndDeletedAtIsNull(String phoneNumber);
 }

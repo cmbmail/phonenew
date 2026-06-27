@@ -167,7 +167,7 @@ function ProgressBar({ confirmed, pending, total }: { confirmed: number; pending
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 12 }}>
         <span style={{ opacity: 0.8 }}>
-          ● {COLORS.confirmed && '已确认'} {confirmed}
+          ● 已确认 {confirmed}
         </span>
         <span style={{ opacity: 0.8 }}>
           ● 待确认 {pending}

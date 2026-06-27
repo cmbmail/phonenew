@@ -68,8 +68,8 @@ export default function DepartmentOwnership() {
   useEffect(() => {
     if (selectedBatchId) {
       setEntriesLoading(true);
-      apiGet<DirectoryEntry[]>(`/import/directory/entries/${selectedBatchId}`)
-        .then(setEntries)
+      apiGet<{ entries: DirectoryEntry[] }>(`/import/directory/entries/${selectedBatchId}`)
+        .then(data => setEntries(data.entries))
         .catch(() => message.error(t('deptOwnership.fetchFailed')))
         .finally(() => setEntriesLoading(false));
     }
@@ -104,8 +104,8 @@ export default function DepartmentOwnership() {
       return;
     }
     setSnapshotEntriesLoading(true);
-    apiGet<DirectoryEntry[]>(`/import/directory/entries/${snap.directory_batch_id}`)
-      .then(setSnapshotEntries)
+    apiGet<{ entries: DirectoryEntry[] }>(`/import/directory/entries/${snap.directory_batch_id}`)
+      .then(data => setSnapshotEntries(data.entries))
       .catch(() => { message.error(t('deptOwnership.fetchFailed')); setSnapshotEntries([]); })
       .finally(() => setSnapshotEntriesLoading(false));
   }, [activeTab, selectedSnapshotMonth, snapshots, billBatches, t]);

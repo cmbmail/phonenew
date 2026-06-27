@@ -117,11 +117,10 @@ public class AllocationService {
             results.add(unassignedResult);
         }
 
-        // Phase 3: Cascade up - for each parent org, sum all descendant fees
-        // We need allocation results for parent orgs too (they show aggregated totals)
+        // Phase 3: Cascade up - for each parent org, sum direct children's fees
         Set<Long> processedOrgs = new HashSet<>(orgFees.keySet());
         for (Long leafOrgId : orgFees.keySet()) {
-            cascadeUp(leafOrgId, orgMap, billBatchId, results, processedOrgs);
+            cascadeUp(leafOrgId, orgMap, billBatchId, results, processedOrgs, childrenMap);
         }
 
         // Save all results (with defaults for nullable fields)
@@ -144,35 +143,38 @@ public class AllocationService {
 
     /**
      * Cascade fees up the org tree.
-     * For each ancestor org that's not yet in results, create a parent allocation result
-     * with aggregated fees from all its descendants.
+     * For each ancestor org not yet in results, create a parent allocation result
+     * by summing its direct children's already-aggregated fees.
      */
     private void cascadeUp(Long orgId, Map<Long, SysOrganization> orgMap,
-                           Long batchId, List<AllocationResult> results, Set<Long> processedOrgs) {
+                           Long batchId, List<AllocationResult> results, Set<Long> processedOrgs,
+                           Map<Long, List<Long>> childrenMap) {
         SysOrganization org = orgMap.get(orgId);
         if (org == null || org.getParentId() == null) return;
 
         Long parentId = org.getParentId();
         if (!processedOrgs.contains(parentId)) {
-            // Find all descendant results for this parent
             SysOrganization parent = orgMap.get(parentId);
             if (parent == null) return;
 
             FeeAggregator parentFees = new FeeAggregator();
             int totalPhoneCount = 0;
 
-            // Sum all results whose orgId is a descendant of parentId
-            String parentPath = parent.getPath();
-            for (AllocationResult r : results) {
-                SysOrganization rOrg = orgMap.get(r.getOrgId());
-                if (rOrg != null && rOrg.getPath() != null && rOrg.getPath().startsWith(parentPath)) {
-                    parentFees.monthlyRent = parentFees.monthlyRent.add(r.getMonthlyRent());
-                    parentFees.callFee = parentFees.callFee.add(r.getCallFee());
-                    parentFees.recordingFee = parentFees.recordingFee.add(r.getRecordingFee());
-                    parentFees.crbtFee = parentFees.crbtFee.add(r.getCrbtFee());
-                    parentFees.flashMsgFee = parentFees.flashMsgFee.add(r.getFlashMsgFee());
-                    parentFees.totalFee = parentFees.totalFee.add(r.getTotalFee());
-                    totalPhoneCount += r.getPhoneCount();
+            // Only sum results from DIRECT children (their fees already include descendants)
+            List<Long> childIds = childrenMap.getOrDefault(parentId, Collections.emptyList());
+            for (Long childId : childIds) {
+                // Find the result for this child org (may not exist if no fees assigned)
+                AllocationResult childResult = results.stream()
+                        .filter(r -> r.getOrgId().equals(childId))
+                        .findFirst().orElse(null);
+                if (childResult != null) {
+                    parentFees.monthlyRent = parentFees.monthlyRent.add(childResult.getMonthlyRent());
+                    parentFees.callFee = parentFees.callFee.add(childResult.getCallFee());
+                    parentFees.recordingFee = parentFees.recordingFee.add(childResult.getRecordingFee());
+                    parentFees.crbtFee = parentFees.crbtFee.add(childResult.getCrbtFee());
+                    parentFees.flashMsgFee = parentFees.flashMsgFee.add(childResult.getFlashMsgFee());
+                    parentFees.totalFee = parentFees.totalFee.add(childResult.getTotalFee());
+                    totalPhoneCount += childResult.getPhoneCount();
                 }
             }
 
@@ -195,7 +197,7 @@ public class AllocationService {
         }
 
         // Recurse up
-        cascadeUp(parentId, orgMap, batchId, results, processedOrgs);
+        cascadeUp(parentId, orgMap, batchId, results, processedOrgs, childrenMap);
     }
 
     /**

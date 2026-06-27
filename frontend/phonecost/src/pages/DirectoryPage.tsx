@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Card, Table, Select, Tag, Row, Col, message, Empty, Input, Statistic, Upload, Button, Space, Tabs, DatePicker, Modal, Tooltip, Popconfirm } from 'antd';
-import { SearchOutlined, UploadOutlined, ReloadOutlined, CameraOutlined, CheckCircleOutlined, SyncOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
+import { Card, Table, Select, Tag, Row, Col, message, Empty, Input, Statistic, Upload, Button, Space, Tabs, DatePicker, Modal, Tooltip, Popconfirm, Dropdown } from 'antd';
+import { SearchOutlined, UploadOutlined, ReloadOutlined, CameraOutlined, CheckCircleOutlined, SyncOutlined, ExclamationCircleOutlined, EditOutlined } from '@ant-design/icons';
 import type { DirectoryBatch, DirectoryEntry } from '../types/import';
-import { importDirectory, getDirectoryBatches, setDirectoryMonth, getDirectorySnapshots, clearDirectoryException, syncDirectoryFromMatch, batchClearDirectoryException } from '../api/import';
+import { importDirectory, getDirectoryBatches, setDirectoryMonth, getDirectorySnapshots, clearDirectoryException, syncDirectoryFromMatch, batchClearDirectoryException, updateDirectoryExceptionReason } from '../api/import';
 import { COLORS } from '../theme/morandi';
 import { apiGet } from '../lib/request';
 import dayjs from 'dayjs';
 
-const LEVEL_LABELS = ['集团', '一级分行', '二级分行/部门', '部门代码', '部门代码'];
+const LEVEL_LABELS = ['集团', '一级分行', '二级分行/部门', '三级部门', '四级部门'];
 const DIFF_BG = 'rgba(196,123,108,0.12)'; // subtle danger tint for differing fields
 
 function splitDeptPath(deptPath: string): string[] {
@@ -69,10 +69,22 @@ const DirectoryPage: React.FC = () => {
   const [snapshotEntriesLoading, setSnapshotEntriesLoading] = useState(false);
   const [snapshotSearch, setSnapshotSearch] = useState('');
   const [exceptionSearch, setExceptionSearch] = useState('');
+  const [codeToNameMap, setCodeToNameMap] = useState<Record<string, string>>({});
+
+  // Resolve a dept_path segment: if it's a code found in map, return the Chinese name; otherwise return as-is
+  const resolveOrgCode = useCallback((segment: string): string => {
+    if (!segment) return '-';
+    return codeToNameMap[segment] || segment;
+  }, [codeToNameMap]);
 
   // Create snapshot modal
   const [snapshotModalOpen, setSnapshotModalOpen] = useState(false);
   const [snapshotMonth, setSnapshotMonth] = useState<string>('');
+
+  // Edit exception reason modal
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<DirectoryEntry | null>(null);
+  const [editReason, setEditReason] = useState('');
 
   const fetchBatches = useCallback(async () => {
     setLoading(true);
@@ -102,8 +114,9 @@ const DirectoryPage: React.FC = () => {
     if (!selectedBatchId) { setEntries([]); return; }
     setEntriesLoading(true);
     try {
-      const data = await apiGet<DirectoryEntry[]>(`/import/directory/entries/${selectedBatchId}`);
-      setEntries(data);
+      const data = await apiGet<{ entries: DirectoryEntry[]; codeToNameMap: Record<string, string> }>(`/import/directory/entries/${selectedBatchId}`);
+      setEntries(data.entries);
+      setCodeToNameMap(data.codeToNameMap || {});
     } catch {
       message.error('获取通讯录数据失败');
     } finally {
@@ -125,8 +138,8 @@ const DirectoryPage: React.FC = () => {
     const snap = snapshots.find(s => s.billing_month === selectedSnapshotMonth);
     if (!snap) { setSnapshotEntries([]); return; }
     setSnapshotEntriesLoading(true);
-    apiGet<DirectoryEntry[]>(`/import/directory/entries/${snap.id}`)
-      .then(setSnapshotEntries)
+    apiGet<{ entries: DirectoryEntry[]; codeToNameMap: Record<string, string> }>(`/import/directory/entries/${snap.id}`)
+      .then(data => setSnapshotEntries(data.entries))
       .catch(() => message.error('获取快照数据失败'))
       .finally(() => setSnapshotEntriesLoading(false));
   }, [selectedSnapshotMonth, snapshots]);
@@ -193,6 +206,20 @@ const DirectoryPage: React.FC = () => {
     } catch { message.error('批量解除失败'); }
   };
 
+  const handleUpdateReason = async () => {
+    if (!editingEntry) return;
+    try {
+      await updateDirectoryExceptionReason(editingEntry.id, editReason);
+      message.success('说明已更新');
+      setEditModalOpen(false);
+      setEditingEntry(null);
+      setEditReason('');
+      fetchEntries();
+    } catch (err) {
+      message.error(`更新失败：${err instanceof Error ? err.message : '未知错误'}`);
+    }
+  };
+
   // Derived data
   const exceptionCount = entries.filter(e => e.is_seconded === 1).length;
   const filteredEntries = search
@@ -226,18 +253,18 @@ const DirectoryPage: React.FC = () => {
   // Column helpers
   const baseColumns = [
     { title: LEVEL_LABELS[0], key: 'level0', width: 140, fixed: 'left' as const,
-      render: (_: unknown, r: DirectoryEntry) => splitDeptPath(r.dept_path)[0] || '-' },
+      render: (_: unknown, r: DirectoryEntry) => resolveOrgCode(splitDeptPath(r.dept_path)[0]) },
     { title: LEVEL_LABELS[1], key: 'level1', width: 120,
-      render: (_: unknown, r: DirectoryEntry) => splitDeptPath(r.dept_path)[1] || '-' },
+      render: (_: unknown, r: DirectoryEntry) => resolveOrgCode(splitDeptPath(r.dept_path)[1]) },
     { title: LEVEL_LABELS[2], key: 'level2', width: 160,
-      render: (_: unknown, r: DirectoryEntry) => splitDeptPath(r.dept_path)[2] || '-' },
+      render: (_: unknown, r: DirectoryEntry) => resolveOrgCode(splitDeptPath(r.dept_path)[2]) },
     { title: LEVEL_LABELS[3], key: 'level3', width: 120,
-      render: (_: unknown, r: DirectoryEntry) => splitDeptPath(r.dept_path)[3] || '-' },
+      render: (_: unknown, r: DirectoryEntry) => resolveOrgCode(splitDeptPath(r.dept_path)[3]) },
     { title: LEVEL_LABELS[4], key: 'level4', width: 120,
-      render: (_: unknown, r: DirectoryEntry) => splitDeptPath(r.dept_path)[4] || '-' },
+      render: (_: unknown, r: DirectoryEntry) => resolveOrgCode(splitDeptPath(r.dept_path)[4]) },
     { title: '用户名称(员工ID)', dataIndex: 'username', key: 'username', width: 130 },
     { title: '分机号码', dataIndex: 'extension', key: 'extension', width: 100 },
-    { title: '外线号码', dataIndex: 'phone_number', key: 'phone_number', width: 130 },
+    { title: '号码', dataIndex: 'phone_number', key: 'phone_number', width: 130 },
   ];
 
   const columns = [
@@ -251,31 +278,31 @@ const DirectoryPage: React.FC = () => {
     { title: LEVEL_LABELS[0], key: 'level0', width: 140, fixed: 'left' as const,
       render: (_: unknown, r: DirectoryEntry) => {
         const diff = diffsMap.get(r.id);
-        const val = splitDeptPath(r.dept_path)[0] || '-';
+        const val = resolveOrgCode(splitDeptPath(r.dept_path)[0]);
         return <span style={diff?.level0 ? { background: DIFF_BG, borderRadius: 3, padding: '0 4px' } : undefined}>{val}</span>;
       }},
     { title: LEVEL_LABELS[1], key: 'level1', width: 120,
       render: (_: unknown, r: DirectoryEntry) => {
         const diff = diffsMap.get(r.id);
-        const val = splitDeptPath(r.dept_path)[1] || '-';
+        const val = resolveOrgCode(splitDeptPath(r.dept_path)[1]);
         return <span style={diff?.level1 ? { background: DIFF_BG, borderRadius: 3, padding: '0 4px' } : undefined}>{val}</span>;
       }},
     { title: LEVEL_LABELS[2], key: 'level2', width: 160,
       render: (_: unknown, r: DirectoryEntry) => {
         const diff = diffsMap.get(r.id);
-        const val = splitDeptPath(r.dept_path)[2] || '-';
+        const val = resolveOrgCode(splitDeptPath(r.dept_path)[2]);
         return <span style={diff?.level2 ? { background: DIFF_BG, borderRadius: 3, padding: '0 4px' } : undefined}>{val}</span>;
       }},
     { title: LEVEL_LABELS[3], key: 'level3', width: 120,
       render: (_: unknown, r: DirectoryEntry) => {
         const diff = diffsMap.get(r.id);
-        const val = splitDeptPath(r.dept_path)[3] || '-';
+        const val = resolveOrgCode(splitDeptPath(r.dept_path)[3]);
         return <span style={diff?.level3 ? { background: DIFF_BG, borderRadius: 3, padding: '0 4px' } : undefined}>{val}</span>;
       }},
     { title: LEVEL_LABELS[4], key: 'level4', width: 120,
       render: (_: unknown, r: DirectoryEntry) => {
         const diff = diffsMap.get(r.id);
-        const val = splitDeptPath(r.dept_path)[4] || '-';
+        const val = resolveOrgCode(splitDeptPath(r.dept_path)[4]);
         return <span style={diff?.level4 ? { background: DIFF_BG, borderRadius: 3, padding: '0 4px' } : undefined}>{val}</span>;
       }},
     { title: '用户名称(员工ID)', dataIndex: 'username', key: 'username', width: 130,
@@ -288,8 +315,8 @@ const DirectoryPage: React.FC = () => {
         const diff = diffsMap.get(r.id);
         return <span style={diff?.extension ? { background: DIFF_BG, borderRadius: 3, padding: '0 4px' } : undefined}>{v || '-'}</span>;
       }},
-    { title: '外线号码', dataIndex: 'phone_number', key: 'phone_number', width: 130 },
-    { title: '例外关键词', dataIndex: 'seconded_keyword', key: 'seconded_keyword', width: 100,
+    { title: '号码', dataIndex: 'phone_number', key: 'phone_number', width: 130 },
+    { title: '说明', dataIndex: 'seconded_keyword', key: 'seconded_keyword', width: 100,
       render: (v: string) => v ? <Tag color={COLORS.pending}>{v}</Tag> : '-' },
     { title: '匹配', key: 'match', width: 80,
       render: (_: unknown, r: DirectoryEntry) => {
@@ -298,21 +325,30 @@ const DirectoryPage: React.FC = () => {
         if (diff.hasDiff) return <Tooltip title="有字段差异（高亮显示）"><ExclamationCircleOutlined style={{ color: COLORS.danger }} /></Tooltip>;
         return <Tooltip title="完全匹配"><CheckCircleOutlined style={{ color: COLORS.confirmed }} /></Tooltip>;
       }},
-    { title: '操作', key: 'actions', width: 180, fixed: 'right' as const,
+    { title: '操作', key: 'actions', width: 80, fixed: 'right' as const,
       render: (_: unknown, r: DirectoryEntry) => {
         const diff = diffsMap.get(r.id);
         const loading = processingIds.has(r.id);
+        const items = [
+          { key: 'edit', label: '编辑', icon: <EditOutlined /> },
+          ...(diff?.matched && diff.hasDiff ? [{ key: 'sync', label: '同步当前数据', icon: <SyncOutlined /> }] : []),
+          { key: 'clear', label: '解除例外', icon: <CheckCircleOutlined /> },
+        ];
         return (
-          <Space size="small">
-            <Popconfirm title="解除例外标记？" onConfirm={() => handleClearException(r.id)}>
-              <Button size="small" icon={<CheckCircleOutlined />} loading={loading}>解除例外</Button>
-            </Popconfirm>
-            {diff?.matched && diff.hasDiff && (
-              <Popconfirm title="将当前数据同步到此例外记录？" onConfirm={() => handleSyncFromMatch(r.id)}>
-                <Button size="small" type="primary" icon={<SyncOutlined />} loading={loading}>同步数据</Button>
-              </Popconfirm>
-            )}
-          </Space>
+          <Dropdown menu={{ items, onClick: ({ key }) => {
+            if (key === 'edit') {
+              setEditingEntry(r);
+              setEditReason(r.seconded_keyword || '');
+              setEditModalOpen(true);
+            } else if (key === 'clear') {
+              Modal.confirm({ title: '解除例外', content: '确认解除例外标记？', onOk: () => handleClearException(r.id) });
+            } else if (key === 'sync') {
+              if (!diff?.matched) { message.warning('未匹配到当前数据，无法同步'); return; }
+              Modal.confirm({ title: '同步当前数据', content: '将当前数据同步到此例外记录？', onOk: () => handleSyncFromMatch(r.id) });
+            }
+          }}}>
+            <Button size="small" loading={loading}>编辑</Button>
+          </Dropdown>
         );
       }},
   ];
@@ -380,7 +416,7 @@ const DirectoryPage: React.FC = () => {
         pagination={{ pageSize: 50, showSizeChanger: true, pageSizeOptions: ['25', '50', '100'], showTotal: (total) => `共 ${total} 条` }} scroll={{ x: 1500 }} />
       <div style={{ marginTop: 8, color: COLORS.textMuted, fontSize: 12 }}>
         <ExclamationCircleOutlined style={{ marginRight: 4 }} />
-        高亮字段表示例外记录与当前数据（按外线号码匹配）不一致，可选择「同步数据」将当前数据覆盖到例外记录，或「解除例外」取消例外标记。
+        高亮字段表示例外记录与当前数据（按号码匹配）不一致，可选择「同步数据」将当前数据覆盖到例外记录，或「解除例外」取消例外标记。
       </div>
     </>
   );
@@ -419,6 +455,16 @@ const DirectoryPage: React.FC = () => {
       <Modal title="制作快照" open={snapshotModalOpen} onOk={handleCreateSnapshot} onCancel={() => { setSnapshotModalOpen(false); setSnapshotMonth(''); }} okText="确定" okButtonProps={{ disabled: !snapshotMonth }}>
         <div style={{ marginBottom: 12 }}>将当前选中批次的通讯录数据标记为指定月份的快照，方便后续按月查看。</div>
         <DatePicker picker="month" style={{ width: '100%' }} placeholder="选择年月" onChange={(_, dateString) => setSnapshotMonth(typeof dateString === 'string' ? dateString : '')} disabledDate={(current) => current && current > dayjs()} />
+      </Modal>
+      <Modal title="编辑例外原因" open={editModalOpen} onOk={handleUpdateReason} onCancel={() => { setEditModalOpen(false); setEditingEntry(null); setEditReason(''); }} okText="保存">
+        {editingEntry && (
+          <div>
+            <div style={{ marginBottom: 8, color: COLORS.textMuted }}>
+              号码：{editingEntry.phone_number} / 员工：{editingEntry.username}
+            </div>
+            <Input.TextArea rows={3} placeholder="输入例外原因" value={editReason} onChange={e => setEditReason(e.target.value)} maxLength={200} showCount />
+          </div>
+        )}
       </Modal>
     </Card>
   );

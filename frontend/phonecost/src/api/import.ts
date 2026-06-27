@@ -1,5 +1,5 @@
-import { apiPost, apiGet, apiUpload } from '../lib/request';
-import type { ImportResult, MatchResult, OwnershipBatch, DirectoryBatch, DataSnapshot } from '../types/import';
+import { apiPost, apiGet, apiPut, apiUpload } from '../lib/request';
+import type { ImportResult, MatchResult, OwnershipBatch, DirectoryBatch, DirectoryEntry, DataSnapshot } from '../types/import';
 import type { BillBatch } from '../types/bill';
 
 // ==================== Ownership ====================
@@ -38,6 +38,9 @@ export const syncDirectoryFromMatch = (id: number) =>
 
 export const batchClearDirectoryException = (ids: number[]) =>
   apiPut<{ cleared: number }>('/import/directory/entries/batch-clear-exception', { ids });
+
+export const updateDirectoryExceptionReason = (id: number, reason: string) =>
+  apiPut<DirectoryEntry>(`/import/directory/entries/${id}/reason`, { reason });
 
 // ==================== Bill ====================
 

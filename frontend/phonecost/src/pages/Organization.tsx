@@ -24,13 +24,11 @@ import { getErrorMessage } from '../types/api';
 import {
   PlusOutlined,
   EditOutlined,
-  DeleteOutlined,
   RetweetOutlined,
   ApartmentOutlined,
   DownloadOutlined,
   MinusCircleOutlined,
   UploadOutlined,
-  InfoCircleOutlined,
 } from '@ant-design/icons';
 import type { DataNode } from 'antd/es/tree';
 import type { Organization } from '../types/organization';
@@ -90,7 +88,7 @@ export default function OrganizationPage() {
   const [addParentId, setAddParentId] = useState<number | null>(null);
   const [editForm] = Form.useForm();
   const [addForm] = Form.useForm();
-  const [importing, setImporting] = useState(false);
+  const [, setImporting] = useState(false);
   const [rebuilding, setRebuilding] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
 
@@ -120,7 +118,7 @@ export default function OrganizationPage() {
     } catch {
       message.error(t('org.fetchFailed'));
     }
-  }, [t]);
+  }, [t, editForm]);
 
   useEffect(() => { fetchOrgTree(); }, [fetchOrgTree]);
 

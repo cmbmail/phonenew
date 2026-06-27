@@ -15,12 +15,14 @@ import BillManagement from './pages/BillManagement';
 import L1SummaryPage from './pages/L1SummaryPage';
 import L2BranchPage from './pages/L2BranchPage';
 import L3SubBranchPage from './pages/L3SubBranchPage';
+import FeeAnalysisPage from './pages/FeeAnalysisPage';
 import Organization from './pages/Organization';
 import PhoneNumberOwnership from './pages/PhoneNumberOwnership';
 import DepartmentOwnership from './pages/DepartmentOwnership';
 import DirectoryPage from './pages/DirectoryPage';
 import UserManagement from './pages/UserManagement';
 import TemplateManagement from './pages/TemplateManagement';
+import AuditLogPage from './pages/AuditLogPage';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30000 } } });
 
@@ -48,12 +50,17 @@ const App: React.FC = () => (
             <Route path="allocation" element={<L1SummaryPage />} />
             <Route path="allocation/branch" element={<L2BranchPage />} />
             <Route path="allocation/sub-branch" element={<L3SubBranchPage />} />
+            <Route path="allocation/analysis" element={<FeeAnalysisPage />} />
             <Route path="org" element={<Organization />} />
             <Route path="base/phone-ownership" element={<PhoneNumberOwnership />} />
             <Route path="base/dept-ownership" element={<DepartmentOwnership />} />
             <Route path="base/directory" element={<DirectoryPage />} />
-            <Route path="settings" element={<UserManagement />} />
+            <Route path="settings/users" element={<UserManagement />} />
+            <Route path="settings/audit-log" element={<AuditLogPage />} />
             <Route path="templates" element={<TemplateManagement />} />
+            {/* Redirect old paths */}
+            <Route path="settings" element={<Navigate to="/settings/users" replace />} />
+            <Route path="audit-log" element={<Navigate to="/settings/audit-log" replace />} />
           </Route>
         </Routes>
       </BrowserRouter>

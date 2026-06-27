@@ -4,7 +4,6 @@ import { Card, Table, Select, Tag, Row, Col, message, Empty, Input, Statistic, T
 import { SearchOutlined, CameraOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import type { OwnershipBatch, OwnershipEntry, DataSnapshot } from '../types/import';
-import { MATCH_LEVEL_MAP } from '../types/import';
 import { getOwnershipBatches, getSnapshots, getBillBatches } from '../api/import';
 import { apiGet } from '../lib/request';
 import { getOrgTree } from '../api/org';
@@ -18,6 +17,8 @@ export default function PhoneNumberOwnership() {
   const [batches, setBatches] = useState<OwnershipBatch[]>([]);
   const [selectedBatchId, setSelectedBatchId] = useState<number | null>(null);
   const [entries, setEntries] = useState<OwnershipEntry[]>([]);
+  const [directoryOrgMap, setDirectoryOrgMap] = useState<Record<string, number>>({});
+  const [directoryInfoMap, setDirectoryInfoMap] = useState<Record<string, { username: string; extension: string }>>({});
   const [orgList, setOrgList] = useState<Organization[]>([]);
   const [loading, setLoading] = useState(false);
   const [entriesLoading, setEntriesLoading] = useState(false);
@@ -69,8 +70,12 @@ export default function PhoneNumberOwnership() {
   useEffect(() => {
     if (selectedBatchId) {
       setEntriesLoading(true);
-      apiGet<OwnershipEntry[]>(`/import/ownership/entries/${selectedBatchId}`)
-        .then(setEntries)
+      apiGet<{ entries: OwnershipEntry[]; directoryOrgMap: Record<string, number>; directoryInfoMap: Record<string, { username: string; extension: string }> }>(`/import/ownership/entries/${selectedBatchId}`)
+        .then(res => {
+          setEntries(res.entries);
+          setDirectoryOrgMap(res.directoryOrgMap || {});
+          setDirectoryInfoMap(res.directoryInfoMap || {});
+        })
         .catch(() => message.error(t('phoneOwnership.fetchFailed')))
         .finally(() => setEntriesLoading(false));
     }
@@ -155,36 +160,85 @@ export default function PhoneNumberOwnership() {
     }) || null;
   }, [selectedSnapshotMonth, snapshots, billBatches]);
 
+  const LEVEL_LABELS = ['集团', '一级分行', '二级分行/部门', '三级部门', '四级部门'];
+
+  /** Walk org tree from leaf to root, return [集团, 一级分行, 二级分行/部门, 三级部门, 四级部门] names */
+  const getOrgLevels = useCallback((orgId: number | null): string[] => {
+    const levels: string[] = ['', '', '', '', ''];
+    if (!orgId) return levels;
+    const visited = new Set<number>();
+    let cur = orgMap.get(orgId);
+    // Walk up and collect names from deepest to shallowest, skipping 集团(type=1) as a named level
+    const stack: string[] = [];
+    while (cur && !visited.has(cur.id)) {
+      visited.add(cur.id);
+      if (cur.type !== 1) stack.push(cur.name);
+      if (!cur.parent_id) break;
+      cur = orgMap.get(cur.parent_id);
+    }
+    // stack is [leaf, ..., branch], need to map into 5 slots from bottom up
+    // levels[0]=集团名, levels[1]=一级分行, levels[2]=二级分行/部门, levels[3]=三级部门, levels[4]=四级部门
+    // We fill from the deepest level upward
+    for (let i = 0; i < stack.length && i < 5; i++) {
+      levels[4 - i] = stack[i];
+    }
+    // The remaining top levels should be the ones above — but our org tree might have varying depth
+    // Let's do it properly: collect from root to leaf
+    const chain: string[] = [];
+    cur = orgMap.get(orgId);
+    visited.clear();
+    while (cur && !visited.has(cur.id)) {
+      visited.add(cur.id);
+      chain.unshift(cur.name);
+      if (!cur.parent_id) break;
+      cur = orgMap.get(cur.parent_id);
+    }
+    // chain is [集团, 一级分行, ..., leaf]
+    // Map: chain[0]→集团, chain[1]→一级分行, chain[2]→二级分行/部门, chain[3]→三级部门, chain[4]→四级部门
+    for (let i = 0; i < Math.min(chain.length, 5); i++) {
+      levels[i] = chain[i];
+    }
+    return levels;
+  }, [orgMap]);
+
   const columns = [
-    { title: t('phoneOwnership.phoneCol'), dataIndex: 'phone_number', key: 'phone_number', width: 130, fixed: 'left' as const },
-    { title: t('phoneOwnership.descCol'), dataIndex: 'description', key: 'description', width: 150, ellipsis: true },
-    {
-      title: t('phoneOwnership.exceptionCol'), dataIndex: 'is_exception', key: 'is_exception', width: 80,
-      render: (v: number) => v === 1 ? <Tag color={COLORS.danger}>P0</Tag> : '-',
-    },
-    {
-      title: t('phoneOwnership.orgCol'), key: 'org_name', width: 200,
+    { title: LEVEL_LABELS[0], key: 'level0', width: 140, fixed: 'left' as const,
       render: (_: unknown, r: OwnershipEntry) => {
-        if (!r.org_id) return <span style={{ color: COLORS.textMuted }}>-</span>;
-        const org = orgMap.get(r.org_id);
-        return org ? buildFullOrgPath(r.org_id, orgMap) : String(r.org_id);
-      },
-    },
-    {
-      title: t('phoneOwnership.costCenterCol'), key: 'cost_center', width: 100,
+        const dirOrgId = directoryOrgMap[r.phone_number];
+        const levels = getOrgLevels(dirOrgId ?? r.org_id);
+        return levels[0] || '-';
+      }},
+    { title: LEVEL_LABELS[1], key: 'level1', width: 120,
       render: (_: unknown, r: OwnershipEntry) => {
-        if (!r.org_id) return '-';
-        const org = orgMap.get(r.org_id);
-        return org?.code || '-';
-      },
-    },
-    {
-      title: t('phoneOwnership.matchLevelCol'), dataIndex: 'match_level', key: 'match_level', width: 100,
-      render: (v: string) => {
-        const info = MATCH_LEVEL_MAP[v];
-        return info ? <Tag color={info.color}>{info.label}</Tag> : (v || '-');
-      },
-    },
+        const dirOrgId = directoryOrgMap[r.phone_number];
+        const levels = getOrgLevels(dirOrgId ?? r.org_id);
+        return levels[1] || '-';
+      }},
+    { title: LEVEL_LABELS[2], key: 'level2', width: 160,
+      render: (_: unknown, r: OwnershipEntry) => {
+        const dirOrgId = directoryOrgMap[r.phone_number];
+        const levels = getOrgLevels(dirOrgId ?? r.org_id);
+        return levels[2] || '-';
+      }},
+    { title: LEVEL_LABELS[3], key: 'level3', width: 120,
+      render: (_: unknown, r: OwnershipEntry) => {
+        const dirOrgId = directoryOrgMap[r.phone_number];
+        const levels = getOrgLevels(dirOrgId ?? r.org_id);
+        return levels[3] || '-';
+      }},
+    { title: LEVEL_LABELS[4], key: 'level4', width: 120,
+      render: (_: unknown, r: OwnershipEntry) => {
+        const dirOrgId = directoryOrgMap[r.phone_number];
+        const levels = getOrgLevels(dirOrgId ?? r.org_id);
+        return levels[4] || '-';
+      }},
+    { title: '员工ID', key: 'username', width: 130,
+      render: (_: unknown, r: OwnershipEntry) => directoryInfoMap[r.phone_number]?.username || '-' },
+    { title: '分机号码', key: 'extension', width: 100,
+      render: (_: unknown, r: OwnershipEntry) => directoryInfoMap[r.phone_number]?.extension || '-' },
+    { title: '号码', dataIndex: 'phone_number', key: 'phone_number', width: 130 },
+    { title: '例外', dataIndex: 'is_exception', key: 'is_exception', width: 70,
+      render: (v: number) => v === 1 ? <Tag color={COLORS.danger}>P0</Tag> : '-' },
   ];
 
   const currentDataContent = (
@@ -210,7 +264,7 @@ export default function PhoneNumberOwnership() {
       {selectedBatchId && filteredEntries.length > 0 ? (
         <Table columns={columns} dataSource={filteredEntries} rowKey="id" size="small" loading={entriesLoading}
           pagination={{ pageSize: 50, showSizeChanger: true, pageSizeOptions: ['25', '50', '100'], showTotal: (total) => t('common.paginationTotal', { total }) }}
-          scroll={{ x: 800 }} />
+          scroll={{ x: 1000 }} />
       ) : (!entriesLoading && <Empty description={t('phoneOwnership.noData')} />)}
     </>
   );
@@ -245,7 +299,7 @@ export default function PhoneNumberOwnership() {
       {selectedSnapshotMonth && filteredSnapshotEntries.length > 0 ? (
         <Table columns={columns} dataSource={filteredSnapshotEntries} rowKey="id" size="small" loading={snapshotEntriesLoading}
           pagination={{ pageSize: 50, showSizeChanger: true, pageSizeOptions: ['25', '50', '100'], showTotal: (total) => t('common.paginationTotal', { total }) }}
-          scroll={{ x: 800 }} />
+          scroll={{ x: 1000 }} />
       ) : (!snapshotEntriesLoading && selectedSnapshotMonth && <Empty description={t('phoneOwnership.noData')} />)}
     </>
   );
@@ -260,18 +314,4 @@ export default function PhoneNumberOwnership() {
       </Card>
     </div>
   );
-}
-
-function buildFullOrgPath(orgId: number, orgMap: Map<number, Organization>): string {
-  const names: string[] = [];
-  const visited = new Set<number>();
-  let org = orgMap.get(orgId);
-  while (org && !visited.has(org.id)) {
-    if (org.type === 1) break;
-    names.unshift(org.name);
-    visited.add(org.id);
-    if (!org.parent_id) break;
-    org = orgMap.get(org.parent_id);
-  }
-  return names.join('/');
 }

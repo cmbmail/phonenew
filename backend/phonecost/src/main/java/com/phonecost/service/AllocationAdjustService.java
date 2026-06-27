@@ -227,7 +227,7 @@ public class AllocationAdjustService {
     }
 
     /**
-     * 级联更新上级组织的汇总金额
+     * 级联更新上级组织的汇总金额（含分项）
      * 当 fromOrg 减少了费用，上级也要减；toOrg 增加了费用，上级也要加
      */
     private void cascadeUpdateParentResults(Long batchId, Long leafOrgId,
@@ -239,6 +239,12 @@ public class AllocationAdjustService {
         BigDecimal amount = details.stream()
                 .map(d -> d.getTotalFee() != null ? d.getTotalFee() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal monthlyRentDelta = details.stream().map(d -> safe(d.getMonthlyRent())).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal callFeeDelta = details.stream().map(d -> safe(d.getCallFee())).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal recordingFeeDelta = details.stream().map(d -> safe(d.getRecordingFee())).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal crbtFeeDelta = details.stream().map(d -> safe(d.getCrbtFee())).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal flashMsgFeeDelta = details.stream().map(d -> safe(d.getFlashMsgFee())).reduce(BigDecimal.ZERO, BigDecimal::add);
+        int phoneCountDelta = countCallPhones(details);
 
         // Walk up the org tree
         Long currentParentId = leafOrg.getParentId();
@@ -250,8 +256,20 @@ public class AllocationAdjustService {
             if (parentResult != null) {
                 if (isSubtract) {
                     parentResult.setTotalFee(safeSub(parentResult.getTotalFee(), amount));
+                    parentResult.setMonthlyRent(safeSub(parentResult.getMonthlyRent(), monthlyRentDelta));
+                    parentResult.setCallFee(safeSub(parentResult.getCallFee(), callFeeDelta));
+                    parentResult.setRecordingFee(safeSub(parentResult.getRecordingFee(), recordingFeeDelta));
+                    parentResult.setCrbtFee(safeSub(parentResult.getCrbtFee(), crbtFeeDelta));
+                    parentResult.setFlashMsgFee(safeSub(parentResult.getFlashMsgFee(), flashMsgFeeDelta));
+                    parentResult.setPhoneCount(Math.max(0, parentResult.getPhoneCount() - phoneCountDelta));
                 } else {
                     parentResult.setTotalFee(safeAdd(parentResult.getTotalFee(), amount));
+                    parentResult.setMonthlyRent(safeAdd(parentResult.getMonthlyRent(), monthlyRentDelta));
+                    parentResult.setCallFee(safeAdd(parentResult.getCallFee(), callFeeDelta));
+                    parentResult.setRecordingFee(safeAdd(parentResult.getRecordingFee(), recordingFeeDelta));
+                    parentResult.setCrbtFee(safeAdd(parentResult.getCrbtFee(), crbtFeeDelta));
+                    parentResult.setFlashMsgFee(safeAdd(parentResult.getFlashMsgFee(), flashMsgFeeDelta));
+                    parentResult.setPhoneCount(parentResult.getPhoneCount() + phoneCountDelta);
                 }
                 try {
                     resultRepository.save(parentResult);
@@ -263,5 +281,9 @@ public class AllocationAdjustService {
             SysOrganization parent = orgRepository.findById(currentParentId).orElse(null);
             currentParentId = (parent != null) ? parent.getParentId() : null;
         }
+    }
+
+    private BigDecimal safe(BigDecimal v) {
+        return v != null ? v : BigDecimal.ZERO;
     }
 }

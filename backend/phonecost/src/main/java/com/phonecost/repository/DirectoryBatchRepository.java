@@ -4,9 +4,12 @@ import com.phonecost.domain.DirectoryBatch;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 
 @Repository
 public interface DirectoryBatchRepository extends JpaRepository<DirectoryBatch, Long> {
     Optional<DirectoryBatch> findByBatchNoAndDeletedAtIsNull(String batchNo);
+    Optional<DirectoryBatch> findTopByDeletedAtIsNullOrderByCreatedAtDesc();
+    List<DirectoryBatch> findAllByDeletedAtIsNullOrderByCreatedAtDesc();
 }

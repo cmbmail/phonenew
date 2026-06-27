@@ -161,7 +161,7 @@ export default {
     adjustTitle: '费用调整',
     adjustOkText: '确认调整',
     phoneNumberLabel: '号码',
-    phoneNumberPlaceholder: '输入外线号码，如 01088881234',
+    phoneNumberPlaceholder: '输入号码，如 01088881234',
     phoneNumberRequired: '请输入要调整的号码',
     fromOrgLabel: '原组织',
     fromOrgPlaceholder: '选择号码当前归属的组织',

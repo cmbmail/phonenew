@@ -134,8 +134,12 @@ public class AllocationConfirmService {
             r.setConfirmStatus((byte) 1);
             r.setConfirmedAt(LocalDateTime.now());
             r.setConfirmedBy(userId);
-            resultRepository.save(r);
-            count++;
+            try {
+                resultRepository.save(r);
+                count++;
+            } catch (ObjectOptimisticLockingFailureException e) {
+                log.warn("Optimistic lock conflict on confirmAll, skipping result id={}", r.getId());
+            }
         }
 
         log.info("Batch confirm: batch={}, count={}, by={}", batchId, count, userId);
@@ -167,8 +171,12 @@ public class AllocationConfirmService {
                 r.setConfirmStatus((byte) 1);
                 r.setConfirmedAt(LocalDateTime.now());
                 r.setConfirmedBy(userId);
-                resultRepository.save(r);
-                count++;
+                try {
+                    resultRepository.save(r);
+                    count++;
+                } catch (ObjectOptimisticLockingFailureException e) {
+                    log.warn("Optimistic lock conflict on confirmAllInScope, skipping result id={}", r.getId());
+                }
             }
         }
 

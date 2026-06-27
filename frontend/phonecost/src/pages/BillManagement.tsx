@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { COLORS } from '../theme/morandi';
-import { Card, Table, Tag, Button, Space, Modal, Input, message, Descriptions } from 'antd';
-import { CheckOutlined, UndoOutlined, DownloadOutlined, CalculatorOutlined } from '@ant-design/icons';
+import { Card, Table, Tag, Button, Space, Modal, Input, message, Descriptions, Select } from 'antd';
+import { CheckOutlined, UndoOutlined, DownloadOutlined, CalculatorOutlined, LinkOutlined } from '@ant-design/icons';
 import type { BillBatch } from '../types/bill';
 import type { AllocationResult } from '../types/allocation';
+import type { OwnershipBatch, DirectoryBatch } from '../types/import';
 import { BILL_STATUS_LABELS, BILL_STATUS_COLORS } from '../types/bill';
 import { CONFIRM_STATUS_MAP } from '../types/allocation';
 import {
@@ -14,6 +15,7 @@ import {
   withdrawAllocation,
   getExportSummaryUrl,
   getExportDetailUrl,
+  getAllocationSnapshot,
 } from '../api/allocation';
 import { getBillBatches } from '../api/import';
 import { useTranslation } from 'react-i18next';
@@ -30,6 +32,14 @@ export default function BillManagement() {
   const [calculatingId, setCalculatingId] = useState<number | null>(null);
   const [withdrawModal, setWithdrawModal] = useState<{ open: boolean; result?: AllocationResult }>({ open: false });
   const [withdrawReason, setWithdrawReason] = useState('');
+
+  // Calculate with snapshot modal state
+  const [calcModal, setCalcModal] = useState<{ open: boolean; batchId: number | null }>({ open: false, batchId: null });
+  const [ownershipBatches, setOwnershipBatches] = useState<OwnershipBatch[]>([]);
+  const [directoryBatches, setDirectoryBatches] = useState<DirectoryBatch[]>([]);
+  const [selectedOwnershipBatchId, setSelectedOwnershipBatchId] = useState<number | null>(null);
+  const [selectedDirectoryBatchId, setSelectedDirectoryBatchId] = useState<number | null>(null);
+  const [snapshotLoading, setSnapshotLoading] = useState(false);
 
   const fetchBatches = useCallback(async () => {
     setLoading(true);
@@ -58,18 +68,50 @@ export default function BillManagement() {
   }, [t]);
 
   const handleCalculate = async (batchId: number) => {
-    setCalculatingId(batchId);
+    // Open snapshot selection modal
+    setCalcModal({ open: true, batchId });
+    setSnapshotLoading(true);
+    setSelectedOwnershipBatchId(null);
+    setSelectedDirectoryBatchId(null);
     try {
-      const res = await calculateAllocation(batchId);
-      message.success(t('bill.calculateSuccess', { orgCount: res.org_count }));
+      const snap = await getAllocationSnapshot(batchId);
+      setOwnershipBatches(snap.ownership_batches || []);
+      setDirectoryBatches(snap.directory_batches || []);
+      // Pre-select from existing snapshot
+      if (snap.ownership_batch_id) setSelectedOwnershipBatchId(snap.ownership_batch_id);
+      else if (snap.ownership_batches?.length > 0) {
+        const latest = [...snap.ownership_batches].sort((a, b) => b.id - a.id)[0];
+        setSelectedOwnershipBatchId(latest.id);
+      }
+      if (snap.directory_batch_id) setSelectedDirectoryBatchId(snap.directory_batch_id);
+      else if (snap.directory_batches?.length > 0) {
+        // Prefer directory batch with billing_month (snapshot)
+        const withMonth = snap.directory_batches.filter(b => b.billing_month);
+        const source = withMonth.length > 0 ? withMonth : snap.directory_batches;
+        const latest = [...source].sort((a, b) => b.id - a.id)[0];
+        setSelectedDirectoryBatchId(latest.id);
+      }
+    } catch {
+      message.error('获取归属快照信息失败');
+    } finally {
+      setSnapshotLoading(false);
+    }
+  };
+
+  const handleConfirmCalc = async () => {
+    if (!calcModal.batchId) return;
+    setCalculatingId(calcModal.batchId);
+    try {
+      const res = await calculateAllocation(calcModal.batchId, selectedOwnershipBatchId, selectedDirectoryBatchId);
+      message.success(`分摊计算完成：${res.org_count} 个组织，匹配 ${res.matched_count} 个号码`);
       const updatedBatches = await getBillBatches();
       setBatches(updatedBatches);
-      // Update selectedBatch to reflect new status
-      const updated = updatedBatches.find(b => b.id === batchId);
+      const updated = updatedBatches.find(b => b.id === calcModal.batchId);
       if (updated) setSelectedBatch(updated);
-      fetchResults(batchId);
+      fetchResults(calcModal.batchId);
+      setCalcModal({ open: false, batchId: null });
     } catch (err) {
-      message.error(getErrorMessage(err, t('bill.calcFailed')));
+      message.error(getErrorMessage(err, '分摊计算失败'));
     } finally {
       setCalculatingId(null);
     }
@@ -143,6 +185,12 @@ export default function BillManagement() {
             <Button size="small" type="primary" icon={<CalculatorOutlined />}
               onClick={(e) => { e.stopPropagation(); handleCalculate(record.id); }} loading={calculatingId === record.id}>
               {t('bill.calculateAllocation')}
+            </Button>
+          )}
+          {record.status >= 1 && (
+            <Button size="small" icon={<LinkOutlined />}
+              onClick={(e) => { e.stopPropagation(); handleCalculate(record.id); }}>
+              重新计算
             </Button>
           )}
         </Space>
@@ -236,6 +284,9 @@ export default function BillManagement() {
           style={{ marginTop: 16 }}
           extra={
             <Space>
+              <Button icon={<CalculatorOutlined />} onClick={() => handleCalculate(selectedBatch.id)}>
+                {selectedBatch.status === 0 ? '计算分摊' : '重新计算'}
+              </Button>
               {results.length > 0 && (
                 <>
                   <Button onClick={() => handleConfirmAll(selectedBatch.id)} icon={<CheckOutlined />}>
@@ -292,6 +343,48 @@ export default function BillManagement() {
           value={withdrawReason}
           onChange={(e) => setWithdrawReason(e.target.value)}
         />
+      </Modal>
+
+      <Modal
+        title="选择归属快照数据"
+        open={calcModal.open}
+        onOk={handleConfirmCalc}
+        onCancel={() => setCalcModal({ open: false, batchId: null })}
+        okText="开始计算"
+        confirmLoading={calculatingId !== null}
+        width={520}
+      >
+        <div style={{ marginBottom: 16 }}>
+          <p style={{ color: COLORS.textMuted, marginBottom: 12 }}>选择用于归属匹配的号码归属和通讯录批次，系统将先执行归属匹配再计算分摊。</p>
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ marginBottom: 4, fontWeight: 500 }}>号码归属批次</div>
+            <Select
+              style={{ width: '100%' }}
+              placeholder="选择号码归属批次"
+              loading={snapshotLoading}
+              value={selectedOwnershipBatchId}
+              onChange={setSelectedOwnershipBatchId}
+              options={ownershipBatches.sort((a, b) => b.id - a.id).map(b => ({
+                label: `${b.batch_no} (${b.total_count}条${b.exception_count ? `, 例外${b.exception_count}` : ''})`,
+                value: b.id,
+              }))}
+            />
+          </div>
+          <div>
+            <div style={{ marginBottom: 4, fontWeight: 500 }}>通讯录批次</div>
+            <Select
+              style={{ width: '100%' }}
+              placeholder="选择通讯录批次"
+              loading={snapshotLoading}
+              value={selectedDirectoryBatchId}
+              onChange={setSelectedDirectoryBatchId}
+              options={directoryBatches.sort((a, b) => b.id - a.id).map(b => ({
+                label: `${b.batch_no}${b.billing_month ? ` [${b.billing_month}]` : ''} (${b.total_count}条${b.seconded_count ? `, 例外${b.seconded_count}` : ''})`,
+                value: b.id,
+              }))}
+            />
+          </div>
+        </div>
       </Modal>
     </div>
   );

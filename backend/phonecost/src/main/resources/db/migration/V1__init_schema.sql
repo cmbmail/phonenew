@@ -60,7 +60,7 @@ CREATE TABLE phone_ownership_batch (
 CREATE TABLE phone_ownership_entry (
     id          BIGINT AUTO_INCREMENT PRIMARY KEY,
     batch_id    BIGINT       NOT NULL COMMENT '批次ID',
-    phone_number VARCHAR(30) NOT NULL COMMENT '外线号码',
+    phone_number VARCHAR(30) NOT NULL COMMENT '号码',
     description  VARCHAR(500) NOT NULL DEFAULT '' COMMENT '描述(用/分隔组织层级)',
     is_exception TINYINT     NOT NULL DEFAULT 0 COMMENT '是否例外: 0=否 1=是([例外]前缀)',
     org_id       BIGINT      NULL COMMENT '匹配到的组织ID',
@@ -96,7 +96,7 @@ CREATE TABLE directory_entry (
     dept_path     VARCHAR(500) NOT NULL DEFAULT '' COMMENT '部门全路径(用-分隔)',
     username      VARCHAR(100) NOT NULL DEFAULT '' COMMENT '用户名称(员工ID)',
     extension     VARCHAR(30)  NOT NULL DEFAULT '' COMMENT '分机号码',
-    phone_number  VARCHAR(30)  NOT NULL DEFAULT '' COMMENT '外线号码',
+    phone_number  VARCHAR(30)  NOT NULL DEFAULT '' COMMENT '号码',
     org_id        BIGINT       NULL COMMENT '匹配到的组织ID(编制部门)',
     is_seconded   TINYINT      NOT NULL DEFAULT 0 COMMENT '是否借调: 0=否 1=是',
     actual_org_id BIGINT       NULL COMMENT '实际工作部门ID(借调调整后)',
@@ -149,7 +149,7 @@ CREATE TABLE bill_batch (
 CREATE TABLE bill_detail (
     id              BIGINT AUTO_INCREMENT PRIMARY KEY,
     batch_id        BIGINT       NOT NULL COMMENT '批次ID',
-    phone_number    VARCHAR(30)  NOT NULL COMMENT '外线号码',
+    phone_number    VARCHAR(30)  NOT NULL COMMENT '号码',
     extension       VARCHAR(30)  NOT NULL DEFAULT '' COMMENT '分机号(录音/彩铃Sheet有)',
     sheet_type      VARCHAR(20)  NOT NULL DEFAULT 'CALL' COMMENT 'Sheet类型: CALL/RECORDING/CRBT/FLASH_MSG',
     monthly_rent    DECIMAL(12,2) NOT NULL DEFAULT 0.00 COMMENT '月租(平台使用费+码号月租费)',

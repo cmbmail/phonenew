@@ -1,11 +1,29 @@
 import { apiGet, apiPost } from '../lib/request';
 import { useAuthStore } from '../store/auth';
 import type { AllocationResult, AllocationAdjustment, L1SummaryRow } from '../types/allocation';
+import type { OwnershipBatch, DirectoryBatch } from '../types/import';
+
+// ==================== Snapshot ====================
+
+export interface AllocationSnapshot {
+  ownership_batch_id: number | null;
+  directory_batch_id: number | null;
+  matched_count: number | null;
+  ownership_batches: OwnershipBatch[];
+  directory_batches: DirectoryBatch[];
+}
+
+export const getAllocationSnapshot = (batchId: number) =>
+  apiGet<AllocationSnapshot>(`/allocation/snapshot/${batchId}`);
 
 // ==================== Allocation ====================
 
-export const calculateAllocation = (billBatchId: number) =>
-  apiPost<{ bill_batch_id: number; org_count: number }>('/allocation/calculate', { bill_batch_id: billBatchId });
+export const calculateAllocation = (billBatchId: number, ownershipBatchId?: number | null, directoryBatchId?: number | null) =>
+  apiPost<{ bill_batch_id: number; org_count: number; matched_count: number; ownership_batch_id: number | null; directory_batch_id: number | null }>('/allocation/calculate', {
+    bill_batch_id: billBatchId,
+    ...(ownershipBatchId != null ? { ownership_batch_id: ownershipBatchId } : {}),
+    ...(directoryBatchId != null ? { directory_batch_id: directoryBatchId } : {}),
+  });
 
 export const getAllocationResults = (batchId: number) =>
   apiGet<AllocationResult[]>(`/allocation/results/${batchId}`);

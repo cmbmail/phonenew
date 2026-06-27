@@ -3,6 +3,7 @@ package com.phonecost.controller;
 import com.phonecost.domain.*;
 import com.phonecost.dto.ApiResponse;
 import com.phonecost.repository.*;
+import com.phonecost.service.AuditLogService;
 import com.phonecost.service.BillImportService;
 import com.phonecost.service.DataScope;
 import com.phonecost.service.DataScopeService;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
@@ -33,6 +35,7 @@ public class DataImportController {
     private final BillImportService billImportService;
     private final OwnershipMatchService ownershipMatchService;
     private final DataScopeService dataScopeService;
+    private final AuditLogService auditLogService;
 
     private final PhoneOwnershipBatchRepository ownershipBatchRepository;
     private final PhoneOwnershipEntryRepository ownershipEntryRepository;
@@ -41,6 +44,7 @@ public class DataImportController {
     private final BillBatchRepository billBatchRepository;
     private final BillDetailRepository billDetailRepository;
     private final DataSnapshotRepository dataSnapshotRepository;
+    private final SysOrganizationRepository organizationRepository;
 
     // ==================== 号码归属导入 ====================
 
@@ -51,6 +55,8 @@ public class DataImportController {
             @RequestAttribute("userId") Long userId) {
         try {
             PhoneOwnershipBatch batch = ownershipImportService.importOwnership(file, userId);
+            auditLogService.log(userId, String.valueOf(userId), "IMPORT_OWNERSHIP", "ownership_batch", batch.getId(),
+                    Map.of("batch_no", batch.getBatchNo(), "total_count", batch.getTotalCount()));
             return ResponseEntity.ok(ApiResponse.ok(Map.of(
                     "batch_id", batch.getId(),
                     "batch_no", batch.getBatchNo(),
@@ -71,13 +77,40 @@ public class DataImportController {
     }
 
     @GetMapping("/ownership/entries/{batchId}")
-    public ResponseEntity<ApiResponse<List<PhoneOwnershipEntry>>> listOwnershipEntries(
+    public ResponseEntity<ApiResponse<Map<String, Object>>> listOwnershipEntries(
             @PathVariable Long batchId,
             @RequestAttribute("userId") Long userId) {
         DataScope scope = dataScopeService.getDataScope(userId);
         List<PhoneOwnershipEntry> all = ownershipEntryRepository.findByBatchIdAndDeletedAtIsNull(batchId);
         List<PhoneOwnershipEntry> filtered = scope.filterByOrgId(all, PhoneOwnershipEntry::getOrgId);
-        return ResponseEntity.ok(ApiResponse.ok(filtered));
+
+        // Build directory phone→orgId map + phone→{username,extension} from all directory batches (latest first, skip NULL orgId)
+        Map<String, Long> directoryOrgMap = new HashMap<>();
+        Map<String, Map<String, String>> directoryInfoMap = new HashMap<>();
+        List<DirectoryBatch> dirBatches = directoryBatchRepository.findAllByDeletedAtIsNullOrderByCreatedAtDesc();
+        for (DirectoryBatch db : dirBatches) {
+            List<DirectoryEntry> dirEntries = directoryEntryRepository.findByBatchIdAndDeletedAtIsNull(db.getId());
+            for (DirectoryEntry de : dirEntries) {
+                String phone = de.getPhoneNumber();
+                if (phone != null) {
+                    if (de.getOrgId() != null && !directoryOrgMap.containsKey(phone)) {
+                        directoryOrgMap.put(phone, de.getOrgId());
+                    }
+                    if (de.getIsSeconded() == 0 && !directoryInfoMap.containsKey(phone)) {
+                        Map<String, String> info = new HashMap<>();
+                        info.put("username", de.getUsername() != null ? de.getUsername() : "");
+                        info.put("extension", de.getExtension() != null ? de.getExtension() : "");
+                        directoryInfoMap.put(phone, info);
+                    }
+                }
+            }
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("entries", filtered);
+        result.put("directoryOrgMap", directoryOrgMap);
+        result.put("directoryInfoMap", directoryInfoMap);
+        return ResponseEntity.ok(ApiResponse.ok(result));
     }
 
     // ==================== 通讯录导入 ====================
@@ -89,6 +122,8 @@ public class DataImportController {
             @RequestAttribute("userId") Long userId) {
         try {
             DirectoryBatch batch = directoryImportService.importDirectory(file, userId);
+            auditLogService.log(userId, String.valueOf(userId), "IMPORT_DIRECTORY", "directory_batch", batch.getId(),
+                    Map.of("batch_no", batch.getBatchNo(), "total_count", batch.getTotalCount(), "seconded_count", batch.getSecondedCount()));
             return ResponseEntity.ok(ApiResponse.ok(Map.of(
                     "batch_id", batch.getId(),
                     "batch_no", batch.getBatchNo(),
@@ -108,13 +143,25 @@ public class DataImportController {
     }
 
     @GetMapping("/directory/entries/{batchId}")
-    public ResponseEntity<ApiResponse<List<DirectoryEntry>>> listDirectoryEntries(
+    public ResponseEntity<ApiResponse<Map<String, Object>>> listDirectoryEntries(
             @PathVariable Long batchId,
             @RequestAttribute("userId") Long userId) {
         DataScope scope = dataScopeService.getDataScope(userId);
         List<DirectoryEntry> all = directoryEntryRepository.findByBatchIdAndDeletedAtIsNull(batchId);
         List<DirectoryEntry> filtered = scope.filterByOrgId(all, DirectoryEntry::getOrgId);
-        return ResponseEntity.ok(ApiResponse.ok(filtered));
+
+        // Build code→name map from sys_organization for resolving dept_path codes
+        Map<String, String> codeToNameMap = new HashMap<>();
+        organizationRepository.findAll().forEach(org -> {
+            if (org.getCode() != null && !org.getCode().isEmpty() && org.getDeletedAt() == null) {
+                codeToNameMap.put(org.getCode(), org.getName());
+            }
+        });
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("entries", filtered);
+        result.put("codeToNameMap", codeToNameMap);
+        return ResponseEntity.ok(ApiResponse.ok(result));
     }
 
     // ==================== 电信账单导入 ====================
@@ -126,6 +173,8 @@ public class DataImportController {
             @RequestAttribute("userId") Long userId) {
         try {
             BillBatch batch = billImportService.importBill(file, userId);
+            auditLogService.log(userId, String.valueOf(userId), "IMPORT_BILL", "bill_batch", batch.getId(),
+                    Map.of("batch_no", batch.getBatchNo(), "billing_month", batch.getBillingMonth(), "total_count", batch.getTotalCount()));
             return ResponseEntity.ok(ApiResponse.ok(Map.of(
                     "batch_id", batch.getId(),
                     "batch_no", batch.getBatchNo(),
@@ -190,6 +239,9 @@ public class DataImportController {
         }
         dataSnapshotRepository.save(snapshot);
 
+        auditLogService.log(0L, "system", "MATCH_OWNERSHIP", "bill_batch", billBatchId,
+                Map.of("matched_count", matched));
+
         return ResponseEntity.ok(ApiResponse.ok(Map.of(
                 "bill_batch_id", billBatchId,
                 "matched_count", matched
@@ -200,18 +252,24 @@ public class DataImportController {
 
     @PutMapping("/directory/entries/{id}/clear-exception")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_BRANCH')")
-    public ResponseEntity<ApiResponse<DirectoryEntry>> clearException(@PathVariable Long id) {
+    public ResponseEntity<ApiResponse<DirectoryEntry>> clearException(
+            @PathVariable Long id,
+            @RequestAttribute("userId") Long userId) {
         DirectoryEntry entry = directoryEntryRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("记录不存在: " + id));
         entry.setIsSeconded((byte) 0);
         entry.setSecondedKeyword("");
         directoryEntryRepository.save(entry);
+        auditLogService.log(userId, String.valueOf(userId), "CLEAR_EXCEPTION", "directory_entry", id,
+                Map.of("phone_number", entry.getPhoneNumber()));
         return ResponseEntity.ok(ApiResponse.ok(entry));
     }
 
     @PutMapping("/directory/entries/{id}/sync-from-match")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_BRANCH')")
-    public ResponseEntity<ApiResponse<DirectoryEntry>> syncFromMatch(@PathVariable Long id) {
+    public ResponseEntity<ApiResponse<DirectoryEntry>> syncFromMatch(
+            @PathVariable Long id,
+            @RequestAttribute("userId") Long userId) {
         DirectoryEntry entry = directoryEntryRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("记录不存在: " + id));
         // Find matching non-exception entry by phone number in same batch
@@ -223,9 +281,25 @@ public class DataImportController {
         entry.setDeptPath(match.getDeptPath());
         entry.setUsername(match.getUsername());
         entry.setExtension(match.getExtension());
-        entry.setIsSeconded((byte) 0);
-        entry.setSecondedKeyword("");
         directoryEntryRepository.save(entry);
+        auditLogService.log(userId, String.valueOf(userId), "SYNC_FROM_MATCH", "directory_entry", id,
+                Map.of("phone_number", entry.getPhoneNumber()));
+        return ResponseEntity.ok(ApiResponse.ok(entry));
+    }
+
+    @PutMapping("/directory/entries/{id}/reason")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_BRANCH')")
+    public ResponseEntity<ApiResponse<DirectoryEntry>> updateExceptionReason(
+            @PathVariable Long id,
+            @RequestBody Map<String, String> body,
+            @RequestAttribute("userId") Long userId) {
+        String reason = body.get("reason");
+        DirectoryEntry entry = directoryEntryRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("记录不存在: " + id));
+        entry.setSecondedKeyword(reason != null ? reason : "");
+        directoryEntryRepository.save(entry);
+        auditLogService.log(userId, String.valueOf(userId), "UPDATE_EXCEPTION_REASON", "directory_entry", id,
+                Map.of("phone_number", entry.getPhoneNumber(), "reason", reason != null ? reason : ""));
         return ResponseEntity.ok(ApiResponse.ok(entry));
     }
 
@@ -253,7 +327,8 @@ public class DataImportController {
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_BRANCH')")
     public ResponseEntity<ApiResponse<DirectoryBatch>> setDirectoryMonth(
             @PathVariable Long id,
-            @RequestBody Map<String, String> body) {
+            @RequestBody Map<String, String> body,
+            @RequestAttribute("userId") Long userId) {
         DirectoryBatch batch = directoryBatchRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("批次不存在: " + id));
         String month = body.get("billing_month");
@@ -262,6 +337,8 @@ public class DataImportController {
         }
         batch.setBillingMonth(month);
         directoryBatchRepository.save(batch);
+        auditLogService.log(userId, String.valueOf(userId), "CREATE_SNAPSHOT", "directory_batch", id,
+                Map.of("billing_month", month));
         return ResponseEntity.ok(ApiResponse.ok(batch));
     }
 

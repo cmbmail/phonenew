@@ -431,7 +431,7 @@ public class BranchBillExportService {
                                        String pathPrefix,
                                        CellStyle headerStyle, CellStyle numberStyle) {
         Sheet sheet = wb.createSheet(sheetPrefix + "_号码费用");
-        String[] headers = {"一级分行", "部门代码", "部门名称", "外线号码",
+        String[] headers = {"一级分行", "部门代码", "部门名称", "号码",
                 "平台使用费", "码号月租费", "国内外呼时长", "转接外呼时长",
                 "国内费用", "国际时长", "国际费用", "费用小计", "备注"};
         writeHeaderRow(sheet, headers, headerStyle);

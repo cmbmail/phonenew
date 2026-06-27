@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Layout, Menu, Avatar, Dropdown, Typography, Popconfirm, Modal, Form, Input, message } from 'antd';
-import { DashboardOutlined, FileTextOutlined, PhoneOutlined, TeamOutlined, SettingOutlined, LogoutOutlined, ImportOutlined, ToolOutlined, BankOutlined, BranchesOutlined, DatabaseOutlined, NumberOutlined, ApartmentOutlined, UserSwitchOutlined, BookOutlined } from '@ant-design/icons';
+import { DashboardOutlined, FileTextOutlined, PhoneOutlined, TeamOutlined, SettingOutlined, LogoutOutlined, ImportOutlined, ToolOutlined, BankOutlined, BranchesOutlined, DatabaseOutlined, NumberOutlined, UserSwitchOutlined, BookOutlined, UserOutlined, AuditOutlined, BarChartOutlined } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
 import { getErrorMessage } from '../types/api';
@@ -19,31 +19,40 @@ interface MenuItemDef {
 
 const allMenuItems: MenuItemDef[] = [
   { key: '/', icon: <DashboardOutlined />, label: '系统看板' },
-  { key: '/bill', icon: <FileTextOutlined />, label: '账单管理' },
-  { key: '/import', icon: <ImportOutlined />, label: '数据导入', roles: [1, 2, 4] },
   {
     key: '/allocation-group',
     icon: <PhoneOutlined />,
     label: '费用分摊',
     children: [
+      { key: '/bill', icon: <FileTextOutlined />, label: '账单管理' },
       { key: '/allocation', icon: <PhoneOutlined />, label: '分摊汇总' },
       { key: '/allocation/branch', icon: <BankOutlined />, label: '一级分行' },
       { key: '/allocation/sub-branch', icon: <BranchesOutlined />, label: '二级分行' },
+      { key: '/allocation/analysis', icon: <BarChartOutlined />, label: '费用分析' },
     ],
   },
-  { key: '/org', icon: <TeamOutlined />, label: '组织架构' },
   {
     key: '/base-data-group',
     icon: <DatabaseOutlined />,
     label: '基础数据',
     children: [
+      { key: '/org', icon: <TeamOutlined />, label: '组织架构' },
       { key: '/base/phone-ownership', icon: <NumberOutlined />, label: '号码归属' },
       { key: '/base/directory', icon: <BookOutlined />, label: '通讯录' },
       { key: '/base/dept-ownership', icon: <UserSwitchOutlined />, label: '部门归属' },
     ],
   },
-  { key: '/settings', icon: <SettingOutlined />, label: '系统管理', roles: [1] },
-  { key: '/templates', icon: <ToolOutlined />, label: '模板管理', roles: [1] },
+  {
+    key: '/settings-group',
+    icon: <SettingOutlined />,
+    label: '系统管理',
+    roles: [1],
+    children: [
+      { key: '/settings/users', icon: <UserOutlined />, label: '人员管理' },
+      { key: '/templates', icon: <ToolOutlined />, label: '模板管理' },
+      { key: '/settings/audit-log', icon: <AuditOutlined />, label: '操作日志' },
+    ],
+  },
 ];
 
 const AppLayout: React.FC = () => {
@@ -54,6 +63,28 @@ const AppLayout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { username, realName, role, mustChangePwd, clearMustChangePwd, logout } = useAuthStore();
+
+  // Manually expanded groups + auto-expand current path's group
+  const [manualOpenKeys, setManualOpenKeys] = useState<string[]>([]);
+
+  const autoExpandKey = useMemo(() => {
+    for (const item of allMenuItems) {
+      if (item.children?.some(c => location.pathname === c.key || location.pathname.startsWith(c.key + '/'))) {
+        return item.key;
+      }
+    }
+    return null;
+  }, [location.pathname]);
+
+  const openKeys = useMemo(() => {
+    const keys = [...manualOpenKeys];
+    if (autoExpandKey && !keys.includes(autoExpandKey)) keys.push(autoExpandKey);
+    return keys;
+  }, [manualOpenKeys, autoExpandKey]);
+
+  const handleOpenChange = (keys: string[]) => {
+    setManualOpenKeys(keys);
+  };
 
   // Filter menu items by role
   const menuItems = useMemo(() => {
@@ -99,7 +130,7 @@ const AppLayout: React.FC = () => {
         <div style={{ height: 36, margin: '16px 12px', background: 'rgba(139,157,158,0.25)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <Text style={{ color: '#fff', fontSize: collapsed ? 14 : 15, fontWeight: 600, letterSpacing: 1 }}>{collapsed ? 'PC' : '费用分摊'}</Text>
         </div>
-        <Menu theme="dark" mode="inline" selectedKeys={[location.pathname]} defaultOpenKeys={['/allocation-group']} items={menuItems} onClick={({ key }) => navigate(key)} />
+        <Menu theme="dark" mode="inline" selectedKeys={[location.pathname]} openKeys={openKeys} onOpenChange={handleOpenChange} items={menuItems} onClick={({ key }) => navigate(key)} />
       </Sider>
       <Layout style={{ marginLeft: collapsed ? 80 : 200, transition: 'margin-left 0.2s', background: COLORS.cream }}>
         <Header style={{ padding: '0 24px', background: COLORS.white, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', borderBottom: `1px solid ${COLORS.border}`, gap: 16, boxShadow: '0 1px 4px rgba(0,0,0,0.03)' }}>
