@@ -49,9 +49,9 @@ public class BackupController {
 
     @PostMapping("/{id}/restore")
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
-    public ResponseEntity<ApiResponse<BackupRecord>> restore(@PathVariable Long id) {
-        BackupRecord record = backupService.restoreBackup(id);
-        return ResponseEntity.ok(ApiResponse.ok(record));
+    public ResponseEntity<ApiResponse<Map<String, Object>>> restore(@PathVariable Long id) {
+        Map<String, Object> result = backupService.restoreBackup(id);
+        return ResponseEntity.ok(ApiResponse.ok(result));
     }
 
     @DeleteMapping("/{id}")

@@ -1,8 +1,10 @@
 import { useState, useCallback, useEffect } from 'react';
-import { Card, Table, Button, Tag, Popconfirm, message, Row, Col, Statistic, Tooltip } from 'antd';
-import { SafetyCertificateOutlined, DatabaseOutlined, ReloadOutlined, CloudUploadOutlined, CloudDownloadOutlined, DeleteOutlined, UndoOutlined } from '@ant-design/icons';
+import { Card, Table, Button, Tag, Popconfirm, message, Row, Col, Statistic, Tooltip, Modal, Steps, Typography } from 'antd';
+import { SafetyCertificateOutlined, DatabaseOutlined, ReloadOutlined, CloudUploadOutlined, CloudDownloadOutlined, DeleteOutlined, UndoOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import { apiGet, apiPost, apiDelete } from '../lib/request';
 import { COLORS } from '../theme/morandi';
+
+const { Text } = Typography;
 
 interface BackupRecord {
   id: number;
@@ -46,6 +48,11 @@ export default function DataMaintenancePage() {
   const [pageSize, setPageSize] = useState(20);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [restoreResult, setRestoreResult] = useState<{
+    visible: boolean;
+    chainRestore: boolean;
+    steps: { step: number; backupId: number; backupType: string; createdAt: string }[];
+  } | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -94,8 +101,18 @@ export default function DataMaintenancePage() {
     setActionLoading('restore-' + id);
     try {
       message.loading({ content: '正在恢复数据，请勿操作...', key: 'restore', duration: 0 });
-      await apiPost(`/backups/${id}/restore`);
+      const res = await apiPost<{
+        chainRestore: boolean;
+        steps: { step: number; backupId: number; backupType: string; createdAt: string }[];
+      }>(`/backups/${id}/restore`);
       message.success({ content: '数据恢复完成', key: 'restore' });
+      // Show restore result modal
+      setRestoreResult({
+        visible: true,
+        chainRestore: res.chainRestore ?? false,
+        steps: res.steps ?? [],
+      });
+      fetchData();
     } catch {
       message.error({ content: '数据恢复失败', key: 'restore' });
     } finally {
@@ -148,8 +165,16 @@ export default function DataMaintenancePage() {
         <>
           {r.status === 'SUCCESS' && (
             <Popconfirm
-              title="确定从该备份恢复数据？"
-              description={r.backupType === 'INCREMENTAL' ? '增量备份恢复前请先恢复对应的全量备份' : '将覆盖当前所有数据'}
+              title={
+                r.backupType === 'INCREMENTAL'
+                  ? '确定从该增量备份恢复？'
+                  : '确定从该全量备份恢复？'
+              }
+              description={
+                r.backupType === 'INCREMENTAL'
+                  ? `将先自动恢复基准全量备份 #${r.baseBackupId}，再恢复此增量备份，当前数据将被覆盖`
+                  : '将覆盖当前所有数据为该备份时的状态'
+              }
               onConfirm={() => handleRestore(r.id)}
               okText="确定恢复"
               cancelText="取消"
@@ -209,8 +234,46 @@ export default function DataMaintenancePage() {
         <p style={{ margin: '4px 0' }}><strong>备份策略：</strong>每月1日凌晨2:00自动执行全量备份，每日凌晨2:30自动执行增量备份。</p>
         <p style={{ margin: '4px 0' }}><strong>全量备份：</strong>备份整个数据库的所有表结构和数据。</p>
         <p style={{ margin: '4px 0' }}><strong>增量备份：</strong>仅备份自上次成功备份以来有变更的数据（基于 updated_at 字段）。</p>
-        <p style={{ margin: '4px 0' }}><strong>恢复说明：</strong>恢复增量备份前，需先恢复对应的基准全量备份。</p>
+        <p style={{ margin: '4px 0' }}><strong>恢复说明：</strong>恢复增量备份时，系统将自动先恢复基准全量备份，再恢复增量数据，无需手动操作。</p>
       </div>
+
+      <Modal
+        title={<><CheckCircleOutlined style={{ color: COLORS.confirmed, marginRight: 8 }} />恢复完成</>}
+        open={restoreResult?.visible ?? false}
+        onOk={() => setRestoreResult(null)}
+        onCancel={() => setRestoreResult(null)}
+        okText="确定"
+        cancelButtonProps={{ style: { display: 'none' } }}
+        width={520}
+      >
+        {restoreResult && (
+          <>
+            {restoreResult.chainRestore ? (
+              <div style={{ marginBottom: 12 }}>
+                <Text type="secondary">本次为链式恢复，系统自动按顺序执行了以下步骤：</Text>
+              </div>
+            ) : (
+              <div style={{ marginBottom: 12 }}>
+                <Text type="secondary">全量备份恢复完成。</Text>
+              </div>
+            )}
+            <Steps
+              direction="vertical"
+              size="small"
+              current={restoreResult.steps.length}
+              items={restoreResult.steps.map((s) => ({
+                title: s.backupType === 'FULL' ? '恢复全量备份' : '恢复增量备份',
+                description: (
+                  <span style={{ fontSize: 12, color: COLORS.textMuted }}>
+                    备份 #{s.backupId} | {s.backupType === 'FULL' ? '全量' : '增量'} | {formatDate(s.createdAt)}
+                  </span>
+                ),
+                status: 'finish' as const,
+              }))}
+            />
+          </>
+        )}
+      </Modal>
     </Card>
   );
 }

@@ -47,6 +47,12 @@ public class BackupService {
     @Value("${spring.datasource.password}")
     private String dbPassword;
 
+    @Value("${app.restore.db-user:}")
+    private String restoreDbUser;
+
+    @Value("${app.restore.db-password:}")
+    private String restoreDbPassword;
+
     private static final String BACKUP_DIR = "/data/apps/phonecost/backups";
     private static final DateTimeFormatter TS_FMT = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
     private static final DateTimeFormatter DB_TS_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -224,9 +230,16 @@ public class BackupService {
     }
 
     /**
-     * 从备份恢复
+     * 从备份恢复（链式恢复）
+     * - 全量备份：直接恢复
+     * - 增量备份：自动先恢复基准全量备份，再恢复增量
+     *
+     * 注意：全量恢复会覆盖数据库到备份时的状态，后续备份记录可能消失。
+     * 因此先缓存恢复链的元数据，再按序执行恢复。
+     *
+     * @return 恢复链信息（包含执行了哪些恢复步骤）
      */
-    public BackupRecord restoreBackup(Long backupId) {
+    public java.util.Map<String, Object> restoreBackup(Long backupId) {
         BackupRecord record = backupRecordRepository.findById(backupId)
                 .orElseThrow(() -> new RuntimeException("备份记录不存在: " + backupId));
 
@@ -234,22 +247,91 @@ public class BackupService {
             throw new RuntimeException("该备份状态不可恢复: " + record.getStatus());
         }
 
-        String filepath = record.getFilePath();
-        if (!Files.exists(Paths.get(filepath))) {
-            throw new RuntimeException("备份文件不存在: " + filepath);
+        // Pre-collect restore chain info before any DB changes
+        java.util.List<java.util.Map<String, Object>> plannedSteps = new java.util.ArrayList<>();
+
+        if ("INCREMENTAL".equals(record.getBackupType())) {
+            if (record.getBaseBackupId() == null) {
+                throw new RuntimeException("增量备份缺少基准全量备份ID，无法链式恢复");
+            }
+            BackupRecord baseRecord = backupRecordRepository.findById(record.getBaseBackupId())
+                    .orElseThrow(() -> new RuntimeException("基准全量备份不存在: " + record.getBaseBackupId()));
+
+            if (!"SUCCESS".equals(baseRecord.getStatus())) {
+                throw new RuntimeException("基准全量备份状态不可恢复: " + baseRecord.getStatus());
+            }
+            if (!Files.exists(Paths.get(baseRecord.getFilePath()))) {
+                throw new RuntimeException("基准全量备份文件不存在: " + baseRecord.getFilePath());
+            }
+
+            plannedSteps.add(java.util.Map.of(
+                    "step", 1,
+                    "backupId", baseRecord.getId(),
+                    "backupType", baseRecord.getBackupType(),
+                    "filePath", baseRecord.getFilePath(),
+                    "createdAt", baseRecord.getCreatedAt().format(DB_TS_FMT)
+            ));
+
+            // Incremental file
+            if (!Files.exists(Paths.get(record.getFilePath()))) {
+                throw new RuntimeException("增量备份文件不存在: " + record.getFilePath());
+            }
+            plannedSteps.add(java.util.Map.of(
+                    "step", 2,
+                    "backupId", record.getId(),
+                    "backupType", record.getBackupType(),
+                    "filePath", record.getFilePath(),
+                    "createdAt", record.getCreatedAt().format(DB_TS_FMT)
+            ));
+        } else {
+            // Full backup - single step
+            if (!Files.exists(Paths.get(record.getFilePath()))) {
+                throw new RuntimeException("备份文件不存在: " + record.getFilePath());
+            }
+            plannedSteps.add(java.util.Map.of(
+                    "step", 1,
+                    "backupId", record.getId(),
+                    "backupType", record.getBackupType(),
+                    "filePath", record.getFilePath(),
+                    "createdAt", record.getCreatedAt().format(DB_TS_FMT)
+            ));
         }
 
+        // Execute restore chain
+        java.util.List<java.util.Map<String, Object>> executedSteps = new java.util.ArrayList<>();
+        for (java.util.Map<String, Object> step : plannedSteps) {
+            String filePath = (String) step.get("filePath");
+            String backupType = (String) step.get("backupType");
+            log.info("Chain restore step {}: restoring {} backup from {}", step.get("step"), backupType, filePath);
+            restoreSingleFile(filePath);
+            executedSteps.add(step);
+        }
+
+        return java.util.Map.of(
+                "steps", executedSteps,
+                "chainRestore", "INCREMENTAL".equals(record.getBackupType())
+        );
+    }
+
+    /**
+     * 恢复单个备份文件到数据库（gunzip | mysql）
+     * 使用恢复专用凭据（RESTORE_DB_USER/RESTORE_DB_PASSWORD），如未配置则回退到主数据源凭据
+     */
+    private void restoreSingleFile(String filepath) {
         try {
             String[] connInfo = parseDbUrl();
             String host = connInfo[0], port = connInfo[1], dbName = connInfo[2];
+
+            // Use restore-specific credentials if configured, otherwise fall back
+            String restoreUser = (restoreDbUser != null && !restoreDbUser.isEmpty()) ? restoreDbUser : dbUser;
+            String restorePass = (restoreDbPassword != null && !restoreDbPassword.isEmpty()) ? restoreDbPassword : dbPassword;
 
             ProcessBuilder gunzipPb = new ProcessBuilder("gunzip", "-c", filepath);
             ProcessBuilder mysqlPb = new ProcessBuilder(
                     "mysql",
                     "-h", host, "-P", port,
-                    "-u", dbUser,
-                    "-p" + dbPassword,
-                    "--no-tablespaces",
+                    "-u", restoreUser,
+                    "-p" + restorePass,
                     dbName
             );
 
@@ -275,12 +357,11 @@ public class BackupService {
                 throw new RuntimeException("mysql restore failed: " + mysqlErr);
             }
 
-            log.info("Restore completed from: {}", filepath);
-            return record;
+            log.info("File restore completed: {}", filepath);
 
         } catch (Exception e) {
-            log.error("Restore failed", e);
-            throw new RuntimeException("恢复失败: " + e.getMessage(), e);
+            log.error("File restore failed: {}", filepath, e);
+            throw new RuntimeException("恢复文件失败 [" + filepath + "]: " + e.getMessage(), e);
         }
     }
 
