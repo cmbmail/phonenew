@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Card, Select, Table, Statistic, Row, Col, Input, Segmented, Empty, Tag, Tooltip, Slider } from 'antd';
-import { SearchOutlined, BarChartOutlined, PhoneOutlined } from '@ant-design/icons';
+import { Card, Select, Table, Statistic, Row, Col, Input, Segmented, Empty, Tag, Tooltip, Button } from 'antd';
+import { BarChartOutlined } from '@ant-design/icons';
 import { COLORS } from '../theme/morandi';
 import { apiGet } from '../lib/request';
 import { getBillBatches } from '../api/import';
@@ -139,6 +139,23 @@ const BAR_FIELD_LABELS: Record<BarField, string> = {
   flash_msg_fee: '闪信费',
 };
 
+// 补全1-12月，缺失月份填0
+function fillMonths12<T extends { billing_month: string }>(data: T[]): T[] {
+  const map = new Map(data.map(d => [d.billing_month.slice(5), d]));
+  const result: T[] = [];
+  for (let m = 1; m <= 12; m++) {
+    const mm = String(m).padStart(2, '0');
+    if (map.has(mm)) {
+      result.push(map.get(mm)!);
+    } else {
+      // 构造一个全0的占位行
+      const placeholder = { billing_month: `2026-${mm}` } as unknown as T;
+      result.push(placeholder);
+    }
+  }
+  return result;
+}
+
 // 指标选择器（共用）
 function MetricSelector({ activeField, onChange }: { activeField: BarField; onChange: (f: BarField) => void }) {
   return (
@@ -164,51 +181,46 @@ function MetricSelector({ activeField, onChange }: { activeField: BarField; onCh
 }
 
 // 单指标柱状图（总费用对比、单个号码用）
-function BarChart({ data, field, height = 380 }: { data: BarRow[]; field?: BarField; height?: number }) {
+function BarChart({ data, field, height = 190 }: { data: BarRow[]; field?: BarField; height?: number }) {
   const [activeField, setActiveField] = useState<BarField>(field || 'total_fee');
-  const [scale, setScale] = useState(1);
-  const values = data.map(d => Number(d[activeField]) || 0);
+  const fullData = fillMonths12(data);
+  const values = fullData.map(d => Number(d[activeField]) || 0);
   const maxVal = Math.max(...values, 1);
 
-  const changes = data.map((d, i) => {
+  const changes = fullData.map((d, i) => {
     if (i === 0) return null;
-    const prev = Number(data[i - 1][activeField]) || 0;
+    const prev = Number(fullData[i - 1][activeField]) || 0;
     const cur = Number(d[activeField]) || 0;
     if (prev === 0) return null;
     return ((cur - prev) / prev * 100).toFixed(1);
   });
 
-  const chartHeight = Math.round(height * scale);
+  const chartHeight = height;
 
   return (
     <div>
       <Row gutter={16} align="middle" style={{ marginBottom: 8 }}>
         <Col flex="auto"><MetricSelector activeField={activeField} onChange={setActiveField} /></Col>
-        <Col flex="180px">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 11, color: COLORS.textMuted, whiteSpace: 'nowrap' }}>缩放</span>
-            <Slider min={0.5} max={3} step={0.1} value={scale} onChange={setScale}
-              style={{ flex: 1, margin: 0 }} tooltip={{ formatter: v => `${v}x` }} />
-            <span style={{ fontSize: 11, color: COLORS.sage, fontWeight: 500, width: 28, textAlign: 'right' }}>{scale.toFixed(1)}x</span>
-          </div>
-        </Col>
       </Row>
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: data.length > 6 ? 12 : 24, height: chartHeight, padding: '0 8px 28px', borderBottom: `1px solid ${COLORS.border}` }}>
-        {data.map((d, i) => {
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: chartHeight, padding: '0 8px 28px', borderBottom: `1px solid ${COLORS.border}` }}>
+        {fullData.map((d, i) => {
           const val = Number(d[activeField]) || 0;
-          const pct = maxVal > 0 ? (val / maxVal) * 100 : 0;
           const change = changes[i];
           const isUp = change !== null && Number(change) > 0;
           const isDown = change !== null && Number(change) < 0;
+          // 像素高度计算：预留标签空间，最高柱达可用高度80%
+          const LABEL_RESERVE = 55;
+          const availableHeight = chartHeight - 28 - LABEL_RESERVE;
+          const barHeight = Math.max(availableHeight * (val / maxVal) * 0.8, val > 0 ? 2 : 0);
           return (
-            <div key={d.billing_month} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 40 }}>
-              <div style={{ fontSize: 11, color: COLORS.textDark, marginBottom: 4, whiteSpace: 'nowrap', fontWeight: 500 }}>{moneyWan(val)}</div>
-              <Tooltip title={`${d.billing_month} ${BAR_FIELD_LABELS[activeField]}: ${money(val)}`}>
-                <div style={{ width: '100%', maxWidth: 56, minHeight: 2, height: `${Math.max(pct, 1)}%`, background: FEE_BAR_COLORS[activeField], borderRadius: '3px 3px 0 0', transition: 'height 0.4s ease' }} />
+            <div key={d.billing_month} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 30 }}>
+              <div style={{ fontSize: 10, color: COLORS.textDark, marginBottom: 2, whiteSpace: 'nowrap', fontWeight: 500 }}>{val > 0 ? moneyWan(val) : ''}</div>
+              <Tooltip title={val > 0 ? `${d.billing_month} ${BAR_FIELD_LABELS[activeField]}: ${money(val)}` : `${d.billing_month} 无数据`}>
+                <div style={{ width: '100%', maxWidth: 40, height: barHeight + 'px', background: val > 0 ? FEE_BAR_COLORS[activeField] : 'transparent', borderRadius: '3px 3px 0 0', transition: 'height 0.4s ease' }} />
               </Tooltip>
-              <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 6, whiteSpace: 'nowrap' }}>{d.billing_month?.slice(5) || ''}</div>
-              {change !== null && (
-                <div style={{ fontSize: 10, color: isUp ? COLORS.danger : isDown ? COLORS.confirmed : COLORS.textMuted, whiteSpace: 'nowrap' }}>
+              <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 4, whiteSpace: 'nowrap' }}>{d.billing_month?.slice(5) || ''}</div>
+              {change !== null && val > 0 && (
+                <div style={{ fontSize: 9, color: isUp ? COLORS.danger : isDown ? COLORS.confirmed : COLORS.textMuted, whiteSpace: 'nowrap' }}>
                   {isUp ? '+' : ''}{change}%
                 </div>
               )}
@@ -221,33 +233,26 @@ function BarChart({ data, field, height = 380 }: { data: BarRow[]; field?: BarFi
 }
 
 // YoY双柱对比图（今年 vs 去年同期）
-function YoyBarChart({ data, height = 400 }: { data: L1MonthlyRow[]; height?: number }) {
+function YoyBarChart({ data, height = 200 }: { data: L1MonthlyRow[]; height?: number }) {
   const [activeField, setActiveField] = useState<BarField>('total_fee');
-  const [scale, setScale] = useState(1);
+
+  const fullData = fillMonths12(data);
 
   const maxVal = Math.max(
-    ...data.map(d => Number(d[activeField]) || 0),
-    ...data.map(d => Number(d.last_year_fee) || 0),
+    ...fullData.map(d => Number(d[activeField]) || 0),
+    ...fullData.map(d => Number(d.last_year_fee) || 0),
     1,
   );
 
-  const chartHeight = Math.round(height * scale);
+  const chartHeight = height;
 
   return (
     <div>
       <Row gutter={16} align="middle" style={{ marginBottom: 8 }}>
         <Col flex="auto"><MetricSelector activeField={activeField} onChange={setActiveField} /></Col>
-        <Col flex="180px">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 11, color: COLORS.textMuted, whiteSpace: 'nowrap' }}>缩放</span>
-            <Slider min={0.5} max={3} step={0.1} value={scale} onChange={setScale}
-              style={{ flex: 1, margin: 0 }} tooltip={{ formatter: v => `${v}x` }} />
-            <span style={{ fontSize: 11, color: COLORS.sage, fontWeight: 500, width: 28, textAlign: 'right' }}>{scale.toFixed(1)}x</span>
-          </div>
-        </Col>
       </Row>
       {/* 图例 */}
-      <div style={{ display: 'flex', gap: 24, marginBottom: 12, fontSize: 12 }}>
+      <div style={{ display: 'flex', gap: 24, marginBottom: 8, fontSize: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <div style={{ width: 14, height: 10, background: COLORS.sage, borderRadius: 2 }} />
           <span style={{ color: COLORS.textMuted }}>本年</span>
@@ -257,35 +262,42 @@ function YoyBarChart({ data, height = 400 }: { data: L1MonthlyRow[]; height?: nu
           <span style={{ color: COLORS.textMuted }}>去年同期</span>
         </div>
       </div>
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: data.length > 6 ? 16 : 32, height: chartHeight, padding: '0 8px 28px', borderBottom: `1px solid ${COLORS.border}` }}>
-        {data.map((d) => {
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: chartHeight, padding: '0 8px 28px', borderBottom: `1px solid ${COLORS.border}` }}>
+        {fullData.map((d) => {
           const curVal = Number(d[activeField]) || 0;
           const prevVal = Number(d.last_year_fee) || 0;
-          const curPct = maxVal > 0 ? (curVal / maxVal) * 100 : 0;
-          const prevPct = maxVal > 0 ? (prevVal / maxVal) * 100 : 0;
           const yoyChange = d.yoy_change;
           const isUp = yoyChange !== null && Number(yoyChange) > 0;
           const isDown = yoyChange !== null && Number(yoyChange) < 0;
           const monthLabel = d.billing_month?.slice(5) || '';
+          const hasData = curVal > 0 || prevVal > 0;
+
+          // 像素高度计算：预留标签空间，最高柱达可用高度80%
+          const LABEL_RESERVE = 40;
+          const availableHeight = chartHeight - 28 - LABEL_RESERVE;
+          const tallerVal = Math.max(curVal, prevVal);
+          const dualBarHeight = hasData ? Math.max(availableHeight * (tallerVal / maxVal) * 0.8, 2) : 0;
+          const curBarPct = tallerVal > 0 ? (curVal / tallerVal) * 100 : 0;
+          const prevBarPct = tallerVal > 0 ? (prevVal / tallerVal) * 100 : 0;
 
           return (
-            <div key={d.billing_month} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 50 }}>
+            <div key={d.billing_month} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 36 }}>
               {/* 数值 + 同比 */}
-              <div style={{ fontSize: 10, marginBottom: 2, whiteSpace: 'nowrap' }}>
-                <span style={{ color: COLORS.textDark, fontWeight: 500 }}>{moneyWan(curVal)}</span>
-                {yoyChange !== null && (
+              <div style={{ fontSize: 9, marginBottom: 2, whiteSpace: 'nowrap' }}>
+                {hasData && <span style={{ color: COLORS.textDark, fontWeight: 500 }}>{moneyWan(curVal)}</span>}
+                {yoyChange !== null && hasData && (
                   <span style={{ marginLeft: 4, color: isUp ? COLORS.danger : isDown ? COLORS.confirmed : COLORS.textMuted }}>
                     {isUp ? '+' : ''}{yoyChange}%
                   </span>
                 )}
               </div>
-              {/* 双柱容器 */}
-              <div style={{ display: 'flex', gap: 3, width: '100%', maxWidth: 60, alignItems: 'flex-end', height: `${Math.max(curPct, prevPct, 1)}%`, flex: '0 0 auto' }}>
+              {/* 双柱容器 — 固定像素高度 */}
+              <div style={{ display: 'flex', gap: 2, width: '100%', maxWidth: 44, alignItems: 'flex-end', height: dualBarHeight + 'px', flex: '0 0 auto' }}>
                 {/* 去年柱 */}
-                <Tooltip title={d.last_year_month ? `${d.last_year_month}: ${money(prevVal)}` : '无去年同期数据'}>
+                <Tooltip title={prevVal > 0 ? `${d.last_year_month}: ${money(prevVal)}` : hasData ? '无去年同期数据' : `${d.billing_month} 无数据`}>
                   <div style={{
-                    flex: 1, minHeight: 2, height: prevVal > 0 ? `${maxVal > 0 ? (prevVal / maxVal) * 100 : 0}%` : '0%',
-                    maxHeight: prevPct > 0 ? `${prevPct}%` : '0%',
+                    flex: 1, minHeight: prevVal > 0 ? 2 : 0,
+                    height: prevVal > 0 ? prevBarPct + '%' : '0%',
                     background: 'transparent',
                     border: prevVal > 0 ? `1.5px dashed ${COLORS.textMuted}` : 'none',
                     borderRadius: '2px 2px 0 0',
@@ -293,18 +305,18 @@ function YoyBarChart({ data, height = 400 }: { data: L1MonthlyRow[]; height?: nu
                   }} />
                 </Tooltip>
                 {/* 今年柱 */}
-                <Tooltip title={`${d.billing_month}: ${money(curVal)}`}>
+                <Tooltip title={curVal > 0 ? `${d.billing_month}: ${money(curVal)}` : hasData ? '无数据' : `${d.billing_month} 无数据`}>
                   <div style={{
-                    flex: 1, minHeight: 2,
-                    height: curVal > 0 ? `${curPct}%` : '0%',
-                    background: FEE_BAR_COLORS[activeField],
+                    flex: 1, minHeight: curVal > 0 ? 2 : 0,
+                    height: curVal > 0 ? curBarPct + '%' : '0%',
+                    background: curVal > 0 ? FEE_BAR_COLORS[activeField] : 'transparent',
                     borderRadius: '2px 2px 0 0',
                     transition: 'height 0.4s ease',
                   }} />
                 </Tooltip>
               </div>
               {/* 月份 */}
-              <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 6, whiteSpace: 'nowrap' }}>{monthLabel}</div>
+              <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 4, whiteSpace: 'nowrap' }}>{monthLabel}</div>
             </div>
           );
         })}
@@ -326,6 +338,10 @@ export default function FeeAnalysisPage() {
   const [phoneData, setPhoneData] = useState<PhoneAnalysisResult | null>(null);
   const [phoneLoading, setPhoneLoading] = useState(false);
 
+  // ALL dimension monthly data
+  const [allMonthlyData, setAllMonthlyData] = useState<BarRow[]>([]);
+  const [allMonthlyLoading, setAllMonthlyLoading] = useState(false);
+
   // L1 monthly analysis data
   const [l1MonthlyData, setL1MonthlyData] = useState<L1MonthlyResult | null>(null);
   const [l1MonthlyLoading, setL1MonthlyLoading] = useState(false);
@@ -344,12 +360,10 @@ export default function FeeAnalysisPage() {
   // Org list
   const [orgList, setOrgList] = useState<Organization[]>([]);
 
-  // Phone search
-  const [phoneSearch, setPhoneSearch] = useState('');
-
   // Phone list (default view)
   const [phoneList, setPhoneList] = useState<PhoneListRow[]>([]);
   const [phoneListLoading, setPhoneListLoading] = useState(false);
+  const [phoneSearch, setPhoneSearch] = useState('');
   const [phoneListL1OrgId, setPhoneListL1OrgId] = useState<number | null>(null);
 
   const fetchBatches = useCallback(async () => {
@@ -361,6 +375,16 @@ export default function FeeAnalysisPage() {
   }, []);
 
   useEffect(() => { fetchBatches(); fetchOrgs(); }, [fetchBatches, fetchOrgs]);
+
+  // Fetch ALL dimension monthly data
+  useEffect(() => {
+    if (dimension !== '全部') return;
+    setAllMonthlyLoading(true);
+    apiGet<BarRow[]>('/allocation/analysis/monthly-comparison')
+      .then(data => setAllMonthlyData(data || []))
+      .catch(() => setAllMonthlyData([]))
+      .finally(() => setAllMonthlyLoading(false));
+  }, [dimension]);
 
   useEffect(() => {
     if (batches.length > 0 && !selectedBatchId) {
@@ -399,19 +423,18 @@ export default function FeeAnalysisPage() {
     }
   }, [dimension, selectedDeptOrgId]);
 
-  // Phone number search handler
-  const doPhoneSearch = useCallback(async () => {
-    if (!phoneSearch.trim()) return;
+  // Phone number click — fetch detail
+  const selectPhone = useCallback(async (phone: string) => {
     setPhoneLoading(true);
     try {
-      const data = await apiGet<PhoneAnalysisResult>(`/allocation/analysis?batchId=${selectedBatchId || 0}&dimension=PHONE&phoneNumber=${phoneSearch.trim()}`);
+      const data = await apiGet<PhoneAnalysisResult>(`/allocation/analysis?batchId=${selectedBatchId || 0}&dimension=PHONE&phoneNumber=${phone}`);
       setPhoneData(data);
     } catch {
       setPhoneData(null);
     } finally {
       setPhoneLoading(false);
     }
-  }, [selectedBatchId, phoneSearch]);
+  }, [selectedBatchId]);
 
   // Phone list fetch (default view when no search)
   useEffect(() => {
@@ -428,7 +451,7 @@ export default function FeeAnalysisPage() {
 
   const fetchAnalysis = useCallback(async () => {
     if (!selectedBatchId) return;
-    if (dimension === '单个号码' || dimension === '一级分行' || dimension === '二级分行' || dimension === '部门') return; // handled separately
+    if (dimension === '全部' || dimension === '单个号码' || dimension === '一级分行' || dimension === '二级分行' || dimension === '部门') return; // handled separately
     setLoading(true);
     try {
       const dimCode = DIM_MAP[dimension];
@@ -462,18 +485,11 @@ export default function FeeAnalysisPage() {
       .map(o => ({ label: `${o.name} (${ORG_TYPE_LABEL[o.type] || o.type})`, value: o.id }));
   }, [orgList]);
 
-  // Parse analysis data
-  const rows: FeeRow[] = analysisData?.rows as FeeRow[] || [];
-  const allData = dimension === '全部' ? analysisData : null;
-
-  const breakdownList = (allData?.fee_breakdown || []) as { name: string; value: number; percent: string }[];
-  const topOrgs = (allData?.top_orgs || []) as FeeRow[];
-
   // ==================== 一级分行分析 ====================
 
   const l1DetailColumns = [
     { title: '月份', dataIndex: 'billing_month', key: 'billing_month', width: 100, fixed: 'left' as const },
-    { title: '本年费用', dataIndex: 'total_fee', key: 'total_fee', width: 120, render: (v: number) => <strong>{money(v)}</strong> },
+    { title: '合计', dataIndex: 'total_fee', key: 'total_fee', width: 120, render: (v: number) => <strong>{money(v)}</strong> },
     { title: '月租费', dataIndex: 'monthly_rent', key: 'monthly_rent', width: 100, render: money },
     { title: '通话费', dataIndex: 'call_fee', key: 'call_fee', width: 100, render: money },
     { title: '录音费', dataIndex: 'recording_fee', key: 'recording_fee', width: 100, render: money },
@@ -564,8 +580,16 @@ export default function FeeAnalysisPage() {
     { title: '账单条数', dataIndex: 'detail_count', key: 'detail_count', width: 80 },
   ];
 
+  // Filtered phone list based on search (comma-separated)
+  const filteredPhoneList = useMemo(() => {
+    const terms = phoneSearch.split(/[,，]/).map(s => s.trim()).filter(Boolean);
+    if (terms.length === 0) return phoneList;
+    return phoneList.filter(r => terms.some(t => (r.phone_number || '').includes(t)));
+  }, [phoneList, phoneSearch]);
+
   const phoneListColumns = [
-    { title: '号码', dataIndex: 'phone_number', key: 'phone_number', width: 140, fixed: 'left' as const },
+    { title: '号码', dataIndex: 'phone_number', key: 'phone_number', width: 140, fixed: 'left' as const,
+      render: (v: string) => <a onClick={() => selectPhone(v)} style={{ color: COLORS.sage, cursor: 'pointer' }}>{v}</a> },
     { title: '归属组织', dataIndex: 'org_name', key: 'org_name', width: 140,
       render: (v: string) => v || <span style={{ color: COLORS.textMuted }}>未归属</span> },
     { title: '归属来源', dataIndex: 'ownership_source', key: 'ownership_source', width: 90,
@@ -595,38 +619,15 @@ export default function FeeAnalysisPage() {
 
   const renderPhoneContent = () => (
     <>
-      <Row gutter={16} style={{ marginBottom: 12 }}>
-        <Col>
-          <span style={{ marginRight: 8 }}>一级分行：</span>
-          <Select
-            style={{ width: 220 }}
-            placeholder="全部分行"
-            allowClear
-            value={phoneListL1OrgId}
-            onChange={setPhoneListL1OrgId}
-            showSearch optionFilterProp="label"
-            options={l1Orgs.map(o => ({ label: o.name, value: o.id }))}
-          />
-        </Col>
-        <Col>
-          <Input.Search
-            prefix={<PhoneOutlined />}
-            placeholder="输入号码查询费用清单"
-            allowClear
-            style={{ width: 300 }}
-            value={phoneSearch}
-            onChange={e => setPhoneSearch(e.target.value)}
-            onSearch={doPhoneSearch}
-            enterButton="查询"
-            loading={phoneLoading}
-          />
-        </Col>
-      </Row>
-
       {phoneData && phoneData.rows && phoneData.rows.length > 0 ? (
         <>
+          <Row gutter={16} style={{ marginBottom: 16 }}>
+            <Col>
+              <Button onClick={() => setPhoneData(null)} style={{ borderColor: COLORS.sage, color: COLORS.sage }}>← 返回号码列表</Button>
+            </Col>
+          </Row>
           <Row gutter={16} style={{ marginBottom: 20 }}>
-            <Col span={4}><Statistic title="号码" value={phoneData.phone_number} valueStyle={{ fontSize: 16, color: COLORS.sage }} /></Col>
+            <Col span={4}><Statistic title="号码" value={String(phoneData.phone_number || '')} valueStyle={{ fontSize: 16, color: COLORS.sage, fontVariantNumeric: 'normal' }} groupSeparator="" /></Col>
             <Col span={4}><Statistic title="归属组织" value={phoneData.org_name || '未归属'} valueStyle={{ fontSize: 16 }} /></Col>
             <Col span={3}><Statistic title="累计费用" value={Number(phoneData.total_fee || 0).toFixed(2)} prefix="¥" valueStyle={{ color: COLORS.sage }} /></Col>
             <Col span={3}><Statistic title="月均费用" value={Number(phoneData.avg_monthly_fee || 0).toFixed(2)} prefix="¥" /></Col>
@@ -649,74 +650,96 @@ export default function FeeAnalysisPage() {
               pagination={false} scroll={{ x: 1100 }} />
           </Card>
         </>
-      ) : phoneSearch && !phoneLoading ? (
-        <Empty description="未找到该号码的费用数据" />
       ) : (
-        <Card size="small" title={`号码费用列表（共 ${phoneList.length} 个号码）`}>
-          <Table
-            columns={phoneListColumns}
-            dataSource={phoneList}
-            rowKey="phone_number"
-            size="small"
-            loading={phoneListLoading}
-            pagination={{ pageSize: 50, showSizeChanger: true, showTotal: t => `共 ${t} 条` }}
-            scroll={{ x: 1100 }}
-          />
-        </Card>
+        <>
+          <Row gutter={16} style={{ marginBottom: 12 }} align="middle">
+            <Col>
+              <span style={{ marginRight: 8 }}>一级分行：</span>
+              <Select
+                style={{ width: 220 }}
+                placeholder="全部分行"
+                allowClear
+                value={phoneListL1OrgId}
+                onChange={setPhoneListL1OrgId}
+                showSearch optionFilterProp="label"
+                options={l1Orgs.map(o => ({ label: o.name, value: o.id }))}
+              />
+            </Col>
+            <Col flex="auto" />
+            <Col>
+              <Input.Search
+                placeholder="搜索号码，多个用逗号分隔"
+                allowClear
+                style={{ width: 300 }}
+                value={phoneSearch}
+                onChange={e => setPhoneSearch(e.target.value)}
+                onSearch={v => setPhoneSearch(v)}
+              />
+            </Col>
+          </Row>
+          <Card size="small" title={`号码费用列表（共 ${filteredPhoneList.length} 个号码）`}>
+            <Table
+              columns={phoneListColumns}
+              dataSource={filteredPhoneList}
+              rowKey="phone_number"
+              size="small"
+              loading={phoneListLoading}
+              pagination={{ pageSize: 50, showSizeChanger: true, showTotal: t => `共 ${t} 条` }}
+              scroll={{ x: 1100 }}
+            />
+          </Card>
+        </>
       )}
     </>
   );
 
   // ==================== 费用分析Tab ====================
 
-  const renderAllContent = () => (
-    <>
-      <Row gutter={16} style={{ marginBottom: 20 }}>
-        <Col span={4}><Statistic title="费用总额" value={Number(allData?.total_fee || 0).toFixed(2)} prefix="¥" valueStyle={{ color: COLORS.sage }} /></Col>
-        <Col span={3}><Statistic title="月租费" value={Number(allData?.monthly_rent || 0).toFixed(2)} prefix="¥" /></Col>
-        <Col span={3}><Statistic title="通话费" value={Number(allData?.call_fee || 0).toFixed(2)} prefix="¥" /></Col>
-        <Col span={3}><Statistic title="录音费" value={Number(allData?.recording_fee || 0).toFixed(2)} prefix="¥" /></Col>
-        <Col span={3}><Statistic title="彩铃费" value={Number(allData?.crbt_fee || 0).toFixed(2)} prefix="¥" /></Col>
-        <Col span={3}><Statistic title="闪信费" value={Number(allData?.flash_msg_fee || 0).toFixed(2)} prefix="¥" /></Col>
-        <Col span={2}><Statistic title="号码数" value={allData?.phone_count || 0} /></Col>
-        <Col span={2}><Statistic title="组织数" value={allData?.org_count || 0} /></Col>
-      </Row>
+  // ==================== 全部维度：月度趋势 ====================
 
-      {breakdownList.length > 0 && (
-        <Card size="small" title="费用构成" style={{ marginBottom: 16 }}>
-          <Row gutter={16}>
-            {breakdownList.map(item => (
-              <Col span={Math.max(4, Math.floor(24 / breakdownList.length))} key={item.name}>
-                <Statistic title={item.name} value={Number(item.value || 0).toFixed(2)} prefix="¥"
-                  suffix={<span style={{ fontSize: 12, color: COLORS.textMuted }}>({item.percent})</span>} />
-              </Col>
-            ))}
-          </Row>
-        </Card>
-      )}
+  const allMonthlyColumns = [
+    { title: '月份', dataIndex: 'billing_month', key: 'billing_month', width: 100, fixed: 'left' as const },
+    { title: '总费用', dataIndex: 'total_fee', key: 'total_fee', width: 120, render: (v: number) => <strong>{money(v)}</strong>,
+      sorter: (a: BarRow, b: BarRow) => (a.total_fee || 0) - (b.total_fee || 0) },
+    { title: '月租费', dataIndex: 'monthly_rent', key: 'monthly_rent', width: 100, render: money },
+    { title: '通话费', dataIndex: 'call_fee', key: 'call_fee', width: 100, render: money },
+    { title: '录音费', dataIndex: 'recording_fee', key: 'recording_fee', width: 100, render: money },
+    { title: '彩铃费', dataIndex: 'crbt_fee', key: 'crbt_fee', width: 100, render: money },
+    { title: '闪信费', dataIndex: 'flash_msg_fee', key: 'flash_msg_fee', width: 100, render: money },
+    { title: '号码数', dataIndex: 'phone_count', key: 'phone_count', width: 80 },
+    { title: '组织数', dataIndex: 'org_count', key: 'org_count', width: 80 },
+  ];
 
-      {allData?.unassigned_fee && Number(allData.unassigned_fee) > 0 && (
-        <Card size="small" style={{ marginBottom: 16 }}>
-          <Row gutter={16}>
-            <Col span={8}><Statistic title="未归属费用" value={Number(allData.unassigned_fee).toFixed(2)} prefix="¥" valueStyle={{ color: COLORS.danger }} /></Col>
-            <Col span={8}><Statistic title="未归属号码数" value={allData.unassigned_phones || 0} /></Col>
-            <Col span={8}><Statistic title="未归属占比" value={allData.total_fee && Number(allData.total_fee) > 0 ? (Number(allData.unassigned_fee) / Number(allData.total_fee) * 100).toFixed(1) + '%' : '0%'} /></Col>
-          </Row>
-        </Card>
-      )}
+  const renderAllContent = () => {
+    if (allMonthlyLoading) return <div style={{ textAlign: 'center', padding: 40, color: COLORS.textMuted }}>加载中...</div>;
 
-      {topOrgs.length > 0 && (
-        <Card size="small" title="费用TOP10组织">
-          <Table columns={[
-            { title: '排名', key: 'rank', width: 60, render: (_: unknown, __: unknown, i: number) => i + 1 },
-            { title: '组织名称', dataIndex: 'org_name', key: 'org_name' },
-            { title: '费用合计', dataIndex: 'total_fee', key: 'total_fee', render: money },
-            { title: '号码数', dataIndex: 'phone_count', key: 'phone_count', width: 80 },
-          ]} dataSource={topOrgs} rowKey="org_id" size="small" pagination={false} />
+    const grandTotal = allMonthlyData.reduce((s, r) => s + (Number(r.total_fee) || 0), 0);
+    const avgMonthly = allMonthlyData.length > 0 ? grandTotal / allMonthlyData.length : 0;
+    const lastRow = allMonthlyData[allMonthlyData.length - 1];
+    const phoneCount = lastRow?.phone_count || 0;
+    const orgCount = lastRow?.org_count || 0;
+
+    return (
+      <>
+        <Row gutter={16} style={{ marginBottom: 20 }}>
+          <Col span={6}><Statistic title="累计总费用" value={grandTotal.toFixed(2)} prefix="¥" valueStyle={{ color: COLORS.sage }} /></Col>
+          <Col span={6}><Statistic title="月均费用" value={avgMonthly.toFixed(2)} prefix="¥" /></Col>
+          <Col span={4}><Statistic title="号码数" value={phoneCount} /></Col>
+          <Col span={4}><Statistic title="组织数" value={orgCount} /></Col>
+          <Col span={4}><Statistic title="数据月数" value={allMonthlyData.length} suffix="个月" /></Col>
+        </Row>
+
+        <Card size="small" title="总费用趋势" style={{ marginBottom: 16 }}>
+          <BarChart data={allMonthlyData} field="total_fee" />
         </Card>
-      )}
-    </>
-  );
+
+        <Card size="small" title="月度费用明细">
+          <Table columns={allMonthlyColumns} dataSource={allMonthlyData} rowKey="billing_month" size="small"
+            pagination={false} scroll={{ x: 880 }} />
+        </Card>
+      </>
+    );
+  };
 
   const renderL2Content = () => (
     <>
@@ -828,14 +851,6 @@ export default function FeeAnalysisPage() {
   const renderAnalysisTab = () => (
     <>
       <Row gutter={16} align="middle" style={{ marginBottom: 16 }}>
-        {dimension === '全部' && (
-          <Col>
-            <span style={{ marginRight: 8 }}>账单月份：</span>
-            <Select style={{ width: 180 }} placeholder="选择月份" value={selectedBatchId} onChange={setSelectedBatchId}
-              options={[...batches].sort((a, b) => b.billing_month.localeCompare(a.billing_month))
-                .map(b => ({ label: `${b.billing_month} (${b.total_count}条)`, value: b.id }))} />
-          </Col>
-        )}
         <Col>
           <Segmented options={['全部', '一级分行', '二级分行', '部门', '单个号码']} value={dimension} onChange={v => setDimension(v as Dimension)} />
         </Col>

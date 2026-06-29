@@ -23,6 +23,7 @@ import DirectoryPage from './pages/DirectoryPage';
 import UserManagement from './pages/UserManagement';
 import TemplateManagement from './pages/TemplateManagement';
 import AuditLogPage from './pages/AuditLogPage';
+import DataMaintenancePage from './pages/DataMaintenancePage';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30000 } } });
 
@@ -57,6 +58,7 @@ const App: React.FC = () => (
             <Route path="base/directory" element={<DirectoryPage />} />
             <Route path="settings/users" element={<UserManagement />} />
             <Route path="settings/audit-log" element={<AuditLogPage />} />
+            <Route path="settings/data-maintenance" element={<DataMaintenancePage />} />
             <Route path="templates" element={<TemplateManagement />} />
             {/* Redirect old paths */}
             <Route path="settings" element={<Navigate to="/settings/users" replace />} />
