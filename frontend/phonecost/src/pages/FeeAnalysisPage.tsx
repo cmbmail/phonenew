@@ -164,7 +164,7 @@ function MetricSelector({ activeField, onChange }: { activeField: BarField; onCh
 }
 
 // 单指标柱状图（总费用对比、单个号码用）
-function BarChart({ data, field, height = 260 }: { data: BarRow[]; field?: BarField; height?: number }) {
+function BarChart({ data, field, height = 380 }: { data: BarRow[]; field?: BarField; height?: number }) {
   const [activeField, setActiveField] = useState<BarField>(field || 'total_fee');
   const [scale, setScale] = useState(1);
   const values = data.map(d => Number(d[activeField]) || 0);
@@ -187,7 +187,7 @@ function BarChart({ data, field, height = 260 }: { data: BarRow[]; field?: BarFi
         <Col flex="180px">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 11, color: COLORS.textMuted, whiteSpace: 'nowrap' }}>缩放</span>
-            <Slider min={0.5} max={2} step={0.1} value={scale} onChange={setScale}
+            <Slider min={0.5} max={3} step={0.1} value={scale} onChange={setScale}
               style={{ flex: 1, margin: 0 }} tooltip={{ formatter: v => `${v}x` }} />
             <span style={{ fontSize: 11, color: COLORS.sage, fontWeight: 500, width: 28, textAlign: 'right' }}>{scale.toFixed(1)}x</span>
           </div>
@@ -221,7 +221,7 @@ function BarChart({ data, field, height = 260 }: { data: BarRow[]; field?: BarFi
 }
 
 // YoY双柱对比图（今年 vs 去年同期）
-function YoyBarChart({ data, height = 280 }: { data: L1MonthlyRow[]; height?: number }) {
+function YoyBarChart({ data, height = 400 }: { data: L1MonthlyRow[]; height?: number }) {
   const [activeField, setActiveField] = useState<BarField>('total_fee');
   const [scale, setScale] = useState(1);
 
@@ -240,7 +240,7 @@ function YoyBarChart({ data, height = 280 }: { data: L1MonthlyRow[]; height?: nu
         <Col flex="180px">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 11, color: COLORS.textMuted, whiteSpace: 'nowrap' }}>缩放</span>
-            <Slider min={0.5} max={2} step={0.1} value={scale} onChange={setScale}
+            <Slider min={0.5} max={3} step={0.1} value={scale} onChange={setScale}
               style={{ flex: 1, margin: 0 }} tooltip={{ formatter: v => `${v}x` }} />
             <span style={{ fontSize: 11, color: COLORS.sage, fontWeight: 500, width: 28, textAlign: 'right' }}>{scale.toFixed(1)}x</span>
           </div>
@@ -524,7 +524,7 @@ export default function FeeAnalysisPage() {
 
           {/* YoY双柱对比图 */}
           <Card size="small" title="月度费用同比对比" style={{ marginBottom: 16 }}>
-            <YoyBarChart data={l1MonthlyData.rows} height={240} />
+            <YoyBarChart data={l1MonthlyData.rows} />
           </Card>
 
           {/* 数据表 */}
@@ -641,7 +641,7 @@ export default function FeeAnalysisPage() {
           </Row>
 
           <Card size="small" title="月度费用趋势" style={{ marginBottom: 16 }}>
-            <BarChart data={phoneData.rows as unknown as BarRow[]} height={220} />
+            <BarChart data={phoneData.rows as unknown as BarRow[]} />
           </Card>
 
           <Card size="small" title="费用清单">
@@ -759,7 +759,7 @@ export default function FeeAnalysisPage() {
 
           {/* YoY双柱对比图 */}
           <Card size="small" title="月度费用同比对比" style={{ marginBottom: 16 }}>
-            <YoyBarChart data={l2MonthlyData.rows} height={240} />
+            <YoyBarChart data={l2MonthlyData.rows} />
           </Card>
 
           {/* 数据表 */}
@@ -808,7 +808,7 @@ export default function FeeAnalysisPage() {
 
           {/* YoY双柱对比图 */}
           <Card size="small" title="月度费用同比对比" style={{ marginBottom: 16 }}>
-            <YoyBarChart data={deptMonthlyData.rows} height={240} />
+            <YoyBarChart data={deptMonthlyData.rows} />
           </Card>
 
           {/* 数据表 */}
