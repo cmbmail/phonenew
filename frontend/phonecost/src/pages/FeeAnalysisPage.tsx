@@ -310,9 +310,18 @@ export default function FeeAnalysisPage() {
   const [l1MonthlyLoading, setL1MonthlyLoading] = useState(false);
   const [selectedL1OrgId, setSelectedL1OrgId] = useState<number | null>(null);
 
-  // Org selectors for L2/Department
+  // L2 monthly analysis data
+  const [l2MonthlyData, setL2MonthlyData] = useState<L1MonthlyResult | null>(null);
+  const [l2MonthlyLoading, setL2MonthlyLoading] = useState(false);
+  const [selectedL2OrgId, setSelectedL2OrgId] = useState<number | null>(null);
+
+  // Department monthly analysis data
+  const [deptMonthlyData, setDeptMonthlyData] = useState<L1MonthlyResult | null>(null);
+  const [deptMonthlyLoading, setDeptMonthlyLoading] = useState(false);
+  const [selectedDeptOrgId, setSelectedDeptOrgId] = useState<number | null>(null);
+
+  // Org list
   const [orgList, setOrgList] = useState<Organization[]>([]);
-  const [selectedParentOrgId, setSelectedParentOrgId] = useState<number | null>(null);
 
   // Phone search
   const [phoneSearch, setPhoneSearch] = useState('');
@@ -346,25 +355,35 @@ export default function FeeAnalysisPage() {
     }
   }, [batches, selectedBatchId]);
 
-  // L1 monthly fetch
-  const fetchL1Monthly = useCallback(async (orgId: number) => {
-    setL1MonthlyLoading(true);
-    try {
-      const data = await apiGet<L1MonthlyResult>(`/allocation/analysis/l1-monthly?orgId=${orgId}`);
-      setL1MonthlyData(data);
-    } catch {
-      setL1MonthlyData(null);
-    } finally {
-      setL1MonthlyLoading(false);
-    }
-  }, []);
-
   // Trigger L1 fetch on org selection
   useEffect(() => {
     if (dimension === '一级分行' && selectedL1OrgId) {
-      fetchL1Monthly(selectedL1OrgId);
+      setL1MonthlyLoading(true);
+      apiGet<L1MonthlyResult>(`/allocation/analysis/l1-monthly?orgId=${selectedL1OrgId}`)
+        .then(setL1MonthlyData).catch(() => setL1MonthlyData(null))
+        .finally(() => setL1MonthlyLoading(false));
     }
-  }, [dimension, selectedL1OrgId, fetchL1Monthly]);
+  }, [dimension, selectedL1OrgId]);
+
+  // L2 monthly fetch
+  useEffect(() => {
+    if (dimension === '二级分行' && selectedL2OrgId) {
+      setL2MonthlyLoading(true);
+      apiGet<L1MonthlyResult>(`/allocation/analysis/l2-monthly?orgId=${selectedL2OrgId}`)
+        .then(setL2MonthlyData).catch(() => setL2MonthlyData(null))
+        .finally(() => setL2MonthlyLoading(false));
+    }
+  }, [dimension, selectedL2OrgId]);
+
+  // Department monthly fetch
+  useEffect(() => {
+    if (dimension === '部门' && selectedDeptOrgId) {
+      setDeptMonthlyLoading(true);
+      apiGet<L1MonthlyResult>(`/allocation/analysis/dept-monthly?orgId=${selectedDeptOrgId}`)
+        .then(setDeptMonthlyData).catch(() => setDeptMonthlyData(null))
+        .finally(() => setDeptMonthlyLoading(false));
+    }
+  }, [dimension, selectedDeptOrgId]);
 
   // Phone number search handler
   const doPhoneSearch = useCallback(async () => {
@@ -382,13 +401,11 @@ export default function FeeAnalysisPage() {
 
   const fetchAnalysis = useCallback(async () => {
     if (!selectedBatchId) return;
-    if (dimension === '单个号码' || dimension === '一级分行') return; // handled separately
+    if (dimension === '单个号码' || dimension === '一级分行' || dimension === '二级分行' || dimension === '部门') return; // handled separately
     setLoading(true);
     try {
       const dimCode = DIM_MAP[dimension];
       let url = `/allocation/analysis?batchId=${selectedBatchId}&dimension=${dimCode}`;
-      if (dimension === '二级分行') url += `&orgId=${selectedL1OrgId || 0}`;
-      if (dimension === '部门' && selectedParentOrgId) url += `&orgId=${selectedParentOrgId}`;
       const data = await apiGet<Record<string, unknown>>(url);
       setAnalysisData(data);
     } catch {
@@ -396,19 +413,27 @@ export default function FeeAnalysisPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedBatchId, dimension, selectedL1OrgId, selectedParentOrgId]);
+  }, [selectedBatchId, dimension]);
 
   useEffect(() => { fetchAnalysis(); }, [fetchAnalysis]);
 
   // Org dropdowns
   const l1Orgs = useMemo(() => orgList.filter(o => o.type === 2), [orgList]);
 
-  const parentOrgOptions = useMemo(() => {
-    if (dimension === '部门') {
-      return orgList.map(o => ({ label: `${o.name} (${ORG_TYPE_LABEL[o.type] || o.type})`, value: o.id }));
-    }
-    return [];
-  }, [orgList, dimension]);
+  // L2 orgs under selected L1
+  const l2Orgs = useMemo(() => {
+    if (!selectedL1OrgId) return [];
+    const l1 = orgList.find(o => o.id === selectedL1OrgId);
+    if (!l1?.path) return [];
+    return orgList.filter(o => o.type === 3 && o.path?.startsWith(l1.path) && o.id !== l1.id);
+  }, [orgList, selectedL1OrgId]);
+
+  // Department org options (all non-root orgs)
+  const deptOrgOptions = useMemo(() => {
+    return orgList
+      .filter(o => o.type !== 1) // exclude 集团
+      .map(o => ({ label: `${o.name} (${ORG_TYPE_LABEL[o.type] || o.type})`, value: o.id }));
+  }, [orgList]);
 
   // Parse analysis data
   const rows: FeeRow[] = analysisData?.rows as FeeRow[] || [];
@@ -416,14 +441,6 @@ export default function FeeAnalysisPage() {
 
   const breakdownList = (allData?.fee_breakdown || []) as { name: string; value: number; percent: string }[];
   const topOrgs = (allData?.top_orgs || []) as FeeRow[];
-
-  // Deparment columns (add org_type)
-  const deptColumns = [
-    { title: '组织名称', dataIndex: 'org_name', key: 'org_name', width: 180, fixed: 'left' as const },
-    { title: '类型', dataIndex: 'org_type', key: 'org_type', width: 90,
-      render: (v: number) => ORG_TYPE_LABEL[v] || v || '-' },
-    ...feeColumns.slice(1),
-  ];
 
   // ==================== 月度对比Tab ====================
 
@@ -678,37 +695,114 @@ export default function FeeAnalysisPage() {
   const renderL2Content = () => (
     <>
       <Row gutter={16} style={{ marginBottom: 12 }}>
-        <Col><span style={{ marginRight: 8 }}>选择一级分行：</span>
+        <Col>
+          <span style={{ marginRight: 8 }}>选择一级分行：</span>
           <Select style={{ width: 240 }} placeholder="选择一级分行" value={selectedL1OrgId} onChange={setSelectedL1OrgId}
+            showSearch optionFilterProp="label"
             options={l1Orgs.map(o => ({ label: o.name, value: o.id }))} />
         </Col>
+        {selectedL1OrgId && (
+          <Col>
+            <span style={{ marginRight: 8 }}>选择二级分行：</span>
+            <Select style={{ width: 240 }} placeholder="选择二级分行" value={selectedL2OrgId} onChange={setSelectedL2OrgId}
+              showSearch optionFilterProp="label"
+              options={l2Orgs.map(o => ({ label: o.name, value: o.id }))} />
+          </Col>
+        )}
       </Row>
-      {rows.length > 0 ? (
-        <Table columns={feeColumns} dataSource={rows} rowKey="org_id" size="small" loading={loading}
-          pagination={{ pageSize: 50, showSizeChanger: true, showTotal: t => `共 ${t} 条` }} scroll={{ x: 1000 }} />
-      ) : <Empty description={selectedL1OrgId ? '该分行下暂无数据' : '请选择一级分行'} />}
+
+      {l2MonthlyLoading && <div style={{ textAlign: 'center', padding: 40, color: COLORS.textMuted }}>加载中...</div>}
+
+      {l2MonthlyData && l2MonthlyData.rows && l2MonthlyData.rows.length > 0 ? (
+        <>
+          {/* 汇总卡片 */}
+          <Row gutter={16} style={{ marginBottom: 20 }}>
+            <Col span={5}>
+              <Statistic title="二级分行" value={l2MonthlyData.org_name} valueStyle={{ fontSize: 18, color: COLORS.sage }} />
+            </Col>
+            <Col span={4}>
+              <Statistic title="累计费用" value={Number(l2MonthlyData.total_fee || 0).toFixed(2)} prefix="¥" valueStyle={{ color: COLORS.sage }} />
+            </Col>
+            <Col span={4}>
+              <Statistic title="月均费用" value={Number(l2MonthlyData.avg_monthly_fee || 0).toFixed(2)} prefix="¥" />
+            </Col>
+            <Col span={3}>
+              <Statistic title="数据月数" value={l2MonthlyData.month_count} suffix="个月" />
+            </Col>
+          </Row>
+
+          {/* YoY双柱对比图 */}
+          <Card size="small" title="月度费用同比对比" style={{ marginBottom: 16 }}>
+            <YoyBarChart data={l2MonthlyData.rows} height={240} />
+          </Card>
+
+          {/* 数据表 */}
+          <Card size="small" title="月度费用明细">
+            <Table columns={l1DetailColumns} dataSource={l2MonthlyData.rows} rowKey="billing_month" size="small"
+              pagination={false} scroll={{ x: 1100 }} />
+          </Card>
+        </>
+      ) : selectedL2OrgId && !l2MonthlyLoading ? (
+        <Empty description="该分行暂无费用数据" />
+      ) : !selectedL2OrgId ? (
+        <Empty description={selectedL1OrgId ? '请选择二级分行' : '请先选择一级分行'} />
+      ) : null}
     </>
   );
 
   const renderDeptContent = () => (
     <>
       <Row gutter={16} style={{ marginBottom: 12 }}>
-        <Col><span style={{ marginRight: 8 }}>选择上级组织：</span>
-          <Select style={{ width: 300 }} placeholder="选择上级组织" showSearch optionFilterProp="label"
-            value={selectedParentOrgId} onChange={setSelectedParentOrgId} options={parentOrgOptions} />
+        <Col>
+          <span style={{ marginRight: 8 }}>选择部门：</span>
+          <Select style={{ width: 320 }} placeholder="选择部门" showSearch optionFilterProp="label"
+            value={selectedDeptOrgId} onChange={setSelectedDeptOrgId} options={deptOrgOptions} />
         </Col>
       </Row>
-      {rows.length > 0 ? (
-        <Table columns={deptColumns} dataSource={rows} rowKey="org_id" size="small" loading={loading}
-          pagination={{ pageSize: 50, showSizeChanger: true, showTotal: t => `共 ${t} 条` }} scroll={{ x: 1100 }} />
-      ) : <Empty description={selectedParentOrgId ? '该组织下暂无数据' : '请选择上级组织'} />}
+
+      {deptMonthlyLoading && <div style={{ textAlign: 'center', padding: 40, color: COLORS.textMuted }}>加载中...</div>}
+
+      {deptMonthlyData && deptMonthlyData.rows && deptMonthlyData.rows.length > 0 ? (
+        <>
+          {/* 汇总卡片 */}
+          <Row gutter={16} style={{ marginBottom: 20 }}>
+            <Col span={5}>
+              <Statistic title="部门" value={deptMonthlyData.org_name} valueStyle={{ fontSize: 18, color: COLORS.sage }} />
+            </Col>
+            <Col span={4}>
+              <Statistic title="累计费用" value={Number(deptMonthlyData.total_fee || 0).toFixed(2)} prefix="¥" valueStyle={{ color: COLORS.sage }} />
+            </Col>
+            <Col span={4}>
+              <Statistic title="月均费用" value={Number(deptMonthlyData.avg_monthly_fee || 0).toFixed(2)} prefix="¥" />
+            </Col>
+            <Col span={3}>
+              <Statistic title="数据月数" value={deptMonthlyData.month_count} suffix="个月" />
+            </Col>
+          </Row>
+
+          {/* YoY双柱对比图 */}
+          <Card size="small" title="月度费用同比对比" style={{ marginBottom: 16 }}>
+            <YoyBarChart data={deptMonthlyData.rows} height={240} />
+          </Card>
+
+          {/* 数据表 */}
+          <Card size="small" title="月度费用明细">
+            <Table columns={l1DetailColumns} dataSource={deptMonthlyData.rows} rowKey="billing_month" size="small"
+              pagination={false} scroll={{ x: 1100 }} />
+          </Card>
+        </>
+      ) : selectedDeptOrgId && !deptMonthlyLoading ? (
+        <Empty description="该部门暂无费用数据" />
+      ) : !selectedDeptOrgId ? (
+        <Empty description="请选择部门" />
+      ) : null}
     </>
   );
 
   const renderAnalysisTab = () => (
     <>
       <Row gutter={16} align="middle" style={{ marginBottom: 16 }}>
-        {dimension !== '单个号码' && dimension !== '一级分行' && (
+        {dimension === '全部' && (
           <Col>
             <span style={{ marginRight: 8 }}>账单月份：</span>
             <Select style={{ width: 180 }} placeholder="选择月份" value={selectedBatchId} onChange={setSelectedBatchId}

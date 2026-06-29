@@ -396,6 +396,27 @@ public class FeeAnalysisService {
      * 一级分行月度费用：指定L1分行在各月的费用汇总（含同比数据）
      */
     public Map<String, Object> analyzeL1Monthly(Long orgId) {
+        return analyzeOrgMonthly(orgId);
+    }
+
+    /**
+     * 二级分行月度费用：指定L2分行在各月的费用汇总（含同比数据）
+     */
+    public Map<String, Object> analyzeL2Monthly(Long orgId) {
+        return analyzeOrgMonthly(orgId);
+    }
+
+    /**
+     * 部门月度费用：指定部门在各月的费用汇总（含同比数据）
+     */
+    public Map<String, Object> analyzeDeptMonthly(Long orgId) {
+        return analyzeOrgMonthly(orgId);
+    }
+
+    /**
+     * 通用组织月度费用分析：指定组织在各月的费用汇总（含同比数据）
+     */
+    private Map<String, Object> analyzeOrgMonthly(Long orgId) {
         List<BillBatch> allBatches = billBatchRepository.findByDeletedAtIsNullOrderByBillingMonthAsc();
         Map<Long, SysOrganization> orgMap = orgRepository.findAll().stream()
                 .filter(o -> o.getDeletedAt() == null)

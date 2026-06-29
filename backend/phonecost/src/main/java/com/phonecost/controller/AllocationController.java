@@ -478,6 +478,16 @@ public class AllocationController {
         return ResponseEntity.ok(ApiResponse.ok(feeAnalysisService.analyzeL1Monthly(orgId)));
     }
 
+    @GetMapping("/analysis/l2-monthly")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> analyzeL2Monthly(@RequestParam Long orgId) {
+        return ResponseEntity.ok(ApiResponse.ok(feeAnalysisService.analyzeL2Monthly(orgId)));
+    }
+
+    @GetMapping("/analysis/dept-monthly")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> analyzeDeptMonthly(@RequestParam Long orgId) {
+        return ResponseEntity.ok(ApiResponse.ok(feeAnalysisService.analyzeDeptMonthly(orgId)));
+    }
+
     @GetMapping("/analysis")
     public ResponseEntity<ApiResponse<Map<String, Object>>> analyze(
             @RequestParam Long batchId,
