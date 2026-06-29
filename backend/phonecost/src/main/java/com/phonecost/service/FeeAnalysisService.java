@@ -314,6 +314,47 @@ public class FeeAnalysisService {
         return rows;
     }
 
+    /**
+     * 月度总费用对比：返回近12个月（或所有有数据的月份）的费用汇总
+     */
+    public List<Map<String, Object>> monthlyComparison() {
+        List<BillBatch> batches = billBatchRepository.findByDeletedAtIsNullOrderByBillingMonthAsc();
+        List<Map<String, Object>> rows = new ArrayList<>();
+
+        for (BillBatch batch : batches) {
+            List<AllocationResult> results = allocationResultRepository.findByBatchIdAndDeletedAtIsNull(batch.getId());
+
+            BigDecimal totalRent = BigDecimal.ZERO, totalCall = BigDecimal.ZERO, totalRecording = BigDecimal.ZERO;
+            BigDecimal totalCrbt = BigDecimal.ZERO, totalFlash = BigDecimal.ZERO, totalFee = BigDecimal.ZERO;
+            int phoneCount = 0;
+
+            for (AllocationResult r : results) {
+                totalRent = totalRent.add(r.getMonthlyRent() != null ? r.getMonthlyRent() : BigDecimal.ZERO);
+                totalCall = totalCall.add(r.getCallFee() != null ? r.getCallFee() : BigDecimal.ZERO);
+                totalRecording = totalRecording.add(r.getRecordingFee() != null ? r.getRecordingFee() : BigDecimal.ZERO);
+                totalCrbt = totalCrbt.add(r.getCrbtFee() != null ? r.getCrbtFee() : BigDecimal.ZERO);
+                totalFlash = totalFlash.add(r.getFlashMsgFee() != null ? r.getFlashMsgFee() : BigDecimal.ZERO);
+                totalFee = totalFee.add(r.getTotalFee() != null ? r.getTotalFee() : BigDecimal.ZERO);
+                phoneCount += r.getPhoneCount() != null ? r.getPhoneCount() : 0;
+            }
+
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("batch_id", batch.getId());
+            row.put("billing_month", batch.getBillingMonth());
+            row.put("total_fee", totalFee);
+            row.put("monthly_rent", totalRent);
+            row.put("call_fee", totalCall);
+            row.put("recording_fee", totalRecording);
+            row.put("crbt_fee", totalCrbt);
+            row.put("flash_msg_fee", totalFlash);
+            row.put("phone_count", phoneCount);
+            row.put("org_count", (int) results.stream().filter(r -> r.getOrgId() != null && r.getOrgId() != -1L).count());
+            rows.add(row);
+        }
+
+        return rows;
+    }
+
     // === Helper methods ===
 
     private Long findAncestorByType(Map<Long, SysOrganization> orgMap, Long orgId, byte type) {

@@ -11,4 +11,5 @@ import java.util.Optional;
 public interface BillBatchRepository extends JpaRepository<BillBatch, Long> {
     Optional<BillBatch> findByBatchNoAndDeletedAtIsNull(String batchNo);
     List<BillBatch> findByBillingMonthAndDeletedAtIsNull(String billingMonth);
+    List<BillBatch> findByDeletedAtIsNullOrderByBillingMonthAsc();
 }

@@ -467,6 +467,11 @@ public class AllocationController {
 
     // ==================== 费用分析 ====================
 
+    @GetMapping("/analysis/monthly-comparison")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> monthlyComparison() {
+        return ResponseEntity.ok(ApiResponse.ok(feeAnalysisService.monthlyComparison()));
+    }
+
     @GetMapping("/analysis")
     public ResponseEntity<ApiResponse<Map<String, Object>>> analyze(
             @RequestParam Long batchId,

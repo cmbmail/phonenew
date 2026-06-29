@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Card, Select, Tabs, Table, Statistic, Row, Col, Input, Segmented, Empty, Tag } from 'antd';
-import { SearchOutlined, BarChartOutlined } from '@ant-design/icons';
+import { Card, Select, Table, Statistic, Row, Col, Input, Segmented, Empty, Tag, Tabs, Tooltip } from 'antd';
+import { SearchOutlined, BarChartOutlined, SwapOutlined } from '@ant-design/icons';
 import { COLORS } from '../theme/morandi';
 import { apiGet } from '../lib/request';
 import { getBillBatches } from '../api/import';
@@ -29,7 +29,21 @@ interface FeeRow {
   sheet_breakdown?: Record<string, number>;
 }
 
+interface MonthlyRow {
+  batch_id: number;
+  billing_month: string;
+  total_fee: number;
+  monthly_rent: number;
+  call_fee: number;
+  recording_fee: number;
+  crbt_fee: number;
+  flash_msg_fee: number;
+  phone_count: number;
+  org_count: number;
+}
+
 type Dimension = '全部' | '一级分行' | '二级分行' | '部门' | '单个号码';
+type MainTab = 'comparison' | 'analysis';
 
 const DIM_MAP: Record<Dimension, string> = {
   '全部': 'ALL', '一级分行': 'L1', '二级分行': 'L2', '部门': 'DEPARTMENT', '单个号码': 'PHONE',
@@ -40,6 +54,12 @@ const ORG_TYPE_LABEL: Record<number, string> = { 1: '集团', 2: '一级分行',
 const money = (v: unknown) => {
   const n = Number(v);
   return !isNaN(n) && n !== 0 ? `¥${n.toFixed(2)}` : '-';
+};
+
+const moneyWan = (v: number) => {
+  if (!v || v === 0) return '¥0';
+  if (v >= 10000) return `¥${(v / 10000).toFixed(2)}万`;
+  return `¥${v.toFixed(2)}`;
 };
 
 const feeColumns = [
@@ -53,12 +73,127 @@ const feeColumns = [
   { title: '号码数', dataIndex: 'phone_count', key: 'phone_count', width: 80, sorter: (a: FeeRow, b: FeeRow) => (a.phone_count || 0) - (b.phone_count || 0) },
 ];
 
+// ==================== 纯CSS柱状图 ====================
+
+// 费用类型配色（Morandi色系）
+const FEE_BAR_COLORS: Record<string, string> = {
+  total_fee: COLORS.sage,
+  monthly_rent: COLORS.taupe,
+  call_fee: COLORS.slate,
+  recording_fee: COLORS.mauve,
+  crbt_fee: COLORS.confirmed,
+  flash_msg_fee: COLORS.pending,
+};
+
+type BarField = 'total_fee' | 'monthly_rent' | 'call_fee' | 'recording_fee' | 'crbt_fee' | 'flash_msg_fee';
+
+const BAR_FIELD_LABELS: Record<BarField, string> = {
+  total_fee: '总费用',
+  monthly_rent: '月租费',
+  call_fee: '通话费',
+  recording_fee: '录音费',
+  crbt_fee: '彩铃费',
+  flash_msg_fee: '闪信费',
+};
+
+function BarChart({ data, field, height = 260 }: { data: MonthlyRow[]; field?: BarField; height?: number }) {
+  const [activeField, setActiveField] = useState<BarField>(field || 'total_fee');
+  const values = data.map(d => Number(d[activeField]) || 0);
+  const maxVal = Math.max(...values, 1);
+
+  // 计算环比
+  const changes = data.map((d, i) => {
+    if (i === 0) return null;
+    const prev = Number(data[i - 1][activeField]) || 0;
+    const cur = Number(d[activeField]) || 0;
+    if (prev === 0) return null;
+    return ((cur - prev) / prev * 100).toFixed(1);
+  });
+
+  return (
+    <div>
+      {/* 指标选择 */}
+      <Row gutter={8} style={{ marginBottom: 16 }}>
+        {(Object.keys(BAR_FIELD_LABELS) as BarField[]).map(f => (
+          <Col key={f}>
+            <span
+              onClick={() => setActiveField(f)}
+              style={{
+                display: 'inline-block',
+                padding: '2px 10px',
+                fontSize: 12,
+                cursor: 'pointer',
+                borderRadius: 3,
+                border: `1px solid ${activeField === f ? FEE_BAR_COLORS[f] : COLORS.border}`,
+                background: activeField === f ? FEE_BAR_COLORS[f] : 'transparent',
+                color: activeField === f ? '#fff' : COLORS.textDark,
+                transition: 'all 0.2s',
+              }}
+            >
+              {BAR_FIELD_LABELS[f]}
+            </span>
+          </Col>
+        ))}
+      </Row>
+
+      {/* 柱状图 */}
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: data.length > 6 ? 12 : 24, height, padding: '0 8px 28px', borderBottom: `1px solid ${COLORS.border}` }}>
+        {data.map((d, i) => {
+          const val = Number(d[activeField]) || 0;
+          const pct = maxVal > 0 ? (val / maxVal) * 100 : 0;
+          const change = changes[i];
+          const isUp = change !== null && Number(change) > 0;
+          const isDown = change !== null && Number(change) < 0;
+
+          return (
+            <div key={d.billing_month} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 40 }}>
+              {/* 数值 */}
+              <div style={{ fontSize: 11, color: COLORS.textDark, marginBottom: 4, whiteSpace: 'nowrap', fontWeight: 500 }}>
+                {moneyWan(val)}
+              </div>
+              {/* 柱子 */}
+              <Tooltip title={`${d.billing_month} ${BAR_FIELD_LABELS[activeField]}: ${money(val)}`}>
+                <div style={{
+                  width: '100%',
+                  maxWidth: 56,
+                  minHeight: 2,
+                  height: `${Math.max(pct, 1)}%`,
+                  background: FEE_BAR_COLORS[activeField],
+                  borderRadius: '3px 3px 0 0',
+                  transition: 'height 0.4s ease',
+                }} />
+              </Tooltip>
+              {/* 月份标签 */}
+              <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 6, whiteSpace: 'nowrap' }}>
+                {d.billing_month?.slice(5) || ''}
+              </div>
+              {/* 环比 */}
+              {change !== null && (
+                <div style={{ fontSize: 10, color: isUp ? COLORS.danger : isDown ? COLORS.confirmed : COLORS.textMuted, whiteSpace: 'nowrap' }}>
+                  {isUp ? '+' : ''}{change}%
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ==================== 主页面 ====================
+
 export default function FeeAnalysisPage() {
   const [batches, setBatches] = useState<BillBatch[]>([]);
   const [selectedBatchId, setSelectedBatchId] = useState<number | null>(null);
   const [dimension, setDimension] = useState<Dimension>('全部');
   const [loading, setLoading] = useState(false);
   const [analysisData, setAnalysisData] = useState<Record<string, unknown> | null>(null);
+  const [mainTab, setMainTab] = useState<MainTab>('comparison');
+
+  // Monthly comparison data
+  const [monthlyData, setMonthlyData] = useState<MonthlyRow[]>([]);
+  const [monthlyLoading, setMonthlyLoading] = useState(false);
 
   // Org selectors for L2/Department
   const [orgList, setOrgList] = useState<Organization[]>([]);
@@ -76,7 +211,19 @@ export default function FeeAnalysisPage() {
     try { setOrgList(await getOrgTree()); } catch { /* */ }
   }, []);
 
-  useEffect(() => { fetchBatches(); fetchOrgs(); }, [fetchBatches, fetchOrgs]);
+  const fetchMonthly = useCallback(async () => {
+    setMonthlyLoading(true);
+    try {
+      const data = await apiGet<MonthlyRow[]>('/allocation/analysis/monthly-comparison');
+      setMonthlyData(data);
+    } catch {
+      setMonthlyData([]);
+    } finally {
+      setMonthlyLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchBatches(); fetchOrgs(); fetchMonthly(); }, [fetchBatches, fetchOrgs, fetchMonthly]);
 
   useEffect(() => {
     if (batches.length > 0 && !selectedBatchId) {
@@ -149,6 +296,64 @@ export default function FeeAnalysisPage() {
       render: (v: number) => ORG_TYPE_LABEL[v] || v || '-' },
     ...feeColumns.slice(1),
   ];
+
+  // ==================== 月度对比Tab ====================
+
+  const monthlyColumns = [
+    { title: '月份', dataIndex: 'billing_month', key: 'billing_month', width: 100, fixed: 'left' as const },
+    { title: '总费用', dataIndex: 'total_fee', key: 'total_fee', width: 120, render: (v: number) => <strong>{money(v)}</strong>,
+      sorter: (a: MonthlyRow, b: MonthlyRow) => (a.total_fee || 0) - (b.total_fee || 0), defaultSortOrder: 'descend' as const },
+    { title: '月租费', dataIndex: 'monthly_rent', key: 'monthly_rent', width: 110, render: money },
+    { title: '通话费', dataIndex: 'call_fee', key: 'call_fee', width: 110, render: money },
+    { title: '录音费', dataIndex: 'recording_fee', key: 'recording_fee', width: 110, render: money },
+    { title: '彩铃费', dataIndex: 'crbt_fee', key: 'crbt_fee', width: 110, render: money },
+    { title: '闪信费', dataIndex: 'flash_msg_fee', key: 'flash_msg_fee', width: 110, render: money },
+    { title: '号码数', dataIndex: 'phone_count', key: 'phone_count', width: 80 },
+    { title: '组织数', dataIndex: 'org_count', key: 'org_count', width: 80 },
+  ];
+
+  const renderComparisonTab = () => {
+    if (monthlyLoading) return <div style={{ textAlign: 'center', padding: 40, color: COLORS.textMuted }}>加载中...</div>;
+    if (monthlyData.length === 0) return <Empty description="暂无月度数据" />;
+
+    // 汇总统计
+    const latest = monthlyData[monthlyData.length - 1];
+    const prev = monthlyData.length >= 2 ? monthlyData[monthlyData.length - 2] : null;
+    const totalChange = prev && Number(prev.total_fee) > 0
+      ? ((Number(latest.total_fee) - Number(prev.total_fee)) / Number(prev.total_fee) * 100).toFixed(1)
+      : null;
+
+    return (
+      <>
+        {/* 汇总卡片 */}
+        <Row gutter={16} style={{ marginBottom: 20 }}>
+          <Col span={4}><Statistic title="最新月份" value={latest.billing_month} valueStyle={{ fontSize: 18, color: COLORS.sage }} /></Col>
+          <Col span={5}>
+            <Statistic title="最新月总费用" value={Number(latest.total_fee || 0).toFixed(2)} prefix="¥" valueStyle={{ color: COLORS.sage }} />
+            {totalChange !== null && <div style={{ fontSize: 12, color: Number(totalChange) > 0 ? COLORS.danger : COLORS.confirmed }}>
+              环比 {Number(totalChange) > 0 ? '+' : ''}{totalChange}%
+            </div>}
+          </Col>
+          <Col span={3}><Statistic title="号码数" value={latest.phone_count} /></Col>
+          <Col span={3}><Statistic title="组织数" value={latest.org_count} /></Col>
+          <Col span={4}><Statistic title="数据月份" value={`${monthlyData.length}个月`} suffix={`/ ${monthlyData.length}`} /></Col>
+        </Row>
+
+        {/* 柱状图 */}
+        <Card size="small" title="月度费用对比" style={{ marginBottom: 16 }}>
+          <BarChart data={monthlyData} />
+        </Card>
+
+        {/* 数据表 */}
+        <Card size="small" title="月度费用明细">
+          <Table columns={monthlyColumns} dataSource={monthlyData} rowKey="billing_month" size="small"
+            pagination={false} scroll={{ x: 1000 }} />
+        </Card>
+      </>
+    );
+  };
+
+  // ==================== 费用分析Tab ====================
 
   const renderAllContent = () => (
     <>
@@ -250,8 +455,8 @@ export default function FeeAnalysisPage() {
     </>
   );
 
-  return (
-    <Card title={<><BarChartOutlined style={{ marginRight: 8 }} />费用分析</>} styles={{ body: { padding: '16px 20px' } }}>
+  const renderAnalysisTab = () => (
+    <>
       <Row gutter={16} align="middle" style={{ marginBottom: 16 }}>
         <Col>
           <span style={{ marginRight: 8 }}>账单月份：</span>
@@ -269,6 +474,15 @@ export default function FeeAnalysisPage() {
       {dimension === '二级分行' && renderL2Content()}
       {dimension === '部门' && renderDeptContent()}
       {dimension === '单个号码' && renderPhoneContent()}
+    </>
+  );
+
+  return (
+    <Card title={<><BarChartOutlined style={{ marginRight: 8 }} />费用分析</>} styles={{ body: { padding: '16px 20px' } }}>
+      <Tabs activeKey={mainTab} onChange={k => setMainTab(k as MainTab)} items={[
+        { key: 'comparison', label: <><SwapOutlined /> 总费用对比</>, children: renderComparisonTab() },
+        { key: 'analysis', label: <><BarChartOutlined /> 费用分析</>, children: renderAnalysisTab() },
+      ]} />
     </Card>
   );
 }
