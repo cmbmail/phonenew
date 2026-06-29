@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Card, Select, Table, Statistic, Row, Col, Input, Segmented, Empty, Tag, Tabs, Tooltip } from 'antd';
-import { SearchOutlined, BarChartOutlined, SwapOutlined, PhoneOutlined } from '@ant-design/icons';
+import { Card, Select, Table, Statistic, Row, Col, Input, Segmented, Empty, Tag, Tooltip } from 'antd';
+import { SearchOutlined, BarChartOutlined, PhoneOutlined } from '@ant-design/icons';
 import { COLORS } from '../theme/morandi';
 import { apiGet } from '../lib/request';
 import { getBillBatches } from '../api/import';
@@ -26,19 +26,6 @@ interface FeeRow {
   phone_number?: string;
   ownership_source?: string;
   detail_count?: number;
-}
-
-interface MonthlyRow {
-  batch_id: number;
-  billing_month: string;
-  total_fee: number;
-  monthly_rent: number;
-  call_fee: number;
-  recording_fee: number;
-  crbt_fee: number;
-  flash_msg_fee: number;
-  phone_count: number;
-  org_count: number;
 }
 
 interface PhoneAnalysisResult {
@@ -77,7 +64,6 @@ interface L1MonthlyResult {
 }
 
 type Dimension = '全部' | '一级分行' | '二级分行' | '部门' | '单个号码';
-type MainTab = 'comparison' | 'analysis';
 
 const DIM_MAP: Record<Dimension, string> = {
   '全部': 'ALL', '一级分行': 'L1', '二级分行': 'L2', '部门': 'DEPARTMENT', '单个号码': 'PHONE',
@@ -295,11 +281,6 @@ export default function FeeAnalysisPage() {
   const [dimension, setDimension] = useState<Dimension>('全部');
   const [loading, setLoading] = useState(false);
   const [analysisData, setAnalysisData] = useState<Record<string, unknown> | null>(null);
-  const [mainTab, setMainTab] = useState<MainTab>('comparison');
-
-  // Monthly comparison data
-  const [monthlyData, setMonthlyData] = useState<MonthlyRow[]>([]);
-  const [monthlyLoading, setMonthlyLoading] = useState(false);
 
   // Phone analysis data
   const [phoneData, setPhoneData] = useState<PhoneAnalysisResult | null>(null);
@@ -334,19 +315,7 @@ export default function FeeAnalysisPage() {
     try { setOrgList(await getOrgTree()); } catch { /* */ }
   }, []);
 
-  const fetchMonthly = useCallback(async () => {
-    setMonthlyLoading(true);
-    try {
-      const data = await apiGet<MonthlyRow[]>('/allocation/analysis/monthly-comparison');
-      setMonthlyData(data);
-    } catch {
-      setMonthlyData([]);
-    } finally {
-      setMonthlyLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { fetchBatches(); fetchOrgs(); fetchMonthly(); }, [fetchBatches, fetchOrgs, fetchMonthly]);
+  useEffect(() => { fetchBatches(); fetchOrgs(); }, [fetchBatches, fetchOrgs]);
 
   useEffect(() => {
     if (batches.length > 0 && !selectedBatchId) {
@@ -441,58 +410,6 @@ export default function FeeAnalysisPage() {
 
   const breakdownList = (allData?.fee_breakdown || []) as { name: string; value: number; percent: string }[];
   const topOrgs = (allData?.top_orgs || []) as FeeRow[];
-
-  // ==================== 月度对比Tab ====================
-
-  const monthlyColumns = [
-    { title: '月份', dataIndex: 'billing_month', key: 'billing_month', width: 100, fixed: 'left' as const },
-    { title: '总费用', dataIndex: 'total_fee', key: 'total_fee', width: 120, render: (v: number) => <strong>{money(v)}</strong>,
-      sorter: (a: MonthlyRow, b: MonthlyRow) => (a.total_fee || 0) - (b.total_fee || 0), defaultSortOrder: 'descend' as const },
-    { title: '月租费', dataIndex: 'monthly_rent', key: 'monthly_rent', width: 110, render: money },
-    { title: '通话费', dataIndex: 'call_fee', key: 'call_fee', width: 110, render: money },
-    { title: '录音费', dataIndex: 'recording_fee', key: 'recording_fee', width: 110, render: money },
-    { title: '彩铃费', dataIndex: 'crbt_fee', key: 'crbt_fee', width: 110, render: money },
-    { title: '闪信费', dataIndex: 'flash_msg_fee', key: 'flash_msg_fee', width: 110, render: money },
-    { title: '号码数', dataIndex: 'phone_count', key: 'phone_count', width: 80 },
-    { title: '组织数', dataIndex: 'org_count', key: 'org_count', width: 80 },
-  ];
-
-  const renderComparisonTab = () => {
-    if (monthlyLoading) return <div style={{ textAlign: 'center', padding: 40, color: COLORS.textMuted }}>加载中...</div>;
-    if (monthlyData.length === 0) return <Empty description="暂无月度数据" />;
-
-    const latest = monthlyData[monthlyData.length - 1];
-    const prev = monthlyData.length >= 2 ? monthlyData[monthlyData.length - 2] : null;
-    const totalChange = prev && Number(prev.total_fee) > 0
-      ? ((Number(latest.total_fee) - Number(prev.total_fee)) / Number(prev.total_fee) * 100).toFixed(1)
-      : null;
-
-    return (
-      <>
-        <Row gutter={16} style={{ marginBottom: 20 }}>
-          <Col span={4}><Statistic title="最新月份" value={latest.billing_month} valueStyle={{ fontSize: 18, color: COLORS.sage }} /></Col>
-          <Col span={5}>
-            <Statistic title="最新月总费用" value={Number(latest.total_fee || 0).toFixed(2)} prefix="¥" valueStyle={{ color: COLORS.sage }} />
-            {totalChange !== null && <div style={{ fontSize: 12, color: Number(totalChange) > 0 ? COLORS.danger : COLORS.confirmed }}>
-              环比 {Number(totalChange) > 0 ? '+' : ''}{totalChange}%
-            </div>}
-          </Col>
-          <Col span={3}><Statistic title="号码数" value={latest.phone_count} /></Col>
-          <Col span={3}><Statistic title="组织数" value={latest.org_count} /></Col>
-          <Col span={4}><Statistic title="数据月份" value={`${monthlyData.length}个月`} /></Col>
-        </Row>
-
-        <Card size="small" title="月度费用对比" style={{ marginBottom: 16 }}>
-          <BarChart data={monthlyData} />
-        </Card>
-
-        <Card size="small" title="月度费用明细">
-          <Table columns={monthlyColumns} dataSource={monthlyData} rowKey="billing_month" size="small"
-            pagination={false} scroll={{ x: 1000 }} />
-        </Card>
-      </>
-    );
-  };
 
   // ==================== 一级分行分析 ====================
 
@@ -825,10 +742,7 @@ export default function FeeAnalysisPage() {
 
   return (
     <Card title={<><BarChartOutlined style={{ marginRight: 8 }} />费用分析</>} styles={{ body: { padding: '16px 20px' } }}>
-      <Tabs activeKey={mainTab} onChange={k => setMainTab(k as MainTab)} items={[
-        { key: 'comparison', label: <><SwapOutlined /> 总费用对比</>, children: renderComparisonTab() },
-        { key: 'analysis', label: <><BarChartOutlined /> 费用分析</>, children: renderAnalysisTab() },
-      ]} />
+      {renderAnalysisTab()}
     </Card>
   );
 }
