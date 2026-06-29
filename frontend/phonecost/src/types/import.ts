@@ -84,10 +84,3 @@ export const IMPORT_STATUS_MAP: Record<number, { label: string; color: string }>
   1: { label: '成功', color: COLORS.confirmed },
   2: { label: '失败', color: COLORS.danger },
 };
-
-export const MATCH_LEVEL_MAP: Record<string, { label: string; color: string }> = {
-  P0: { label: '例外标记', color: COLORS.danger },
-  P1: { label: '通讯录', color: COLORS.confirmed },
-  P2: { label: '号码归属', color: COLORS.slate },
-  P3: { label: '未归属', color: 'default' },
-};

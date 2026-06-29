@@ -323,24 +323,6 @@ export default {
     snapshotBatchInfo: 'Ownership batch #{{ownershipBatch}}, {{matched}} matched',
   },
 
-  // ==================== Cost Center ====================
-  costCenter: {
-    branchCol: 'Branch',
-    branchCodeCol: 'Org Code',
-    deptNameCol: 'Department',
-    costCenterCol: 'Cost Center',
-    typeFilter: 'Type:',
-    typeFilterPlaceholder: 'All types',
-    totalOrgs: 'Total Orgs',
-    branchCount: 'Branches',
-    deptCount: 'Departments',
-    costCenterCount: 'With Cost Center',
-    searchPlaceholder: 'Search branch/code/name',
-    noData: 'No organization data',
-    fetchFailed: 'Failed to fetch data',
-    export: 'Export Mapping',
-  },
-
   // ==================== Department Ownership ====================
   deptOwnership: {
     selectBatch: 'Batch:',

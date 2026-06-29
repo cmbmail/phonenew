@@ -139,7 +139,10 @@ const DirectoryPage: React.FC = () => {
     if (!snap) { setSnapshotEntries([]); return; }
     setSnapshotEntriesLoading(true);
     apiGet<{ entries: DirectoryEntry[]; codeToNameMap: Record<string, string> }>(`/import/directory/entries/${snap.id}`)
-      .then(data => setSnapshotEntries(data.entries))
+      .then(data => {
+        setSnapshotEntries(data.entries);
+        setCodeToNameMap(data.codeToNameMap || {});
+      })
       .catch(() => message.error('获取快照数据失败'))
       .finally(() => setSnapshotEntriesLoading(false));
   }, [selectedSnapshotMonth, snapshots]);

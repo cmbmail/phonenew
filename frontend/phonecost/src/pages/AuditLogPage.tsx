@@ -59,8 +59,8 @@ interface AuditLogEntry {
 
 interface PagedResult {
   content: AuditLogEntry[];
-  totalElements: number;
-  totalPages: number;
+  total_elements: number;
+  total_pages: number;
   number: number;
   size: number;
 }
@@ -85,7 +85,7 @@ const AuditLogPage: React.FC = () => {
       if (dateRange && dateRange[1]) params.set('endDate', dateRange[1].format('YYYY-MM-DD'));
       const result = await apiGet<PagedResult>(`/audit-logs?${params.toString()}`);
       setData(result.content);
-      setTotal(result.totalElements);
+      setTotal(result.total_elements);
     } catch {
       // silent
     } finally {

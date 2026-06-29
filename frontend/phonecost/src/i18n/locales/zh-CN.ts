@@ -380,24 +380,6 @@ export default {
     snapshotBatchInfo: '号码归属批次 #{{ownershipBatch}}，匹配 {{matched}} 条',
   },
 
-  // ==================== Cost Center ====================
-  costCenter: {
-    branchCol: '分行',
-    branchCodeCol: '组织机构代码',
-    deptNameCol: '部门名称',
-    costCenterCol: '成本中心',
-    typeFilter: '类型：',
-    typeFilterPlaceholder: '全部类型',
-    totalOrgs: '组织总数',
-    branchCount: '分行数',
-    deptCount: '部门数',
-    costCenterCount: '有成本中心',
-    searchPlaceholder: '搜索分行/编码/名称',
-    noData: '暂无组织数据',
-    fetchFailed: '获取数据失败',
-    export: '导出映射',
-  },
-
   // ==================== Department Ownership ====================
   deptOwnership: {
     selectBatch: '批次：',
@@ -483,7 +465,7 @@ export default {
     templateDownloadFailed: '模板下载失败',
     addChild: '增加子组织',
     deleteOrg: '删除组织',
-    importMenu: '导入组织机构',
+    importMenu: '导入',
   },
 
   // ==================== User Management ====================

@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Layout, Menu, Avatar, Dropdown, Typography, Popconfirm, Modal, Form, Input, message } from 'antd';
-import { DashboardOutlined, FileTextOutlined, PhoneOutlined, TeamOutlined, SettingOutlined, LogoutOutlined, ImportOutlined, ToolOutlined, BankOutlined, BranchesOutlined, DatabaseOutlined, NumberOutlined, UserSwitchOutlined, BookOutlined, UserOutlined, AuditOutlined, BarChartOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
+import { DashboardOutlined, FileTextOutlined, PhoneOutlined, TeamOutlined, SettingOutlined, LogoutOutlined, ToolOutlined, BankOutlined, BranchesOutlined, DatabaseOutlined, NumberOutlined, UserSwitchOutlined, BookOutlined, UserOutlined, AuditOutlined, BarChartOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
 import { getErrorMessage } from '../types/api';
@@ -49,6 +49,7 @@ const allMenuItems: MenuItemDef[] = [
     roles: [1],
     children: [
       { key: '/settings/users', icon: <UserOutlined />, label: '人员管理' },
+      { key: '/settings/roles', icon: <SafetyCertificateOutlined />, label: '角色管理' },
       { key: '/templates', icon: <ToolOutlined />, label: '模板管理' },
       { key: '/settings/audit-log', icon: <AuditOutlined />, label: '操作日志' },
       { key: '/settings/data-maintenance', icon: <SafetyCertificateOutlined />, label: '数据维护' },
@@ -78,12 +79,14 @@ const AppLayout: React.FC = () => {
   }, [location.pathname]);
 
   const openKeys = useMemo(() => {
+    if (collapsed) return undefined; // 收起时不传 openKeys，让 rc-menu 内部管理 hover popup
     const keys = [...manualOpenKeys];
     if (autoExpandKey && !keys.includes(autoExpandKey)) keys.push(autoExpandKey);
     return keys;
-  }, [manualOpenKeys, autoExpandKey]);
+  }, [collapsed, manualOpenKeys, autoExpandKey]);
 
   const handleOpenChange = (keys: string[]) => {
+    if (collapsed) return; // 收起时不更新 manualOpenKeys（rc-menu 内部自行管理 popup）
     setManualOpenKeys(keys);
   };
 
@@ -127,11 +130,13 @@ const AppLayout: React.FC = () => {
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Sider collapsible collapsed={collapsed} onCollapse={setCollapsed} style={{ overflow: 'auto', height: '100vh', position: 'fixed', left: 0, background: COLORS.charcoal }}>
+      <Sider collapsible collapsed={collapsed} onCollapse={setCollapsed} style={{ overflow: 'hidden', height: '100vh', position: 'fixed', left: 0, background: COLORS.charcoal }}>
         <div style={{ height: 36, margin: '16px 12px', background: 'rgba(139,157,158,0.25)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <Text style={{ color: '#fff', fontSize: collapsed ? 14 : 15, fontWeight: 600, letterSpacing: 1 }}>{collapsed ? 'PC' : '费用分摊'}</Text>
         </div>
-        <Menu theme="dark" mode="inline" selectedKeys={[location.pathname]} openKeys={openKeys} onOpenChange={handleOpenChange} items={menuItems} onClick={({ key }) => navigate(key)} />
+        <div style={{ overflow: 'auto', height: 'calc(100vh - 36px - 32px - 48px)' }}>
+          <Menu theme="dark" mode="inline" selectedKeys={[location.pathname]} openKeys={openKeys} onOpenChange={handleOpenChange} items={menuItems} onClick={({ key }) => navigate(key)} />
+        </div>
       </Sider>
       <Layout style={{ marginLeft: collapsed ? 80 : 200, transition: 'margin-left 0.2s', background: COLORS.cream }}>
         <Header style={{ padding: '0 24px', background: COLORS.white, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', borderBottom: `1px solid ${COLORS.border}`, gap: 16, boxShadow: '0 1px 4px rgba(0,0,0,0.03)' }}>

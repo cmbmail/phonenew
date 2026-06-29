@@ -8,25 +8,38 @@ const { Text } = Typography;
 
 interface BackupRecord {
   id: number;
-  backupType: string;
-  filePath: string;
-  fileSize: number;
+  backup_type: string;
+  file_path: string;
+  file_size: number;
   status: string;
-  tableCount: number;
-  rowCount: number;
-  triggerType: string;
-  errorMessage: string | null;
-  baseBackupId: number | null;
-  createdAt: string;
-  updatedAt: string;
+  table_count: number;
+  row_count: number;
+  trigger_type: string;
+  error_message: string | null;
+  base_backup_id: number | null;
+  created_at: string;
+  updated_at: string;
 }
 
 interface PagedResult {
   content: BackupRecord[];
-  totalElements: number;
-  totalPages: number;
+  total_elements: number;
+  total_pages: number;
   number: number;
   size: number;
+}
+
+interface RestoreStep {
+  step: number;
+  backup_id: number;
+  backup_type: string;
+  file_path: string;
+  created_at: string;
+}
+
+interface RestoreResponse {
+  chain_restore: boolean;
+  steps: RestoreStep[];
 }
 
 const formatSize = (bytes: number) => {
@@ -50,8 +63,8 @@ export default function DataMaintenancePage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [restoreResult, setRestoreResult] = useState<{
     visible: boolean;
-    chainRestore: boolean;
-    steps: { step: number; backupId: number; backupType: string; createdAt: string }[];
+    chain_restore: boolean;
+    steps: RestoreStep[];
   } | null>(null);
 
   const fetchData = useCallback(async () => {
@@ -59,7 +72,7 @@ export default function DataMaintenancePage() {
     try {
       const res = await apiGet<PagedResult>(`/backups?page=${page}&size=${pageSize}`);
       setData(res.content || []);
-      setTotal(res.totalElements || 0);
+      setTotal(res.total_elements || 0);
     } catch {
       message.error('加载备份列表失败');
     } finally {
@@ -101,15 +114,11 @@ export default function DataMaintenancePage() {
     setActionLoading('restore-' + id);
     try {
       message.loading({ content: '正在恢复数据，请勿操作...', key: 'restore', duration: 0 });
-      const res = await apiPost<{
-        chainRestore: boolean;
-        steps: { step: number; backupId: number; backupType: string; createdAt: string }[];
-      }>(`/backups/${id}/restore`);
+      const res = await apiPost<RestoreResponse>(`/backups/${id}/restore`);
       message.success({ content: '数据恢复完成', key: 'restore' });
-      // Show restore result modal
       setRestoreResult({
         visible: true,
-        chainRestore: res.chainRestore ?? false,
+        chain_restore: res.chain_restore ?? false,
         steps: res.steps ?? [],
       });
       fetchData();
@@ -130,14 +139,13 @@ export default function DataMaintenancePage() {
     }
   };
 
-  const successCount = data.filter(r => r.status === 'SUCCESS').length;
-  const fullCount = data.filter(r => r.backupType === 'FULL' && r.status === 'SUCCESS').length;
-  const incrCount = data.filter(r => r.backupType === 'INCREMENTAL' && r.status === 'SUCCESS').length;
-  const totalSize = data.filter(r => r.status === 'SUCCESS').reduce((s, r) => s + (r.fileSize || 0), 0);
+  const fullCount = data.filter(r => r.backup_type === 'FULL' && r.status === 'SUCCESS').length;
+  const incrCount = data.filter(r => r.backup_type === 'INCREMENTAL' && r.status === 'SUCCESS').length;
+  const totalSize = data.filter(r => r.status === 'SUCCESS').reduce((s, r) => s + (r.file_size || 0), 0);
 
   const columns = [
-    { title: '备份时间', dataIndex: 'createdAt', key: 'createdAt', width: 170, render: formatDate },
-    { title: '类型', dataIndex: 'backupType', key: 'backupType', width: 90,
+    { title: '备份时间', dataIndex: 'created_at', key: 'created_at', width: 170, render: formatDate },
+    { title: '类型', dataIndex: 'backup_type', key: 'backup_type', width: 90,
       render: (v: string) => v === 'FULL'
         ? <Tag color={COLORS.sage}>全量备份</Tag>
         : <Tag color={COLORS.slate}>增量备份</Tag> },
@@ -151,12 +159,12 @@ export default function DataMaintenancePage() {
         const info = map[v] || { label: v, color: COLORS.textMuted };
         return <Tag color={info.color}>{info.label}</Tag>;
       } },
-    { title: '触发方式', dataIndex: 'triggerType', key: 'triggerType', width: 80,
+    { title: '触发方式', dataIndex: 'trigger_type', key: 'trigger_type', width: 80,
       render: (v: string) => v === 'AUTO' ? '自动' : '手动' },
-    { title: '文件大小', dataIndex: 'fileSize', key: 'fileSize', width: 100, render: formatSize },
-    { title: '基准备份', dataIndex: 'baseBackupId', key: 'baseBackupId', width: 80,
+    { title: '文件大小', dataIndex: 'file_size', key: 'file_size', width: 100, render: formatSize },
+    { title: '基准备份', dataIndex: 'base_backup_id', key: 'base_backup_id', width: 80,
       render: (v: number | null) => v ? `#${v}` : '-' },
-    { title: '错误信息', dataIndex: 'errorMessage', key: 'errorMessage', width: 200,
+    { title: '错误信息', dataIndex: 'error_message', key: 'error_message', width: 200,
       render: (v: string | null) => v
         ? <Tooltip title={v}><span style={{ color: COLORS.danger, cursor: 'help' }}>{v.slice(0, 40)}...</span></Tooltip>
         : '-' },
@@ -166,13 +174,13 @@ export default function DataMaintenancePage() {
           {r.status === 'SUCCESS' && (
             <Popconfirm
               title={
-                r.backupType === 'INCREMENTAL'
+                r.backup_type === 'INCREMENTAL'
                   ? '确定从该增量备份恢复？'
                   : '确定从该全量备份恢复？'
               }
               description={
-                r.backupType === 'INCREMENTAL'
-                  ? `将先自动恢复基准全量备份 #${r.baseBackupId}，再恢复此增量备份，当前数据将被覆盖`
+                r.backup_type === 'INCREMENTAL'
+                  ? `将先自动恢复基准全量备份 #${r.base_backup_id}，再恢复此增量备份，当前数据将被覆盖`
                   : '将覆盖当前所有数据为该备份时的状态'
               }
               onConfirm={() => handleRestore(r.id)}
@@ -248,7 +256,7 @@ export default function DataMaintenancePage() {
       >
         {restoreResult && (
           <>
-            {restoreResult.chainRestore ? (
+            {restoreResult.chain_restore ? (
               <div style={{ marginBottom: 12 }}>
                 <Text type="secondary">本次为链式恢复，系统自动按顺序执行了以下步骤：</Text>
               </div>
@@ -262,10 +270,10 @@ export default function DataMaintenancePage() {
               size="small"
               current={restoreResult.steps.length}
               items={restoreResult.steps.map((s) => ({
-                title: s.backupType === 'FULL' ? '恢复全量备份' : '恢复增量备份',
+                title: s.backup_type === 'FULL' ? '恢复全量备份' : '恢复增量备份',
                 description: (
                   <span style={{ fontSize: 12, color: COLORS.textMuted }}>
-                    备份 #{s.backupId} | {s.backupType === 'FULL' ? '全量' : '增量'} | {formatDate(s.createdAt)}
+                    备份 #{s.backup_id} | {s.backup_type === 'FULL' ? '全量' : '增量'} | {formatDate(s.created_at)}
                   </span>
                 ),
                 status: 'finish' as const,

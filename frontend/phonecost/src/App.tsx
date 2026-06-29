@@ -22,6 +22,7 @@ import DepartmentOwnership from './pages/DepartmentOwnership';
 import DirectoryPage from './pages/DirectoryPage';
 import UserManagement from './pages/UserManagement';
 import TemplateManagement from './pages/TemplateManagement';
+import RoleManagement from './pages/RoleManagement';
 import AuditLogPage from './pages/AuditLogPage';
 import DataMaintenancePage from './pages/DataMaintenancePage';
 
@@ -57,6 +58,7 @@ const App: React.FC = () => (
             <Route path="base/dept-ownership" element={<DepartmentOwnership />} />
             <Route path="base/directory" element={<DirectoryPage />} />
             <Route path="settings/users" element={<UserManagement />} />
+            <Route path="settings/roles" element={<RoleManagement />} />
             <Route path="settings/audit-log" element={<AuditLogPage />} />
             <Route path="settings/data-maintenance" element={<DataMaintenancePage />} />
             <Route path="templates" element={<TemplateManagement />} />

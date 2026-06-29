@@ -96,17 +96,6 @@ const moneyWan = (v: number) => {
   return `¥${v.toFixed(2)}`;
 };
 
-const feeColumns = [
-  { title: '组织名称', dataIndex: 'org_name', key: 'org_name', width: 180, fixed: 'left' as const },
-  { title: '月租费', dataIndex: 'monthly_rent', key: 'monthly_rent', width: 100, render: money, sorter: (a: FeeRow, b: FeeRow) => (a.monthly_rent || 0) - (b.monthly_rent || 0) },
-  { title: '通话费', dataIndex: 'call_fee', key: 'call_fee', width: 100, render: money, sorter: (a: FeeRow, b: FeeRow) => (a.call_fee || 0) - (b.call_fee || 0) },
-  { title: '录音费', dataIndex: 'recording_fee', key: 'recording_fee', width: 100, render: money, sorter: (a: FeeRow, b: FeeRow) => (a.recording_fee || 0) - (b.recording_fee || 0) },
-  { title: '彩铃费', dataIndex: 'crbt_fee', key: 'crbt_fee', width: 100, render: money, sorter: (a: FeeRow, b: FeeRow) => (a.crbt_fee || 0) - (b.crbt_fee || 0) },
-  { title: '闪信费', dataIndex: 'flash_msg_fee', key: 'flash_msg_fee', width: 100, render: money, sorter: (a: FeeRow, b: FeeRow) => (a.flash_msg_fee || 0) - (b.flash_msg_fee || 0) },
-  { title: '合计', dataIndex: 'total_fee', key: 'total_fee', width: 110, render: (v: number) => <strong>{money(v)}</strong>, sorter: (a: FeeRow, b: FeeRow) => (a.total_fee || 0) - (b.total_fee || 0), defaultSortOrder: 'descend' as const },
-  { title: '号码数', dataIndex: 'phone_count', key: 'phone_count', width: 80, sorter: (a: FeeRow, b: FeeRow) => (a.phone_count || 0) - (b.phone_count || 0) },
-];
-
 // ==================== 纯CSS柱状图 ====================
 
 interface BarRow {
@@ -117,6 +106,8 @@ interface BarRow {
   recording_fee: number;
   crbt_fee: number;
   flash_msg_fee: number;
+  phone_count?: number;
+  org_count?: number;
 }
 
 const FEE_BAR_COLORS: Record<string, string> = {
@@ -141,6 +132,10 @@ const BAR_FIELD_LABELS: Record<BarField, string> = {
 
 // 补全1-12月，缺失月份填0
 function fillMonths12<T extends { billing_month: string }>(data: T[]): T[] {
+  // Derive year from the first available data point; fallback to current year
+  const year = (data.length > 0 && data[0].billing_month?.length >= 4)
+    ? data[0].billing_month.slice(0, 4)
+    : String(new Date().getFullYear());
   const map = new Map(data.map(d => [d.billing_month.slice(5), d]));
   const result: T[] = [];
   for (let m = 1; m <= 12; m++) {
@@ -149,7 +144,7 @@ function fillMonths12<T extends { billing_month: string }>(data: T[]): T[] {
       result.push(map.get(mm)!);
     } else {
       // 构造一个全0的占位行
-      const placeholder = { billing_month: `2026-${mm}` } as unknown as T;
+      const placeholder = { billing_month: `${year}-${mm}` } as unknown as T;
       result.push(placeholder);
     }
   }
@@ -331,12 +326,9 @@ export default function FeeAnalysisPage() {
   const [batches, setBatches] = useState<BillBatch[]>([]);
   const [selectedBatchId, setSelectedBatchId] = useState<number | null>(null);
   const [dimension, setDimension] = useState<Dimension>('全部');
-  const [loading, setLoading] = useState(false);
-  const [analysisData, setAnalysisData] = useState<Record<string, unknown> | null>(null);
 
   // Phone analysis data
   const [phoneData, setPhoneData] = useState<PhoneAnalysisResult | null>(null);
-  const [phoneLoading, setPhoneLoading] = useState(false);
 
   // ALL dimension monthly data
   const [allMonthlyData, setAllMonthlyData] = useState<BarRow[]>([]);
@@ -425,14 +417,11 @@ export default function FeeAnalysisPage() {
 
   // Phone number click — fetch detail
   const selectPhone = useCallback(async (phone: string) => {
-    setPhoneLoading(true);
     try {
       const data = await apiGet<PhoneAnalysisResult>(`/allocation/analysis?batchId=${selectedBatchId || 0}&dimension=PHONE&phoneNumber=${phone}`);
       setPhoneData(data);
     } catch {
       setPhoneData(null);
-    } finally {
-      setPhoneLoading(false);
     }
   }, [selectedBatchId]);
 
@@ -448,24 +437,6 @@ export default function FeeAnalysisPage() {
       .catch(() => setPhoneList([]))
       .finally(() => setPhoneListLoading(false));
   }, [dimension, phoneListL1OrgId]);
-
-  const fetchAnalysis = useCallback(async () => {
-    if (!selectedBatchId) return;
-    if (dimension === '全部' || dimension === '单个号码' || dimension === '一级分行' || dimension === '二级分行' || dimension === '部门') return; // handled separately
-    setLoading(true);
-    try {
-      const dimCode = DIM_MAP[dimension];
-      let url = `/allocation/analysis?batchId=${selectedBatchId}&dimension=${dimCode}`;
-      const data = await apiGet<Record<string, unknown>>(url);
-      setAnalysisData(data);
-    } catch {
-      setAnalysisData(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedBatchId, dimension]);
-
-  useEffect(() => { fetchAnalysis(); }, [fetchAnalysis]);
 
   // Org dropdowns
   const l1Orgs = useMemo(() => orgList.filter(o => o.type === 2), [orgList]);

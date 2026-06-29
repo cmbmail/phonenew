@@ -252,7 +252,7 @@ export default function L1SummaryPage() {
       <Table
         columns={columns}
         dataSource={data}
-        rowKey="id"
+        rowKey={(_, idx) => `${sheetType}-${idx}`}
         size="small"
         loading={detailLoading}
         pagination={{ pageSize: detailPageSize, showSizeChanger: true, pageSizeOptions: ['25', '50', '100'], onShowSizeChange: (_current, size) => setDetailPageSize(size), showTotal: (total) => t('common.paginationTotal', { total }) }}

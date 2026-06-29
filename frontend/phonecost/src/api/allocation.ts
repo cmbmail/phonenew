@@ -1,6 +1,6 @@
 import { apiGet, apiPost } from '../lib/request';
 import { useAuthStore } from '../store/auth';
-import type { AllocationResult, AllocationAdjustment, L1SummaryRow } from '../types/allocation';
+import type { AllocationResult, L1SummaryRow } from '../types/allocation';
 import type { OwnershipBatch, DirectoryBatch } from '../types/import';
 
 // ==================== Snapshot ====================
@@ -37,18 +37,6 @@ export const confirmAllAllocation = (batchId: number) =>
 export const withdrawAllocation = (batchId: number, orgId: number, reason: string) =>
   apiPost<{ org_id: number; result_count: number }>('/allocation/withdraw', { batch_id: batchId, org_id: orgId, reason });
 
-export const adjustAllocation = (batchId: number, phoneNumber: string, fromOrgId: number, toOrgId: number, reason: string) =>
-  apiPost<AllocationAdjustment>('/allocation/adjust', {
-    batch_id: batchId,
-    phone_number: phoneNumber,
-    from_org_id: fromOrgId,
-    to_org_id: toOrgId,
-    reason,
-  });
-
-export const getAdjustments = (batchId: number) =>
-  apiGet<AllocationAdjustment[]>(`/allocation/adjustments/${batchId}`);
-
 export const getL1SummaryData = (batchId: number) =>
   apiGet<L1SummaryRow[]>(`/allocation/l1-summary-data?batchId=${batchId}`);
 
@@ -82,21 +70,8 @@ export const getExportDetailUrl = (batchId: number, branchOrgId?: number) => {
   return url;
 };
 
-export const getBranchBillUrl = (batchId: number, branchOrgId?: number) => {
-  const token = useAuthStore.getState().token;
-  let url = `/api/allocation/export/l2-branch-detail?batchId=${batchId}&token=${token}`;
-  if (branchOrgId) url += `&branchOrgId=${branchOrgId}`;
-  return url;
-};
-
 export const getL1SummaryUrl = (batchId: number) => {
   const token = useAuthStore.getState().token;
   return `/api/allocation/export/l1-summary?batchId=${batchId}&token=${token}`;
 };
 
-export const getCostCenterMappingUrl = (batchId: number, branchOrgId?: number) => {
-  const token = useAuthStore.getState().token;
-  let url = `/api/allocation/export/cost-center-mapping?batchId=${batchId}&token=${token}`;
-  if (branchOrgId) url += `&branchOrgId=${branchOrgId}`;
-  return url;
-};

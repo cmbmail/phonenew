@@ -26,10 +26,3 @@ export function getErrorMessage(err: unknown, fallback: string): string {
   }
   return fallback;
 }
-
-/** Tree node for Ant Design Tree/TreeSelect */
-export interface TreeNode {
-  value: number;
-  title: string;
-  children?: TreeNode[];
-}
