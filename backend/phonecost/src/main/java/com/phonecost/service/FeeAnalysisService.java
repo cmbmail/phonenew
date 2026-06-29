@@ -263,6 +263,98 @@ public class FeeAnalysisService {
     }
 
     /**
+     * 号码列表：返回所有号码的累计费用汇总，按总费用降序，支持按一级分行过滤
+     */
+    public Map<String, Object> analyzePhoneList(Long l1OrgId) {
+        List<BillDetail> allDetails = billDetailRepository.findAll();
+
+        Map<Long, SysOrganization> orgMap = orgRepository.findAll().stream()
+                .filter(o -> o.getDeletedAt() == null)
+                .collect(Collectors.toMap(SysOrganization::getId, o -> o, (a, b) -> a));
+
+        // If l1OrgId provided, build descendant org ID set for filtering
+        Set<Long> filterOrgIds = null;
+        if (l1OrgId != null) {
+            SysOrganization l1 = orgMap.get(l1OrgId);
+            if (l1 != null && l1.getPath() != null) {
+                String l1Path = l1.getPath();
+                filterOrgIds = new HashSet<>();
+                for (SysOrganization o : orgMap.values()) {
+                    if (o.getPath() != null && o.getPath().startsWith(l1Path)) {
+                        filterOrgIds.add(o.getId());
+                    }
+                }
+            }
+        }
+
+        // Group by phone_number
+        Map<String, List<BillDetail>> byPhone = new LinkedHashMap<>();
+        for (BillDetail d : allDetails) {
+            if (filterOrgIds != null) {
+                if (d.getOrgId() == null || !filterOrgIds.contains(d.getOrgId())) continue;
+            }
+            byPhone.computeIfAbsent(d.getPhoneNumber(), k -> new ArrayList<>()).add(d);
+        }
+
+        // Get batch map for billing_month resolution
+        Map<Long, BillBatch> batchMap = new HashMap<>();
+        for (BillBatch b : billBatchRepository.findAll()) {
+            batchMap.put(b.getId(), b);
+        }
+
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (Map.Entry<String, List<BillDetail>> entry : byPhone.entrySet()) {
+            String phone = entry.getKey();
+            List<BillDetail> details = entry.getValue();
+
+            BigDecimal totalRent = BigDecimal.ZERO, totalCall = BigDecimal.ZERO, totalRecording = BigDecimal.ZERO;
+            BigDecimal totalCrbt = BigDecimal.ZERO, totalFlash = BigDecimal.ZERO, totalFee = BigDecimal.ZERO;
+
+            Set<Long> batchIds = new HashSet<>();
+            for (BillDetail d : details) {
+                totalRent = totalRent.add(d.getMonthlyRent() != null ? d.getMonthlyRent() : BigDecimal.ZERO);
+                totalCall = totalCall.add(d.getCallFee() != null ? d.getCallFee() : BigDecimal.ZERO);
+                totalRecording = totalRecording.add(d.getRecordingFee() != null ? d.getRecordingFee() : BigDecimal.ZERO);
+                totalCrbt = totalCrbt.add(d.getCrbtFee() != null ? d.getCrbtFee() : BigDecimal.ZERO);
+                totalFlash = totalFlash.add(d.getFlashMsgFee() != null ? d.getFlashMsgFee() : BigDecimal.ZERO);
+                totalFee = totalFee.add(d.getTotalFee() != null ? d.getTotalFee() : BigDecimal.ZERO);
+                batchIds.add(d.getBatchId());
+            }
+
+            // Get org info from the latest batch's first detail
+            Long latestBatchId = batchIds.stream().max(Long::compareTo).orElse(null);
+            BillDetail latestDetail = details.stream()
+                    .filter(d -> d.getBatchId().equals(latestBatchId))
+                    .findFirst().orElse(details.get(0));
+            SysOrganization org = latestDetail.getOrgId() != null ? orgMap.get(latestDetail.getOrgId()) : null;
+            String orgName = org != null ? org.getName() : "";
+
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("phone_number", phone);
+            row.put("org_name", orgName);
+            row.put("ownership_source", latestDetail.getOwnershipSource() != null ? latestDetail.getOwnershipSource() : "");
+            row.put("total_fee", totalFee);
+            row.put("monthly_rent", totalRent);
+            row.put("call_fee", totalCall);
+            row.put("recording_fee", totalRecording);
+            row.put("crbt_fee", totalCrbt);
+            row.put("flash_msg_fee", totalFlash);
+            row.put("month_count", batchIds.size());
+            row.put("detail_count", details.size());
+            rows.add(row);
+        }
+
+        // Sort by total_fee DESC
+        rows.sort((a, b) -> ((BigDecimal) b.getOrDefault("total_fee", BigDecimal.ZERO))
+                .compareTo((BigDecimal) a.getOrDefault("total_fee", BigDecimal.ZERO)));
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("total_count", rows.size());
+        result.put("rows", rows);
+        return result;
+    }
+
+    /**
      * 单个号码维度：查询指定号码近一年的月度费用清单
      */
     public Map<String, Object> analyzePhone(String phoneNumber) {

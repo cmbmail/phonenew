@@ -39,6 +39,20 @@ interface PhoneAnalysisResult {
   rows: FeeRow[];
 }
 
+interface PhoneListRow {
+  phone_number: string;
+  org_name: string;
+  ownership_source: string;
+  total_fee: number;
+  monthly_rent: number;
+  call_fee: number;
+  recording_fee: number;
+  crbt_fee: number;
+  flash_msg_fee: number;
+  month_count: number;
+  detail_count: number;
+}
+
 interface L1MonthlyRow {
   billing_month: string;
   total_fee: number;
@@ -307,6 +321,11 @@ export default function FeeAnalysisPage() {
   // Phone search
   const [phoneSearch, setPhoneSearch] = useState('');
 
+  // Phone list (default view)
+  const [phoneList, setPhoneList] = useState<PhoneListRow[]>([]);
+  const [phoneListLoading, setPhoneListLoading] = useState(false);
+  const [phoneListL1OrgId, setPhoneListL1OrgId] = useState<number | null>(null);
+
   const fetchBatches = useCallback(async () => {
     try { setBatches(await getBillBatches()); } catch { /* */ }
   }, []);
@@ -367,6 +386,19 @@ export default function FeeAnalysisPage() {
       setPhoneLoading(false);
     }
   }, [selectedBatchId, phoneSearch]);
+
+  // Phone list fetch (default view when no search)
+  useEffect(() => {
+    if (dimension !== '单个号码') return;
+    setPhoneListLoading(true);
+    const url = phoneListL1OrgId
+      ? `/allocation/analysis/phone-list?orgId=${phoneListL1OrgId}`
+      : '/allocation/analysis/phone-list';
+    apiGet<{ total_count: number; rows: PhoneListRow[] }>(url)
+      .then(data => setPhoneList(data.rows || []))
+      .catch(() => setPhoneList([]))
+      .finally(() => setPhoneListLoading(false));
+  }, [dimension, phoneListL1OrgId]);
 
   const fetchAnalysis = useCallback(async () => {
     if (!selectedBatchId) return;
@@ -506,15 +538,56 @@ export default function FeeAnalysisPage() {
     { title: '账单条数', dataIndex: 'detail_count', key: 'detail_count', width: 80 },
   ];
 
+  const phoneListColumns = [
+    { title: '号码', dataIndex: 'phone_number', key: 'phone_number', width: 140, fixed: 'left' as const },
+    { title: '归属组织', dataIndex: 'org_name', key: 'org_name', width: 140,
+      render: (v: string) => v || <span style={{ color: COLORS.textMuted }}>未归属</span> },
+    { title: '归属来源', dataIndex: 'ownership_source', key: 'ownership_source', width: 90,
+      render: (v: string) => {
+        const map: Record<string, { label: string; color: string }> = {
+          P0: { label: 'P0例外', color: COLORS.danger }, P1: { label: 'P1通讯录', color: COLORS.confirmed },
+          P2: { label: 'P2归属表', color: COLORS.slate }, P3: { label: 'P3未归属', color: COLORS.textMuted },
+        };
+        const info = map[v];
+        return info ? <Tag color={info.color}>{info.label}</Tag> : (v || '-');
+      }},
+    { title: '累计费用', dataIndex: 'total_fee', key: 'total_fee', width: 120, render: (v: number) => <strong>{money(v)}</strong>,
+      sorter: (a: PhoneListRow, b: PhoneListRow) => (a.total_fee || 0) - (b.total_fee || 0), defaultSortOrder: 'descend' as const },
+    { title: '月租费', dataIndex: 'monthly_rent', key: 'monthly_rent', width: 100, render: money,
+      sorter: (a: PhoneListRow, b: PhoneListRow) => (a.monthly_rent || 0) - (b.monthly_rent || 0) },
+    { title: '通话费', dataIndex: 'call_fee', key: 'call_fee', width: 100, render: money,
+      sorter: (a: PhoneListRow, b: PhoneListRow) => (a.call_fee || 0) - (b.call_fee || 0) },
+    { title: '录音费', dataIndex: 'recording_fee', key: 'recording_fee', width: 100, render: money,
+      sorter: (a: PhoneListRow, b: PhoneListRow) => (a.recording_fee || 0) - (b.recording_fee || 0) },
+    { title: '彩铃费', dataIndex: 'crbt_fee', key: 'crbt_fee', width: 100, render: money,
+      sorter: (a: PhoneListRow, b: PhoneListRow) => (a.crbt_fee || 0) - (b.crbt_fee || 0) },
+    { title: '闪信费', dataIndex: 'flash_msg_fee', key: 'flash_msg_fee', width: 100, render: money,
+      sorter: (a: PhoneListRow, b: PhoneListRow) => (a.flash_msg_fee || 0) - (b.flash_msg_fee || 0) },
+    { title: '数据月数', dataIndex: 'month_count', key: 'month_count', width: 80,
+      sorter: (a: PhoneListRow, b: PhoneListRow) => (a.month_count || 0) - (b.month_count || 0) },
+  ];
+
   const renderPhoneContent = () => (
     <>
       <Row gutter={16} style={{ marginBottom: 12 }}>
+        <Col>
+          <span style={{ marginRight: 8 }}>一级分行：</span>
+          <Select
+            style={{ width: 220 }}
+            placeholder="全部分行"
+            allowClear
+            value={phoneListL1OrgId}
+            onChange={setPhoneListL1OrgId}
+            showSearch optionFilterProp="label"
+            options={l1Orgs.map(o => ({ label: o.name, value: o.id }))}
+          />
+        </Col>
         <Col>
           <Input.Search
             prefix={<PhoneOutlined />}
             placeholder="输入号码查询费用清单"
             allowClear
-            style={{ width: 320 }}
+            style={{ width: 300 }}
             value={phoneSearch}
             onChange={e => setPhoneSearch(e.target.value)}
             onSearch={doPhoneSearch}
@@ -553,7 +626,17 @@ export default function FeeAnalysisPage() {
       ) : phoneSearch && !phoneLoading ? (
         <Empty description="未找到该号码的费用数据" />
       ) : (
-        <Empty description="请输入号码查询费用清单" />
+        <Card size="small" title={`号码费用列表（共 ${phoneList.length} 个号码）`}>
+          <Table
+            columns={phoneListColumns}
+            dataSource={phoneList}
+            rowKey="phone_number"
+            size="small"
+            loading={phoneListLoading}
+            pagination={{ pageSize: 50, showSizeChanger: true, showTotal: t => `共 ${t} 条` }}
+            scroll={{ x: 1100 }}
+          />
+        </Card>
       )}
     </>
   );
