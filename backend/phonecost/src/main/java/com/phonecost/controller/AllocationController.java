@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -483,9 +484,9 @@ public class AllocationController {
             case "L1" -> Map.of("rows", feeAnalysisService.analyzeL1(batchId));
             case "L2" -> Map.of("rows", feeAnalysisService.analyzeL2(batchId, orgId != null ? orgId : 0L));
             case "DEPARTMENT" -> Map.of("rows", feeAnalysisService.analyzeDepartment(batchId, orgId != null ? orgId : 0L));
-            case "PHONE" -> Map.of("rows", (phoneNumber != null && !phoneNumber.isEmpty())
+            case "PHONE" -> (phoneNumber != null && !phoneNumber.isEmpty())
                     ? feeAnalysisService.analyzePhone(phoneNumber)
-                    : Collections.emptyList());
+                    : Map.of("rows", Collections.emptyList(), "phone_number", phoneNumber != null ? phoneNumber : "", "month_count", 0, "total_fee", BigDecimal.ZERO, "avg_monthly_fee", BigDecimal.ZERO);
             default -> throw new IllegalArgumentException("不支持的分析维度: " + dimension);
         };
         return ResponseEntity.ok(ApiResponse.ok(data));

@@ -263,9 +263,9 @@ public class FeeAnalysisService {
     }
 
     /**
-     * 单个号码维度：查询指定号码的费用明细
+     * 单个号码维度：查询指定号码近一年的月度费用清单
      */
-    public List<Map<String, Object>> analyzePhone(String phoneNumber) {
+    public Map<String, Object> analyzePhone(String phoneNumber) {
         List<BillDetail> details = billDetailRepository.findByPhoneNumberAndDeletedAtIsNull(phoneNumber);
         Map<Long, SysOrganization> orgMap = orgRepository.findAll().stream()
                 .filter(o -> o.getDeletedAt() == null)
@@ -276,42 +276,79 @@ public class FeeAnalysisService {
                 .collect(Collectors.groupingBy(BillDetail::getBatchId));
 
         List<Map<String, Object>> rows = new ArrayList<>();
+        String latestOrgName = "";
+        String latestSource = "";
+
         for (Map.Entry<Long, List<BillDetail>> entry : byBatch.entrySet()) {
             List<BillDetail> batchDetails = entry.getValue();
+
+            BigDecimal totalRent = BigDecimal.ZERO, totalCall = BigDecimal.ZERO, totalRecording = BigDecimal.ZERO;
+            BigDecimal totalCrbt = BigDecimal.ZERO, totalFlash = BigDecimal.ZERO, total = BigDecimal.ZERO;
+
+            for (BillDetail d : batchDetails) {
+                totalRent = totalRent.add(d.getMonthlyRent() != null ? d.getMonthlyRent() : BigDecimal.ZERO);
+                totalCall = totalCall.add(d.getCallFee() != null ? d.getCallFee() : BigDecimal.ZERO);
+                totalRecording = totalRecording.add(d.getRecordingFee() != null ? d.getRecordingFee() : BigDecimal.ZERO);
+                totalCrbt = totalCrbt.add(d.getCrbtFee() != null ? d.getCrbtFee() : BigDecimal.ZERO);
+                totalFlash = totalFlash.add(d.getFlashMsgFee() != null ? d.getFlashMsgFee() : BigDecimal.ZERO);
+                total = total.add(d.getTotalFee() != null ? d.getTotalFee() : BigDecimal.ZERO);
+            }
+
+            BillBatch batch = billBatchRepository.findById(entry.getKey()).orElse(null);
             BillDetail first = batchDetails.get(0);
+            SysOrganization org = first.getOrgId() != null ? orgMap.get(first.getOrgId()) : null;
 
             Map<String, Object> row = new LinkedHashMap<>();
-            // Resolve batch billing_month
-            BillBatch batch = billBatchRepository.findById(entry.getKey()).orElse(null);
             row.put("billing_month", batch != null ? batch.getBillingMonth() : "");
             row.put("phone_number", phoneNumber);
             row.put("org_id", first.getOrgId());
-            SysOrganization org = first.getOrgId() != null ? orgMap.get(first.getOrgId()) : null;
             row.put("org_name", org != null ? org.getName() : "");
             row.put("ownership_source", first.getOwnershipSource());
-
-            BigDecimal total = BigDecimal.ZERO;
-            for (BillDetail d : batchDetails) {
-                total = total.add(d.getTotalFee() != null ? d.getTotalFee() : BigDecimal.ZERO);
-            }
             row.put("total_fee", total);
+            row.put("monthly_rent", totalRent);
+            row.put("call_fee", totalCall);
+            row.put("recording_fee", totalRecording);
+            row.put("crbt_fee", totalCrbt);
+            row.put("flash_msg_fee", totalFlash);
             row.put("detail_count", batchDetails.size());
-
-            // Fee breakdown by sheet type
-            Map<String, BigDecimal> bySheet = new LinkedHashMap<>();
-            for (BillDetail d : batchDetails) {
-                String st = d.getSheetType() != null ? d.getSheetType() : "UNKNOWN";
-                bySheet.merge(st, d.getTotalFee() != null ? d.getTotalFee() : BigDecimal.ZERO, BigDecimal::add);
-            }
-            row.put("sheet_breakdown", bySheet);
-
             rows.add(row);
+
+            latestOrgName = org != null ? org.getName() : "";
+            latestSource = first.getOwnershipSource() != null ? first.getOwnershipSource() : "";
         }
 
-        rows.sort((a, b) -> String.valueOf(b.getOrDefault("billing_month", ""))
-                .compareTo(String.valueOf(a.getOrDefault("billing_month", ""))));
+        // Sort by billing_month ascending for charts
+        rows.sort((a, b) -> String.valueOf(a.getOrDefault("billing_month", ""))
+                .compareTo(String.valueOf(b.getOrDefault("billing_month", ""))));
 
-        return rows;
+        // Summary stats
+        BigDecimal grandTotal = BigDecimal.ZERO;
+        for (Map<String, Object> r : rows) {
+            grandTotal = grandTotal.add((BigDecimal) r.get("total_fee"));
+        }
+        BigDecimal avgMonthly = rows.size() > 0 ? grandTotal.divide(new BigDecimal(rows.size()), 2, BigDecimal.ROUND_HALF_UP) : BigDecimal.ZERO;
+
+        // MoM change (latest vs previous)
+        String momChange = null;
+        if (rows.size() >= 2) {
+            BigDecimal prev = (BigDecimal) rows.get(rows.size() - 2).get("total_fee");
+            BigDecimal cur = (BigDecimal) rows.get(rows.size() - 1).get("total_fee");
+            if (prev.compareTo(BigDecimal.ZERO) > 0) {
+                momChange = cur.subtract(prev).multiply(new BigDecimal("100")).divide(prev, 1, BigDecimal.ROUND_HALF_UP).toPlainString();
+            }
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("phone_number", phoneNumber);
+        result.put("org_name", latestOrgName);
+        result.put("ownership_source", latestSource);
+        result.put("month_count", rows.size());
+        result.put("total_fee", grandTotal);
+        result.put("avg_monthly_fee", avgMonthly);
+        result.put("mom_change", momChange);
+        result.put("rows", rows);
+
+        return result;
     }
 
     /**
