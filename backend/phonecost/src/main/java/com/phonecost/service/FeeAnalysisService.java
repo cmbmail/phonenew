@@ -392,6 +392,122 @@ public class FeeAnalysisService {
         return rows;
     }
 
+    /**
+     * 一级分行月度费用：指定L1分行在各月的费用汇总（含同比数据）
+     */
+    public Map<String, Object> analyzeL1Monthly(Long orgId) {
+        List<BillBatch> allBatches = billBatchRepository.findByDeletedAtIsNullOrderByBillingMonthAsc();
+        Map<Long, SysOrganization> orgMap = orgRepository.findAll().stream()
+                .filter(o -> o.getDeletedAt() == null)
+                .collect(Collectors.toMap(SysOrganization::getId, o -> o, (a, b) -> a));
+
+        SysOrganization targetOrg = orgMap.get(orgId);
+        String orgName = targetOrg != null ? targetOrg.getName() : "";
+
+        // Collect all descendant org IDs under this L1
+        Set<Long> descendantIds = new HashSet<>();
+        if (targetOrg != null) {
+            String targetPath = targetOrg.getPath();
+            for (SysOrganization o : orgMap.values()) {
+                if (o.getPath() != null && o.getPath().startsWith(targetPath)) {
+                    descendantIds.add(o.getId());
+                }
+            }
+        }
+
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (BillBatch batch : allBatches) {
+            List<AllocationResult> results = allocationResultRepository.findByBatchIdAndDeletedAtIsNull(batch.getId());
+
+            BigDecimal totalRent = BigDecimal.ZERO, totalCall = BigDecimal.ZERO, totalRecording = BigDecimal.ZERO;
+            BigDecimal totalCrbt = BigDecimal.ZERO, totalFlash = BigDecimal.ZERO, totalFee = BigDecimal.ZERO;
+            int phoneCount = 0, subOrgCount = 0;
+
+            for (AllocationResult r : results) {
+                if (r.getOrgId() == null || !descendantIds.contains(r.getOrgId())) continue;
+                totalRent = totalRent.add(r.getMonthlyRent() != null ? r.getMonthlyRent() : BigDecimal.ZERO);
+                totalCall = totalCall.add(r.getCallFee() != null ? r.getCallFee() : BigDecimal.ZERO);
+                totalRecording = totalRecording.add(r.getRecordingFee() != null ? r.getRecordingFee() : BigDecimal.ZERO);
+                totalCrbt = totalCrbt.add(r.getCrbtFee() != null ? r.getCrbtFee() : BigDecimal.ZERO);
+                totalFlash = totalFlash.add(r.getFlashMsgFee() != null ? r.getFlashMsgFee() : BigDecimal.ZERO);
+                totalFee = totalFee.add(r.getTotalFee() != null ? r.getTotalFee() : BigDecimal.ZERO);
+                phoneCount += r.getPhoneCount() != null ? r.getPhoneCount() : 0;
+                subOrgCount++;
+            }
+
+            if (totalFee.compareTo(BigDecimal.ZERO) == 0) continue;
+
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("billing_month", batch.getBillingMonth());
+            row.put("total_fee", totalFee);
+            row.put("monthly_rent", totalRent);
+            row.put("call_fee", totalCall);
+            row.put("recording_fee", totalRecording);
+            row.put("crbt_fee", totalCrbt);
+            row.put("flash_msg_fee", totalFlash);
+            row.put("phone_count", phoneCount);
+            row.put("sub_org_count", subOrgCount);
+            rows.add(row);
+        }
+
+        // Build YoY map: billing_month -> {this_year, last_year}
+        // Group by month number (e.g. "01", "02") across years
+        Map<String, Map<String, BigDecimal>> yoyMap = new LinkedHashMap<>();
+        for (Map<String, Object> r : rows) {
+            String month = (String) r.get("billing_month");
+            String monthNum = month.substring(5);  // "01", "02", etc.
+            yoyMap.computeIfAbsent(monthNum, k -> new LinkedHashMap<>());
+            // Determine year from billing_month
+            String year = month.substring(0, 4);
+            yoyMap.get(monthNum).put(year, (BigDecimal) r.get("total_fee"));
+        }
+
+        // Build YoY comparison rows
+        List<Map<String, Object>> yoyRows = new ArrayList<>();
+        for (Map<String, Object> r : rows) {
+            String month = (String) r.get("billing_month");
+            String monthNum = month.substring(5);
+            String year = month.substring(0, 4);
+            String prevYear = String.valueOf(Integer.parseInt(year) - 1);
+
+            Map<String, BigDecimal> yearMap = yoyMap.get(monthNum);
+            BigDecimal lastYearFee = yearMap != null ? yearMap.getOrDefault(prevYear, null) : null;
+
+            Map<String, Object> yoyRow = new LinkedHashMap<>(r);
+            yoyRow.put("last_year_fee", lastYearFee);
+            yoyRow.put("last_year_month", lastYearFee != null ? prevYear + "-" + monthNum : null);
+
+            // YoY change
+            if (lastYearFee != null && lastYearFee.compareTo(BigDecimal.ZERO) > 0) {
+                BigDecimal currentFee = (BigDecimal) r.get("total_fee");
+                yoyRow.put("yoy_change", currentFee.subtract(lastYearFee)
+                        .multiply(new BigDecimal("100"))
+                        .divide(lastYearFee, 1, BigDecimal.ROUND_HALF_UP)
+                        .toPlainString());
+            } else {
+                yoyRow.put("yoy_change", null);
+            }
+            yoyRows.add(yoyRow);
+        }
+
+        // Summary
+        BigDecimal grandTotal = BigDecimal.ZERO;
+        for (Map<String, Object> r : rows) {
+            grandTotal = grandTotal.add((BigDecimal) r.get("total_fee"));
+        }
+        BigDecimal avgMonthly = rows.size() > 0 ? grandTotal.divide(new BigDecimal(rows.size()), 2, BigDecimal.ROUND_HALF_UP) : BigDecimal.ZERO;
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("org_id", orgId);
+        result.put("org_name", orgName);
+        result.put("month_count", rows.size());
+        result.put("total_fee", grandTotal);
+        result.put("avg_monthly_fee", avgMonthly);
+        result.put("rows", yoyRows);
+
+        return result;
+    }
+
     // === Helper methods ===
 
     private Long findAncestorByType(Map<Long, SysOrganization> orgMap, Long orgId, byte type) {
