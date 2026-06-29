@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Card, Select, Table, Statistic, Row, Col, Input, Segmented, Empty, Tag, Tooltip } from 'antd';
+import { Card, Select, Table, Statistic, Row, Col, Input, Segmented, Empty, Tag, Tooltip, Slider } from 'antd';
 import { SearchOutlined, BarChartOutlined, PhoneOutlined } from '@ant-design/icons';
 import { COLORS } from '../theme/morandi';
 import { apiGet } from '../lib/request';
@@ -166,6 +166,7 @@ function MetricSelector({ activeField, onChange }: { activeField: BarField; onCh
 // 单指标柱状图（总费用对比、单个号码用）
 function BarChart({ data, field, height = 260 }: { data: BarRow[]; field?: BarField; height?: number }) {
   const [activeField, setActiveField] = useState<BarField>(field || 'total_fee');
+  const [scale, setScale] = useState(1);
   const values = data.map(d => Number(d[activeField]) || 0);
   const maxVal = Math.max(...values, 1);
 
@@ -177,10 +178,22 @@ function BarChart({ data, field, height = 260 }: { data: BarRow[]; field?: BarFi
     return ((cur - prev) / prev * 100).toFixed(1);
   });
 
+  const chartHeight = Math.round(height * scale);
+
   return (
     <div>
-      <MetricSelector activeField={activeField} onChange={setActiveField} />
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: data.length > 6 ? 12 : 24, height, padding: '0 8px 28px', borderBottom: `1px solid ${COLORS.border}` }}>
+      <Row gutter={16} align="middle" style={{ marginBottom: 8 }}>
+        <Col flex="auto"><MetricSelector activeField={activeField} onChange={setActiveField} /></Col>
+        <Col flex="180px">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 11, color: COLORS.textMuted, whiteSpace: 'nowrap' }}>缩放</span>
+            <Slider min={0.5} max={2} step={0.1} value={scale} onChange={setScale}
+              style={{ flex: 1, margin: 0 }} tooltip={{ formatter: v => `${v}x` }} />
+            <span style={{ fontSize: 11, color: COLORS.sage, fontWeight: 500, width: 28, textAlign: 'right' }}>{scale.toFixed(1)}x</span>
+          </div>
+        </Col>
+      </Row>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: data.length > 6 ? 12 : 24, height: chartHeight, padding: '0 8px 28px', borderBottom: `1px solid ${COLORS.border}` }}>
         {data.map((d, i) => {
           const val = Number(d[activeField]) || 0;
           const pct = maxVal > 0 ? (val / maxVal) * 100 : 0;
@@ -210,6 +223,7 @@ function BarChart({ data, field, height = 260 }: { data: BarRow[]; field?: BarFi
 // YoY双柱对比图（今年 vs 去年同期）
 function YoyBarChart({ data, height = 280 }: { data: L1MonthlyRow[]; height?: number }) {
   const [activeField, setActiveField] = useState<BarField>('total_fee');
+  const [scale, setScale] = useState(1);
 
   const maxVal = Math.max(
     ...data.map(d => Number(d[activeField]) || 0),
@@ -217,9 +231,21 @@ function YoyBarChart({ data, height = 280 }: { data: L1MonthlyRow[]; height?: nu
     1,
   );
 
+  const chartHeight = Math.round(height * scale);
+
   return (
     <div>
-      <MetricSelector activeField={activeField} onChange={setActiveField} />
+      <Row gutter={16} align="middle" style={{ marginBottom: 8 }}>
+        <Col flex="auto"><MetricSelector activeField={activeField} onChange={setActiveField} /></Col>
+        <Col flex="180px">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 11, color: COLORS.textMuted, whiteSpace: 'nowrap' }}>缩放</span>
+            <Slider min={0.5} max={2} step={0.1} value={scale} onChange={setScale}
+              style={{ flex: 1, margin: 0 }} tooltip={{ formatter: v => `${v}x` }} />
+            <span style={{ fontSize: 11, color: COLORS.sage, fontWeight: 500, width: 28, textAlign: 'right' }}>{scale.toFixed(1)}x</span>
+          </div>
+        </Col>
+      </Row>
       {/* 图例 */}
       <div style={{ display: 'flex', gap: 24, marginBottom: 12, fontSize: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -231,7 +257,7 @@ function YoyBarChart({ data, height = 280 }: { data: L1MonthlyRow[]; height?: nu
           <span style={{ color: COLORS.textMuted }}>去年同期</span>
         </div>
       </div>
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: data.length > 6 ? 16 : 32, height, padding: '0 8px 28px', borderBottom: `1px solid ${COLORS.border}` }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: data.length > 6 ? 16 : 32, height: chartHeight, padding: '0 8px 28px', borderBottom: `1px solid ${COLORS.border}` }}>
         {data.map((d) => {
           const curVal = Number(d[activeField]) || 0;
           const prevVal = Number(d.last_year_fee) || 0;
