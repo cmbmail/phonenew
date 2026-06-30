@@ -58,7 +58,7 @@ ul{margin:6px 0;padding-left:24px}li{margin:4px 0;line-height:1.7}
 <!-- ========== 侧边栏 ========== -->
 <nav class="sidebar">
   <div class="logo">费用分摊系统</div>
-  <div class="sub">需求文档 &amp; 设计方案 V1.1</div>
+  <div class="sub">需求文档 &amp; 设计方案 V2.0</div>
   <div class="grp">概述</div>
   <a href="#ch1">一、项目概述</a>
   <a href="#ch1-1">1.1 项目背景</a>
@@ -99,8 +99,11 @@ ul{margin:6px 0;padding-left:24px}li{margin:4px 0;line-height:1.7}
   <a href="#ch9">九、用户故事</a>
   <div class="grp">API</div>
   <a href="#ch10">十、API设计</a>
+  <a href="#ch10-7">10.7 备份管理</a>
+  <a href="#ch10-8">10.8 版本更新</a>
   <div class="grp">技术</div>
   <a href="#ch11">十一、技术架构</a>
+  <a href="#ch11-6">11.6 版本更新机制</a>
   <div class="grp">计划</div>
   <a href="#ch12">十二、里程碑与风险</a>
   <div class="grp">非功能</div>
@@ -116,7 +119,7 @@ ul{margin:6px 0;padding-left:24px}li{margin:4px 0;line-height:1.7}
   <h1>银行内部电话费用分摊系统</h1>
   <div class="sub">需求文档 &amp; 设计方案</div>
   <p style="color:#4A5568;margin-top:16px">基于电信账单的多级组织费用分摊与确认系统</p>
-  <div class="meta">V1.1 &nbsp;|&nbsp; 2026-06-22 &nbsp;|&nbsp; 密级：内部 &nbsp;|&nbsp; 状态：评审中</div>
+  <div class="meta">V2.0 &nbsp;|&nbsp; 2026-06-30 &nbsp;|&nbsp; 密级：内部 &nbsp;|&nbsp; 状态：<span style="color:#065F46;font-weight:600">已实现</span></div>
   <div style="margin-top:32px;display:flex;gap:12px;justify-content:center">
     <span class="badge">PRD</span><span class="badge" style="background:#E65100">技术架构</span><span class="badge" style="background:#333">DDL</span><span class="badge" style="background:#7C3AED">API</span>
   </div>
@@ -393,42 +396,49 @@ ul{margin:6px 0;padding-left:24px}li{margin:4px 0;line-height:1.7}
 <!-- ====== 七、页面结构 ====== -->
 <h1 id="ch7">七、页面结构</h1>
 
+<p>以下为实际实现的菜单结构（已部署）：</p>
 <table>
-<tr><th>分组</th><th>菜单</th><th>功能</th></tr>
-<tr><td rowspan="3"><strong>数据导入</strong></td><td>号码归属管理</td><td>导入/查看号码归属表，例外标记</td></tr>
-<tr><td>通讯录管理</td><td>导入/查看通讯录，借调检测与处理</td></tr>
-<tr><td>账单导入</td><td>上传电信账单，模板配置，解析预览</td></tr>
-<tr><td rowspan="3"><strong>分摊管理</strong></td><td>归属校验</td><td>校验号码归属，查看P0-P3分布</td></tr>
-<tr><td>分摊结果</td><td>查看/确认/撤回分摊结果，借调调整</td></tr>
-<tr><td>分摊调整</td><td>调整分摊金额/归属，审计记录</td></tr>
-<tr><td rowspan="2"><strong>账单导出</strong></td><td>分行账单导出</td><td>选择账期+分行，导出汇总+明细2个Excel</td></tr>
-<tr><td>导出记录</td><td>查看历史导出记录和文件</td></tr>
-<tr><td rowspan="3"><strong>报表分析</strong></td><td>费用汇总</td><td>按组织/时间维度的费用汇总</td></tr>
-<tr><td>趋势分析</td><td>多月费用趋势对比</td></tr>
-<tr><td>异常检测</td><td>费用异常波动预警</td></tr>
-<tr><td rowspan="2"><strong>组织管理</strong></td><td>组织架构</td><td>树形展示集团→分行→部门</td></tr>
-<tr><td>用户管理</td><td>系统用户和角色管理</td></tr>
-<tr><td><strong>系统管理</strong></td><td>系统设置</td><td>账单模板、借调关键词等配置</td></tr>
+<tr><th>分组</th><th>菜单</th><th>路由</th><th>功能</th><th>权限</th></tr>
+<tr><td><strong>系统看板</strong></td><td>系统看板</td><td><code>/</code></td><td>7项核心指标卡片（账单/分摊/组织/号码/用户/设备/工单）</td><td>全部角色</td></tr>
+<tr><td rowspan="5"><strong>费用分摊</strong></td><td>账单管理</td><td><code>/bill</code></td><td>账单批次列表+明细查看</td><td>全部角色</td></tr>
+<tr><td>分摊汇总</td><td><code>/allocation</code></td><td>集团级分摊结果查看+确认+导出</td><td>ADMIN, FINANCE</td></tr>
+<tr><td>一级分行</td><td><code>/allocation/branch</code></td><td>一级分行维度分摊结果+确认+导出</td><td>ADMIN, BRANCH, FINANCE</td></tr>
+<tr><td>二级分行</td><td><code>/allocation/sub-branch</code></td><td>二级分行/支行维度分摊结果+确认+导出</td><td>ADMIN, BRANCH, DEPARTMENT, FINANCE</td></tr>
+<tr><td>费用分析</td><td><code>/allocation/analysis</code></td><td>5维度分段分析+纯CSS柱状图</td><td>全部角色</td></tr>
+<tr><td><strong>数据导入</strong></td><td>数据导入</td><td><code>/import</code></td><td>3Tab：号码归属+通讯录+账单导入，归属匹配按钮</td><td>ADMIN</td></tr>
+<tr><td rowspan="4"><strong>基础数据</strong></td><td>组织架构</td><td><code>/org</code></td><td>树形展示929个组织节点，支持搜索</td><td>全部角色</td></tr>
+<tr><td>号码归属</td><td><code>/base/phone-ownership</code></td><td>号码归属批次+明细查看</td><td>ADMIN</td></tr>
+<tr><td>通讯录</td><td><code>/base/directory</code></td><td>通讯录批次+明细查看</td><td>ADMIN</td></tr>
+<tr><td>部门归属</td><td><code>/base/dept-ownership</code></td><td>部门归属维度查看</td><td>ADMIN</td></tr>
+<tr><td rowspan="6"><strong>系统管理</strong></td><td>人员管理</td><td><code>/settings/users</code></td><td>左右双栏（组织树+人员列表），新增/编辑用户</td><td>ADMIN</td></tr>
+<tr><td>角色管理</td><td><code>/settings/roles</code></td><td>角色列表+权限矩阵+数据范围展示（只读）</td><td>ADMIN</td></tr>
+<tr><td>模板管理</td><td><code>/templates</code></td><td>账单解析模板CRUD，JSON配置驱动</td><td>ADMIN</td></tr>
+<tr><td>操作日志</td><td><code>/settings/audit-log</code></td><td>审计日志列表+筛选+详情中文摘要悬浮卡片</td><td>ADMIN</td></tr>
+<tr><td>数据维护</td><td><code>/settings/data-maintenance</code></td><td>2 Tab：备份管理（全量/增量/恢复）+ 版本更新（上传/应用/回滚）</td><td>ADMIN</td></tr>
 </table>
+<div class="note"><strong>UI风格：</strong>全系统采用 Morandi 色系（sage/taupe/mauve/slate/cream），侧边栏默认展开，表格标题居中。</div>
 
 <!-- ====== 八、数据模型 ====== -->
 <h1 id="ch8">八、数据模型</h1>
 
-<h2>8.1 表总览（12张表）</h2>
+<h2>8.1 表总览（15张表）</h2>
 <table>
-<tr><th>表名</th><th>说明</th></tr>
-<tr><td><code>sys_organization</code></td><td>组织架构树（集团→一级分行→二级分行→部门），type:1/2/3/4</td></tr>
-<tr><td><code>sys_user</code></td><td>系统用户，关联组织和角色</td></tr>
-<tr><td><code>phone_ownership_batch</code></td><td>号码归属导入批次</td></tr>
-<tr><td><code>phone_ownership_entry</code></td><td>号码归属明细（phone_number/description/is_exception/org_id）</td></tr>
-<tr><td><code>directory_batch</code></td><td>通讯录导入批次</td></tr>
-<tr><td><code>directory_entry</code></td><td>通讯录明细（dept_path/username/extension/phone/is_seconded/actual_org_id）</td></tr>
-<tr><td><code>bill_template</code></td><td>账单解析模板（JSON配置）</td></tr>
-<tr><td><code>bill_batch</code></td><td>账单导入批次（billing_month/status/template_id）</td></tr>
-<tr><td><code>bill_detail</code></td><td>账单明细（号码+6项费用+ownership_source+is_exception+is_seconded+org_id）</td></tr>
-<tr><td><code>allocation_result</code></td><td>分摊结果（按组织汇总6项费用+确认状态+乐观锁版本号）</td></tr>
-<tr><td><code>allocation_adjustment</code></td><td>分摊调整记录（调整前后值+原因+操作人）</td></tr>
-<tr><td><code>audit_log</code></td><td>审计日志</td></tr>
+<tr><th>表名</th><th>说明</th><th>状态</th></tr>
+<tr><td><code>sys_organization</code></td><td>组织架构树（集团→一级分行→二级分行→部门），type:1/2/3/4/5</td><td><span class="tag tag-green">已实现</span></td></tr>
+<tr><td><code>sys_user</code></td><td>系统用户，关联组织和角色（role 1-4）</td><td><span class="tag tag-green">已实现</span></td></tr>
+<tr><td><code>phone_ownership_batch</code></td><td>号码归属导入批次</td><td><span class="tag tag-green">已实现</span></td></tr>
+<tr><td><code>phone_ownership_entry</code></td><td>号码归属明细（phone_number/description/is_exception/org_id）</td><td><span class="tag tag-green">已实现</span></td></tr>
+<tr><td><code>directory_batch</code></td><td>通讯录导入批次</td><td><span class="tag tag-green">已实现</span></td></tr>
+<tr><td><code>directory_entry</code></td><td>通讯录明细（dept_path/username/extension/phone/is_seconded/actual_org_id）</td><td><span class="tag tag-green">已实现</span></td></tr>
+<tr><td><code>bill_template</code></td><td>账单解析模板（JSON配置）</td><td><span class="tag tag-green">已实现</span></td></tr>
+<tr><td><code>bill_batch</code></td><td>账单导入批次（billing_month/status/template_id）</td><td><span class="tag tag-green">已实现</span></td></tr>
+<tr><td><code>bill_detail</code></td><td>账单明细（号码+6项费用+ownership_source+is_exception+is_seconded+org_id）</td><td><span class="tag tag-green">已实现</span></td></tr>
+<tr><td><code>allocation_result</code></td><td>分摊结果（按组织汇总6项费用+确认状态+乐观锁版本号）</td><td><span class="tag tag-green">已实现</span></td></tr>
+<tr><td><code>allocation_adjustment</code></td><td>分摊调整记录（调整前后值+原因+操作人）</td><td><span class="tag tag-green">已实现</span></td></tr>
+<tr><td><code>audit_log</code></td><td>审计日志（detail为JSON，前端中文摘要渲染）</td><td><span class="tag tag-green">已实现</span></td></tr>
+<tr><td><code>backup_record</code></td><td>备份记录（全量/增量备份元数据+文件路径+状态）</td><td><span class="tag tag-green">已实现</span> <span class="tag tag-blue">V9新增</span></td></tr>
+<tr><td><code>system_version</code></td><td>系统版本记录（version+is_current+backup_id关联升级前备份）</td><td><span class="tag tag-green">已实现</span> <span class="tag tag-blue">V10新增</span></td></tr>
+<tr><td><code>version_upgrade_package</code></td><td>升级包记录（包文件+目标版本+状态：UPLOADED/APPLIED/FAILED）</td><td><span class="tag tag-green">已实现</span> <span class="tag tag-blue">V10新增</span></td></tr>
 </table>
 
 <h2>8.2 核心字段</h2>
@@ -458,7 +468,7 @@ ul{margin:6px 0;padding-left:24px}li{margin:4px 0;line-height:1.7}
 CREATE TABLE sys_organization (
     id          BIGINT AUTO_INCREMENT PRIMARY KEY,
     name        VARCHAR(200) NOT NULL COMMENT '组织名称',
-    type        TINYINT      NOT NULL DEFAULT 0 COMMENT '类型: 1=集团 2=一级分行 3=二级分行 4=部门',
+    type        TINYINT      NOT NULL DEFAULT 0 COMMENT '类型: 1=集团 2=一级分行 3=二级分行 4=综合支行 5=零专支行',
     code        VARCHAR(50)  NOT NULL DEFAULT '' COMMENT '组织代码(成本中心/部门代码)',
     parent_id   BIGINT       NULL COMMENT '上级组织ID',
     sort_order  INT          NOT NULL DEFAULT 0,
@@ -728,47 +738,87 @@ CREATE TABLE audit_log (
 <!-- ====== 十、API设计 ====== -->
 <h1 id="ch10">十、API设计</h1>
 
-<h2>10.1 数据导入</h2>
+<h2>10.1 认证</h2>
 <table>
 <tr><th style="width:60px">方法</th><th>路径</th><th>说明</th></tr>
-<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/phone-ownership/import</code></td><td>导入号码归属表</td></tr>
-<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/phone-ownership/batches</code></td><td>查询导入批次列表</td></tr>
-<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/directory/import</code></td><td>导入通讯录</td></tr>
-<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/directory/batches</code></td><td>查询通讯录批次列表</td></tr>
-<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/bills/import</code></td><td>导入电信账单</td></tr>
-<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/bills/batches</code></td><td>查询账单批次列表</td></tr>
+<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/auth/login</code></td><td>登录，返回JWT access_token</td></tr>
+<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/auth/refresh</code></td><td>刷新token</td></tr>
+<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/auth/change-password</code></td><td>修改密码</td></tr>
 </table>
 
-<h2>10.2 归属与分摊</h2>
+<h2>10.2 数据导入</h2>
 <table>
 <tr><th style="width:60px">方法</th><th>路径</th><th>说明</th></tr>
-<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/ownership/validate</code></td><td>执行归属校验</td></tr>
-<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/ownership/report</code></td><td>获取校验报告（P0-P3分布）</td></tr>
-<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/ownership/assign</code></td><td>人工分配P3未归属号码</td></tr>
-<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/allocations/run</code></td><td>执行自动分摊</td></tr>
-<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/allocations?batchId=&orgId=</code></td><td>查询分摊结果</td></tr>
-<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/allocations/confirm</code></td><td>确认分摊</td></tr>
-<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/allocations/withdraw</code></td><td>撤回确认</td></tr>
-<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/allocations/adjust</code></td><td>调整分摊（借调等）</td></tr>
+<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/import/ownership</code></td><td>导入号码归属表</td></tr>
+<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/import/directory</code></td><td>导入通讯录</td></tr>
+<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/import/bill</code></td><td>导入电信账单</td></tr>
+<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/import/match-ownership</code></td><td>执行归属匹配（P0-P3）</td></tr>
 </table>
 
-<h2>10.3 导出与报表</h2>
+<h2>10.3 归属与分摊</h2>
 <table>
 <tr><th style="width:60px">方法</th><th>路径</th><th>说明</th></tr>
-<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/branch-allocations/export-summary?batchId=&branchId=</code></td><td>导出分行分摊汇总Excel</td></tr>
-<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/branch-allocations/export-details?batchId=&branchId=</code></td><td>导出分行分摊明细Excel</td></tr>
-<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/branch-allocations/summary?batchId=&branchId=</code></td><td>查询分行汇总数据</td></tr>
-<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/reports/summary?orgId=&month=</code></td><td>费用汇总报表</td></tr>
-<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/reports/trend?orgId=&start=&end=</code></td><td>趋势分析</td></tr>
-<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/reports/anomalies?batchId=</code></td><td>异常检测结果</td></tr>
+<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/allocation/calculate</code></td><td>执行费用分摊计算</td></tr>
+<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/allocation/confirm</code></td><td>确认分摊（含级联）</td></tr>
+<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/allocation/withdraw</code></td><td>撤回分摊（含级联）</td></tr>
+<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/allocation/confirm-all</code></td><td>批量确认分摊</td></tr>
+<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/allocation/results</code></td><td>查询分摊结果（支持DataScope过滤）</td></tr>
+<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/allocation/export/summary</code></td><td>导出分摊汇总Excel</td></tr>
+<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/allocation/export/detail</code></td><td>导出分摊明细Excel</td></tr>
 </table>
 
-<h2>10.4 组织与系统</h2>
+<h2>10.4 费用分析与导出</h2>
+<table>
+<tr><th style="width:60px">方法</th><th>路径</th><th>说明</th></tr>
+<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/fee-analysis/branch-fee</code></td><td>分行费用分析（5维度分段）</td></tr>
+<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/branch-bills/export</code></td><td>导出分行账单（5-Sheet Excel）</td></tr>
+<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/cost-center-mapping/export</code></td><td>导出成本中心对照表</td></tr>
+</table>
+
+<h2>10.5 组织与基础数据</h2>
 <table>
 <tr><th style="width:60px">方法</th><th>路径</th><th>说明</th></tr>
 <tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/organizations/tree</code></td><td>获取组织架构树</td></tr>
+<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/organizations/import</code></td><td>导入组织架构（CSV）</td></tr>
 <tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/bill-templates</code></td><td>获取账单解析模板</td></tr>
 <tr><td><span class="badge" style="background:#E65100">PUT</span></td><td><code>/api/bill-templates/:id</code></td><td>更新模板配置</td></tr>
+</table>
+
+<h2>10.6 系统管理</h2>
+<table>
+<tr><th style="width:60px">方法</th><th>路径</th><th>说明</th></tr>
+<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/users</code></td><td>查询用户列表</td></tr>
+<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/users</code></td><td>新增用户</td></tr>
+<tr><td><span class="badge" style="background:#E65100">PUT</span></td><td><code>/api/users/:id</code></td><td>编辑用户</td></tr>
+<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/audit-logs</code></td><td>查询审计日志（分页+筛选）</td></tr>
+</table>
+
+<h2>10.7 备份管理</h2>
+<table>
+<tr><th style="width:60px">方法</th><th>路径</th><th>说明</th></tr>
+<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/backups/full</code></td><td>执行全量备份</td></tr>
+<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/backups/incremental</code></td><td>执行增量备份</td></tr>
+<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/backups</code></td><td>查询备份列表</td></tr>
+<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/backups/:id/restore</code></td><td>恢复备份（全量/增量链式恢复）</td></tr>
+<tr><td><span class="badge" style="background:#CC0000">DELETE</span></td><td><code>/api/backups/:id</code></td><td>删除备份（软删除）</td></tr>
+</table>
+
+<h2>10.8 版本更新</h2>
+<table>
+<tr><th style="width:60px">方法</th><th>路径</th><th>说明</th></tr>
+<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/version/current</code></td><td>获取当前系统版本</td></tr>
+<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/version/history</code></td><td>获取版本历史列表</td></tr>
+<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/version/packages</code></td><td>获取升级包列表</td></tr>
+<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/version/packages/upload</code></td><td>上传升级包（ZIP：manifest.json+upgrade.sql）</td></tr>
+<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/version/packages/:id/apply</code></td><td>应用升级（自动备份→执行SQL→更新版本）</td></tr>
+<tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/version/packages/:id/rollback</code></td><td>回滚升级（恢复备份→回退版本号）</td></tr>
+<tr><td><span class="badge" style="background:#CC0000">DELETE</span></td><td><code>/api/version/packages/:id</code></td><td>删除升级包</td></tr>
+</table>
+
+<h2>10.9 健康检查</h2>
+<table>
+<tr><th style="width:60px">方法</th><th>路径</th><th>说明</th></tr>
+<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/health</code></td><td>服务健康检查</td></tr>
 </table>
 
 <!-- ====== 十一、技术架构 ====== -->
@@ -797,15 +847,20 @@ CREATE TABLE audit_log (
 
 <h2>11.3 核心Service</h2>
 <table>
-<tr><th>Service</th><th>职责</th></tr>
-<tr><td><code>PhoneOwnershipService</code></td><td>归属表导入、例外解析、P0匹配</td></tr>
-<tr><td><code>DirectoryService</code></td><td>通讯录导入、部门路径解析、借调检测</td></tr>
-<tr><td><code>BillImportService</code></td><td>账单导入、模板匹配、Sheet解析、闪信季度累计</td></tr>
-<tr><td><code>OwnershipResolver</code></td><td>归属校验引擎：P0→P1→P2→P3优先级匹配</td></tr>
-<tr><td><code>AllocationEngine</code></td><td>自动分摊：按号码归属汇总到组织树</td></tr>
-<tr><td><code>AllocationConfirmService</code></td><td>确认/撤回逻辑、级联撤回、状态机</td></tr>
-<tr><td><code>AdjustmentService</code></td><td>借调调整、金额调整、审计记录</td></tr>
-<tr><td><code>BranchBillExportService</code></td><td>分行分摊汇总+明细导出</td></tr>
+<tr><th>Service</th><th>职责</th><th>状态</th></tr>
+<tr><td><code>PhoneOwnershipService</code></td><td>归属表导入、例外解析、P0匹配</td><td><span class="tag tag-green">已实现</span></td></tr>
+<tr><td><code>DirectoryService</code></td><td>通讯录导入、部门路径解析、借调检测</td><td><span class="tag tag-green">已实现</span></td></tr>
+<tr><td><code>BillImportService</code></td><td>账单导入、模板匹配、Sheet解析、闪信季度累计</td><td><span class="tag tag-green">已实现</span></td></tr>
+<tr><td><code>OwnershipResolver</code></td><td>归属校验引擎：P0→P1→P2→P3优先级匹配</td><td><span class="tag tag-green">已实现</span></td></tr>
+<tr><td><code>AllocationEngine</code></td><td>自动分摊：按号码归属汇总到组织树</td><td><span class="tag tag-green">已实现</span></td></tr>
+<tr><td><code>AllocationConfirmService</code></td><td>确认/撤回逻辑、级联撤回、状态机</td><td><span class="tag tag-green">已实现</span></td></tr>
+<tr><td><code>AdjustmentService</code></td><td>借调调整、金额调整、审计记录</td><td><span class="tag tag-green">已实现</span></td></tr>
+<tr><td><code>BranchBillExportService</code></td><td>分行分摊汇总+明细导出（5-Sheet Excel）</td><td><span class="tag tag-green">已实现</span></td></tr>
+<tr><td><code>BackupService</code></td><td>全量/增量备份（mysqldump）、恢复（gunzip|mysql）、链式恢复</td><td><span class="tag tag-green">已实现</span></td></tr>
+<tr><td><code>ScheduledBackupService</code></td><td>定时增量备份（每日自动执行）</td><td><span class="tag tag-green">已实现</span></td></tr>
+<tr><td><code>VersionUpgradeService</code></td><td>升级包上传/验证、应用升级、回滚、版本管理</td><td><span class="tag tag-green">已实现</span></td></tr>
+<tr><td><code>DataScopeService</code></td><td>数据范围隔离：ADMIN全量、BRANCH子树、DEPARTMENT子树（含后代）</td><td><span class="tag tag-green">已实现</span></td></tr>
+<tr><td><code>AuditLogService</code></td><td>审计日志记录（自动捕获客户端IP）</td><td><span class="tag tag-green">已实现</span></td></tr>
 </table>
 
 <h2>11.4 分摊引擎算法</h2>
@@ -833,16 +888,60 @@ CREATE TABLE audit_log (
 <tr><td>闪信季度</td><td>isQuarterly标记</td><td>与月度分摊逻辑分离</td></tr>
 </table>
 
-<!-- ====== 十二、里程碑 ====== -->
+<h2 id="ch11-6">11.6 版本更新机制</h2>
+
+<h3>升级包结构</h3>
+<div class="code">升级包（ZIP）
+├── manifest.json    → {"version": "1.2.0", "description": "新增XX功能"}
+└── upgrade.sql      → SQL迁移脚本（逐句执行，按分号分隔）</div>
+
+<h3>升级流程</h3>
+<div class="flow">
+  <span class="step">上传ZIP</span><span class="arrow">→</span>
+  <span class="step">解压验证manifest</span><span class="arrow">→</span>
+  <span class="step">存储升级包</span><span class="arrow">→</span>
+  <span class="step">[应用升级]</span><span class="arrow">→</span>
+  <span class="step">自动全量备份</span><span class="arrow">→</span>
+  <span class="step">执行SQL</span><span class="arrow">→</span>
+  <span class="step">更新版本号</span><span class="arrow">→</span>
+  <span class="step">记录审计</span>
+</div>
+
+<h3>回滚机制</h3>
+<p>回滚通过<strong>恢复升级前的全量备份</strong>实现，不使用反向SQL。恢复后数据库中已包含正确的版本标记（is_current），无需额外操作。</p>
+<div class="warn"><strong>关键设计决策：</strong><br>1. <code>rollbackUpgrade</code> 不使用 <code>@Transactional</code>，因为外部 mysql 进程需要独占DB访问，JPA事务会持有metadata lock导致死锁。<br>2. 恢复后调用 <code>HikariDataSource.softEvictConnections()</code> 清理连接池中的失效连接，避免 Broken pipe。<br>3. SQL执行前先清除 <code>/* */</code> 和 <code>--</code> 注释，避免注释中的分号导致语句拆分错误。<br>4. 升级包状态在SQL执行成功后才设为 APPLIED，确保失败时状态一致。</div>
+
+<h3>数据模型</h3>
+<table>
+<tr><th>表</th><th>关键字段</th><th>说明</th></tr>
+<tr><td><code>system_version</code></td><td>version, is_current, backup_id</td><td>版本记录，is_current标识当前版本，backup_id关联升级前备份</td></tr>
+<tr><td><code>version_upgrade_package</code></td><td>target_version, file_path, status</td><td>升级包记录，状态：UPLOADED → APPLIED / FAILED</td></tr>
+</table>
 <h1 id="ch12">十二、里程碑与风险</h1>
 
-<h2>12.1 四阶段开发计划（10周）</h2>
+<h2>12.1 开发进度（已全部完成）</h2>
 <table>
-<tr><th>阶段</th><th>时间</th><th>内容</th><th>交付物</th></tr>
-<tr><td><span class="badge" style="background:#2E75B6">P1</span></td><td>第1-3周</td><td>数据导入+归属校验</td><td>3个导入页面+校验报告</td></tr>
-<tr><td><span class="badge" style="background:#2E75B6">P2</span></td><td>第4-6周</td><td>分摊+确认+调整</td><td>分摊结果页+确认流程</td></tr>
-<tr><td><span class="badge" style="background:#2E75B6">P3</span></td><td>第7-8周</td><td>导出+报表</td><td>分行分摊导出+汇总报表</td></tr>
-<tr><td><span class="badge" style="background:#2E75B6">P4</span></td><td>第9-10周</td><td>优化+上线</td><td>性能优化+UAT+部署</td></tr>
+<tr><th>阶段</th><th>时间</th><th>内容</th><th>状态</th></tr>
+<tr><td><span class="badge" style="background:#065F46">P1</span></td><td>2026-06-22</td><td>需求分析+技术架构+服务器环境搭建+数据库设计+基础项目框架</td><td><span class="tag tag-green">已完成</span></td></tr>
+<tr><td><span class="badge" style="background:#065F46">P2</span></td><td>2026-06-22</td><td>全系统开发部署：12个实体+Service+Controller，6个前端页面，JWT认证，Nginx反向代理</td><td><span class="tag tag-green">已完成</span></td></tr>
+<tr><td><span class="badge" style="background:#065F46">P3-1</span></td><td>2026-06-23</td><td>费用调整功能：手动调拨号码费用到其他组织</td><td><span class="tag tag-green">已完成</span></td></tr>
+<tr><td><span class="badge" style="background:#065F46">P3-2</span></td><td>2026-06-23</td><td>单元/集成测试：55个测试全部通过</td><td><span class="tag tag-green">已完成</span></td></tr>
+<tr><td><span class="badge" style="background:#065F46">P3-3</span></td><td>2026-06-23</td><td>分行账单导出：5-Sheet格式Excel</td><td><span class="tag tag-green">已完成</span></td></tr>
+<tr><td><span class="badge" style="background:#065F46">P3-4</span></td><td>2026-06-23</td><td>账单模板管理：bill_template表激活，模板驱动解析</td><td><span class="tag tag-green">已完成</span></td></tr>
+<tr><td><span class="badge" style="background:#065F46">P3-5</span></td><td>2026-06-23</td><td>前端国际化：中英文切换，8个页面全部i18n化</td><td><span class="tag tag-green">已完成</span></td></tr>
+<tr><td><span class="badge" style="background:#065F46">P4</span></td><td>2026-06-23</td><td>代码质量优化：ESLint 36→0错误，TypeScript 48→0错误，any 82→2</td><td><span class="tag tag-green">已完成</span></td></tr>
+<tr><td><span class="badge" style="background:#065F46">P5</span></td><td>2026-06-29</td><td>角色权限增强+DataScope隔离+费用分析权限过滤+组织类型扩展（5种）</td><td><span class="tag tag-green">已完成</span></td></tr>
+<tr><td><span class="badge" style="background:#065F46">P6</span></td><td>2026-06-30</td><td>版本更新功能：上传/应用/回滚 + 数据维护Tabs重构 + Bug修复 + 操作日志详情可读化</td><td><span class="tag tag-green">已完成</span></td></tr>
+</table>
+
+<h2>12.2 代码质量现状</h2>
+<table>
+<tr><th>指标</th><th>当前值</th><th>说明</th></tr>
+<tr><td>TypeScript错误</td><td>0</td><td>从48降至0</td></tr>
+<tr><td>ESLint警告</td><td>3</td><td>从84降至3</td></tr>
+<tr><td>any类型使用</td><td>2处</td><td>从82降至2（ReportData/Ant Design兼容）</td></tr>
+<tr><td>单元测试</td><td>55个全部通过</td><td>覆盖核心业务逻辑</td></tr>
+<tr><td>死代码清理</td><td>466行</td><td>已清理</td></tr>
 </table>
 
 <h2>12.2 风险与应对</h2>
@@ -896,7 +995,7 @@ CREATE TABLE audit_log (
 
 <!-- 页脚 -->
 <div style="margin-top:80px;padding-top:24px;border-top:2px solid #E2E8F0;color:#A0AEC0;font-size:12px;text-align:center">
-  银行内部电话费用分摊系统 — 需求文档 &amp; 设计方案 V1.1 &nbsp;|&nbsp; 2026-06-22 &nbsp;|&nbsp; 密级：内部
+  银行内部电话费用分摊系统 — 需求文档 &amp; 设计方案 V2.0 &nbsp;|&nbsp; 2026-06-30 &nbsp;|&nbsp; 密级：内部
 </div>
 
 </div><!-- .main -->
