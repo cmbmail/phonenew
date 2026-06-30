@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Card, Table, Select, Input, Tag, Row, Col, Space, DatePicker } from 'antd';
+import { Card, Table, Select, Input, Tag, Row, Col, Space, DatePicker, Popover, Typography } from 'antd';
 import { SearchOutlined, ReloadOutlined } from '@ant-design/icons';
 import { COLORS } from '../theme/morandi';
 import { apiGet } from '../lib/request';
@@ -20,19 +20,29 @@ const ACTION_MAP: Record<string, string> = {
   EXPORT_L1_SUMMARY: '导出集团汇总',
   EXPORT_L2_BRANCH_DETAIL: '导出分行明细',
   EXPORT_L3_SUB_BRANCH_DETAIL: '导出支行明细',
+  EXPORT_BRANCH_BILL: '导出分行账单',
   EXPORT_COST_CENTER_MAPPING: '导出成本中心对照表',
   CLEAR_EXCEPTION: '解除例外',
   SYNC_FROM_MATCH: '同步当前数据',
   UPDATE_EXCEPTION_REASON: '编辑例外原因',
   CREATE_SNAPSHOT: '创建快照',
   BATCH_CLEAR_EXCEPTION: '批量解除例外',
+  ORG_IMPORT: '导入组织架构',
+  UPGRADE_PACKAGE_UPLOAD: '上传升级包',
+  UPGRADE_APPLIED: '应用升级',
+  UPGRADE_ROLLBACK: '回滚升级',
+  BACKUP_CREATE: '创建备份',
+  BACKUP_RESTORE: '恢复备份',
+  BACKUP_DELETE: '删除备份',
+  LOGIN: '登录',
+  CHANGE_PASSWORD: '修改密码',
 };
 
 const ACTION_COLOR: Record<string, string> = {
   IMPORT_OWNERSHIP: COLORS.sage,
   IMPORT_DIRECTORY: COLORS.sage,
   IMPORT_BILL: COLORS.sage,
-  MATCH_OWNERSHIP: COLORS.info,
+  MATCH_OWNERSHIP: COLORS.sage,
   ALLOCATION_CALCULATE: COLORS.mauve,
   ALLOCATION_CONFIRM: COLORS.confirmed,
   ALLOCATION_CONFIRM_ALL: COLORS.confirmed,
@@ -43,6 +53,17 @@ const ACTION_COLOR: Record<string, string> = {
   EXPORT_L1_SUMMARY: COLORS.slate,
   EXPORT_L2_BRANCH_DETAIL: COLORS.slate,
   EXPORT_L3_SUB_BRANCH_DETAIL: COLORS.slate,
+  EXPORT_BRANCH_BILL: COLORS.slate,
+  EXPORT_COST_CENTER_MAPPING: COLORS.slate,
+  ORG_IMPORT: COLORS.sage,
+  UPGRADE_PACKAGE_UPLOAD: COLORS.mauve,
+  UPGRADE_APPLIED: COLORS.confirmed,
+  UPGRADE_ROLLBACK: COLORS.danger,
+  BACKUP_CREATE: COLORS.mauve,
+  BACKUP_RESTORE: COLORS.pending,
+  BACKUP_DELETE: COLORS.danger,
+  LOGIN: COLORS.sage,
+  CHANGE_PASSWORD: COLORS.slate,
 };
 
 interface AuditLogEntry {
@@ -63,6 +84,100 @@ interface PagedResult {
   total_pages: number;
   number: number;
   size: number;
+}
+
+/** 详情 JSON 字段名 → 中文标签 */
+const DETAIL_KEY_MAP: Record<string, string> = {
+  org_count: '组织数',
+  branch_org_id: '分行ID',
+  sub_branch_org_id: '支行ID',
+  module: '模块',
+  total: '总数',
+  created: '新增',
+  skipped: '跳过',
+  updated: '更新',
+  package_name: '升级包',
+  target_version: '目标版本',
+  previous_version: '原版本',
+  backup_id: '备份ID',
+  sql_statements: 'SQL语句数',
+  rolled_back_from: '回滚前版本',
+  rolled_back_to: '回滚后版本',
+  batch_id: '批次ID',
+  count: '数量',
+  file_name: '文件名',
+  error: '错误信息',
+  amount: '金额',
+  phone_number: '号码',
+  from_org: '调出组织',
+  to_org: '调入组织',
+  reason: '原因',
+};
+
+/** 为每种操作生成一句可读的中文摘要 */
+function renderDetailSummary(action: string, obj: Record<string, unknown>): string {
+  switch (action) {
+    case 'ALLOCATION_CALCULATE':
+      return `计算 ${obj.org_count ?? '?'} 个组织的分摊`;
+    case 'ALLOCATION_CONFIRM':
+      return '确认分摊结果';
+    case 'ALLOCATION_CONFIRM_ALL':
+      return '批量确认所有分摊';
+    case 'ALLOCATION_WITHDRAW':
+      return '撤回分摊';
+    case 'ALLOCATION_ADJUST':
+      return `调整费用${obj.phone_number ? '：' + obj.phone_number : ''}`;
+    case 'EXPORT_SUMMARY':
+    case 'EXPORT_DETAIL':
+      return obj.branch_org_id ? `导出分行#${obj.branch_org_id}` : '导出全量数据';
+    case 'EXPORT_L1_SUMMARY':
+      return '导出集团汇总';
+    case 'EXPORT_L2_BRANCH_DETAIL':
+      return obj.branch_org_id ? `导出分行#${obj.branch_org_id}明细` : '导出全部分行明细';
+    case 'EXPORT_L3_SUB_BRANCH_DETAIL':
+      return obj.sub_branch_org_id ? `导出支行#${obj.sub_branch_org_id}明细` : '导出全部支行明细';
+    case 'EXPORT_BRANCH_BILL':
+      return obj.branch_org_id ? `导出分行#${obj.branch_org_id}账单` : '导出全部分行账单';
+    case 'EXPORT_COST_CENTER_MAPPING':
+      return obj.branch_org_id ? `导出分行#${obj.branch_org_id}成本中心` : '导出全部成本中心对照表';
+    case 'ORG_IMPORT':
+      return `导入 ${obj.total ?? '?'} 个组织（新增 ${obj.created ?? '?'}，跳过 ${obj.skipped ?? '?'}，更新 ${obj.updated ?? '?'}）`;
+    case 'UPGRADE_PACKAGE_UPLOAD':
+      return `上传升级包「${obj.package_name ?? '?'}」→ v${obj.target_version ?? '?'}`;
+    case 'UPGRADE_APPLIED':
+      return `升级 v${obj.previous_version ?? '?'} → v${obj.target_version ?? '?'}（${obj.sql_statements ?? '?'} 条SQL，备份#${obj.backup_id ?? '?'}）`;
+    case 'UPGRADE_ROLLBACK':
+      return `回滚 v${obj.rolled_back_from ?? '?'} → v${obj.rolled_back_to ?? '?'}（备份#${obj.backup_id ?? '?'}）`;
+    case 'IMPORT_OWNERSHIP':
+      return `导入号码归属（${obj.count ?? obj.total ?? '?'} 条）`;
+    case 'IMPORT_DIRECTORY':
+      return `导入通讯录（${obj.count ?? obj.total ?? '?'} 条）`;
+    case 'IMPORT_BILL':
+      return `导入电信账单（${obj.count ?? obj.total ?? '?'} 条）`;
+    case 'MATCH_OWNERSHIP':
+      return '执行归属匹配';
+    default: {
+      // 兜底：key=value 拼接
+      return Object.entries(obj)
+        .map(([k, v]) => `${DETAIL_KEY_MAP[k] || k}=${v}`)
+        .join('，');
+    }
+  }
+}
+
+/** 将 JSON 对象渲染为可读的键值对列表 */
+function renderDetailPopover(obj: Record<string, unknown>): React.ReactNode {
+  const entries = Object.entries(obj);
+  return (
+    <div style={{ maxWidth: 360 }}>
+      {entries.map(([k, v]) => (
+        <Row key={k} style={{ marginBottom: 4 }}>
+          <Col span={8} style={{ color: COLORS.textMuted, fontSize: 12 }}>{DETAIL_KEY_MAP[k] || k}</Col>
+          <Col span={16} style={{ fontSize: 12, wordBreak: 'break-all' }}>{String(v ?? '-')}</Col>
+        </Row>
+      ))}
+    </div>
+  );
 }
 
 const AuditLogPage: React.FC = () => {
@@ -106,11 +221,17 @@ const AuditLogPage: React.FC = () => {
     { title: '对象ID', dataIndex: 'entity_id', key: 'entity_id', width: 80,
       render: (v: number | null) => v ?? '-' },
     { title: '详情', dataIndex: 'detail', key: 'detail', width: 300, ellipsis: true,
-      render: (v: string | null) => {
+      render: (v: string | null, record: AuditLogEntry) => {
         if (!v) return '-';
         try {
-          const obj = JSON.parse(v);
-          return <span style={{ fontSize: 12, color: COLORS.textMuted }}>{JSON.stringify(obj)}</span>;
+          const obj = JSON.parse(v) as Record<string, unknown>;
+          const summary = renderDetailSummary(record.action, obj);
+          const popoverContent = renderDetailPopover(obj);
+          return (
+            <Popover content={popoverContent} title="操作详情" trigger="hover" placement="left">
+              <span style={{ fontSize: 12, color: COLORS.textDark, cursor: 'pointer' }}>{summary}</span>
+            </Popover>
+          );
         } catch {
           return <span style={{ fontSize: 12, color: COLORS.textMuted }}>{v}</span>;
         }
