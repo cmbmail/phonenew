@@ -42,3 +42,4 @@ Thumbs.db
 .mvn/
 mvnw
 mvnw.cmd
+*.tar.gz
