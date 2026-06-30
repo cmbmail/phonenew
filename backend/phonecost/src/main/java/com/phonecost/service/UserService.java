@@ -2,6 +2,7 @@ package com.phonecost.service;
 
 import com.phonecost.domain.SysUser;
 import com.phonecost.repository.SysUserRepository;
+import com.phonecost.repository.SysOrganizationRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -17,6 +18,7 @@ import java.util.List;
 public class UserService {
 
     private final SysUserRepository userRepository;
+    private final SysOrganizationRepository orgRepository;
     private final PasswordEncoder passwordEncoder;
 
     public List<SysUser> list() {
@@ -32,6 +34,9 @@ public class UserService {
     public SysUser create(SysUser user) {
         if (userRepository.existsByUsernameAndDeletedAtIsNull(user.getUsername())) {
             throw new IllegalArgumentException("用户名已存在: " + user.getUsername());
+        }
+        if (user.getOrgId() != null && !orgRepository.existsByIdAndDeletedAtIsNull(user.getOrgId())) {
+            throw new IllegalArgumentException("组织不存在: " + user.getOrgId());
         }
         user.setPassword(passwordEncoder.encode(user.getPassword()));
         if (user.getRealName() == null) user.setRealName("");

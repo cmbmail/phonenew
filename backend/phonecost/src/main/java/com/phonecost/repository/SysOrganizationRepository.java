@@ -15,6 +15,7 @@ public interface SysOrganizationRepository extends JpaRepository<SysOrganization
     List<SysOrganization> findByTypeAndDeletedAtIsNull(Byte type);
     Optional<SysOrganization> findByCodeAndDeletedAtIsNull(String code);
     List<SysOrganization> findByPathStartingWithAndDeletedAtIsNull(String path);
+    boolean existsByIdAndDeletedAtIsNull(Long id);
 
     @Query("SELECT o FROM SysOrganization o WHERE o.path LIKE CONCAT(:parentPath, '%') AND o.deletedAt IS NULL")
     List<SysOrganization> findAllDescendants(@Param("parentPath") String parentPath);
