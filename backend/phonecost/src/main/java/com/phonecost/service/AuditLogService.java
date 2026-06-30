@@ -1,7 +1,9 @@
 package com.phonecost.service;
 
 import com.phonecost.domain.AuditLog;
+import com.phonecost.domain.SysUser;
 import com.phonecost.repository.AuditLogRepository;
+import com.phonecost.repository.SysUserRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,7 +26,33 @@ import java.util.Map;
 public class AuditLogService {
 
     private final AuditLogRepository auditLogRepository;
+    private final SysUserRepository sysUserRepository;
     private final ObjectMapper objectMapper;
+
+    /**
+     * 便捷方法：自动解析真实用户名
+     * userId=0 或 null → username="system"
+     * 否则从 sys_user 表查询 username
+     */
+    public void log(Long userId, String action, String resourceType, Long resourceId, Map<String, Object> detail) {
+        String username = resolveUsername(userId);
+        log(userId, username, action, resourceType, resourceId, detail);
+    }
+
+    /**
+     * 便捷方法：String 版本的 detail
+     */
+    public void log(Long userId, String action, String resourceType, Long resourceId, String detail) {
+        String username = resolveUsername(userId);
+        log(userId, username, action, resourceType, resourceId, detail);
+    }
+
+    private String resolveUsername(Long userId) {
+        if (userId == null || userId == 0L) return "system";
+        return sysUserRepository.findById(userId)
+                .map(SysUser::getUsername)
+                .orElse("user#" + userId);
+    }
 
     public void log(Long userId, String username, String action, String resourceType, Long resourceId, String detail) {
         AuditLog auditLog = AuditLog.builder()

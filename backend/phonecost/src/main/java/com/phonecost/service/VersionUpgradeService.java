@@ -128,7 +128,7 @@ public class VersionUpgradeService {
         pkg = packageRepository.save(pkg);
         log.info("Upgrade package uploaded: {} -> v{}", storedName, targetVersion);
 
-        auditLogService.log(userId, String.valueOf(userId), "UPGRADE_PACKAGE_UPLOAD", "version_upgrade_package", pkg.getId(),
+        auditLogService.log(userId, "UPGRADE_PACKAGE_UPLOAD", "version_upgrade_package", pkg.getId(),
                 Map.of("package_name", originalName, "target_version", targetVersion));
 
         return pkg;
@@ -189,7 +189,7 @@ public class VersionUpgradeService {
             pkg.setErrorMessage(errMsg != null ? errMsg.substring(0, Math.min(errMsg.length(), 2000)) : "Unknown error");
             packageRepository.save(pkg);
 
-            auditLogService.log(userId, String.valueOf(userId), "UPGRADE_FAILED", "version_upgrade_package", pkg.getId(),
+            auditLogService.log(userId, "UPGRADE_FAILED", "version_upgrade_package", pkg.getId(),
                     Map.of("target_version", pkg.getTargetVersion(), "error", errMsg));
 
             throw new RuntimeException("升级失败: " + e.getMessage(), e);
@@ -217,7 +217,7 @@ public class VersionUpgradeService {
 
         pkg = packageRepository.save(pkg);
 
-        auditLogService.log(userId, String.valueOf(userId), "UPGRADE_APPLIED", "version_upgrade_package", pkg.getId(),
+        auditLogService.log(userId, "UPGRADE_APPLIED", "version_upgrade_package", pkg.getId(),
                 Map.of("previous_version", previousVersion, "target_version", pkg.getTargetVersion(),
                         "backup_id", backupRecord.getId(), "sql_statements", executedStatements.size()));
 
@@ -279,7 +279,7 @@ public class VersionUpgradeService {
 
         String rolledBackTo = previousVersion != null ? previousVersion.getVersion() : "unknown";
 
-        auditLogService.log(userId, String.valueOf(userId), "UPGRADE_ROLLBACK", "system_version", versionId,
+        auditLogService.log(userId, "UPGRADE_ROLLBACK", "system_version", versionId,
                 Map.of("rolled_back_from", rolledBackFromVersion, "rolled_back_to", rolledBackTo,
                         "backup_id", backupId));
 

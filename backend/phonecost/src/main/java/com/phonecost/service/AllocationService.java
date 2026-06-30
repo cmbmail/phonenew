@@ -25,7 +25,6 @@ public class AllocationService {
     private final BillDetailRepository billDetailRepository;
     private final AllocationResultRepository allocationResultRepository;
     private final SysOrganizationRepository orgRepository;
-    private final AuditLogService auditLogService;
 
     @Transactional
     public List<AllocationResult> calculateAllocation(Long billBatchId) {
@@ -134,9 +133,6 @@ public class AllocationService {
         log.info("Allocation calculated: batch={}, orgs={}, unassigned_phones={}, total_fee={}",
                 billBatchId, results.size(), unassigned.phoneCount,
                 results.stream().map(AllocationResult::getTotalFee).reduce(BigDecimal.ZERO, BigDecimal::add));
-
-        auditLogService.log(0L, "system", "ALLOCATION_CALCULATE", "bill_batch", billBatchId,
-                "{\"org_count\":" + results.size() + "}");
 
         return results;
     }

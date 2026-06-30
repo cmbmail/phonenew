@@ -35,7 +35,6 @@ public class AllocationAdjustService {
     private final AllocationResultRepository resultRepository;
     private final AllocationAdjustmentRepository adjustmentRepository;
     private final SysOrganizationRepository orgRepository;
-    private final AuditLogService auditLogService;
 
     /**
      * 调整指定号码的费用归属
@@ -178,11 +177,6 @@ public class AllocationAdjustService {
                 .adjustedName("")
                 .build();
         adjustmentRepository.save(adjustment);
-
-        auditLogService.log(userId, "user", "ALLOCATION_ADJUST", "allocation_adjustment", adjustment.getId(),
-                "{\"batch_id\":" + batchId + ",\"phone\":\"" + phoneNumber
-                        + "\",\"from\":" + fromOrgId + ",\"to\":" + toOrgId
-                        + ",\"amount\":" + totalAmount + "}");
 
         log.info("Allocation adjusted: batch={}, phone={}, from={}, to={}, amount={}, by={}",
                 batchId, phoneNumber, fromOrgId, toOrgId, totalAmount, userId);

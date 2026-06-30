@@ -4,6 +4,7 @@ import com.phonecost.domain.SysOrganization;
 import com.phonecost.dto.ApiResponse;
 import com.phonecost.service.DataScope;
 import com.phonecost.service.DataScopeService;
+import com.phonecost.service.AuditLogService;
 import com.phonecost.service.OrganizationService;
 import lombok.RequiredArgsConstructor;
 import org.apache.poi.ss.usermodel.*;
@@ -27,6 +28,7 @@ public class OrganizationController {
 
     private final OrganizationService organizationService;
     private final DataScopeService dataScopeService;
+    private final AuditLogService auditLogService;
 
     @GetMapping("/tree")
     public ResponseEntity<ApiResponse<List<SysOrganization>>> getTree(
@@ -52,20 +54,33 @@ public class OrganizationController {
 
     @PostMapping
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
-    public ResponseEntity<ApiResponse<SysOrganization>> create(@RequestBody SysOrganization org) {
-        return ResponseEntity.ok(ApiResponse.ok(organizationService.create(org)));
+    public ResponseEntity<ApiResponse<SysOrganization>> create(
+            @RequestBody SysOrganization org,
+            @RequestAttribute("userId") Long userId) {
+        SysOrganization created = organizationService.create(org);
+        auditLogService.log(userId, "ORG_CREATE", "sys_organization", created.getId(),
+                Map.of("name", created.getName(), "code", created.getCode() != null ? created.getCode() : ""));
+        return ResponseEntity.ok(ApiResponse.ok(created));
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
-    public ResponseEntity<ApiResponse<SysOrganization>> update(@PathVariable Long id,
-                                                                 @RequestBody SysOrganization org) {
-        return ResponseEntity.ok(ApiResponse.ok(organizationService.update(id, org)));
+    public ResponseEntity<ApiResponse<SysOrganization>> update(
+            @PathVariable Long id,
+            @RequestBody SysOrganization org,
+            @RequestAttribute("userId") Long userId) {
+        SysOrganization updated = organizationService.update(id, org);
+        auditLogService.log(userId, "ORG_UPDATE", "sys_organization", id,
+                Map.of("name", updated.getName()));
+        return ResponseEntity.ok(ApiResponse.ok(updated));
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
-    public ResponseEntity<ApiResponse<Void>> delete(@PathVariable Long id) {
+    public ResponseEntity<ApiResponse<Void>> delete(
+            @PathVariable Long id,
+            @RequestAttribute("userId") Long userId) {
+        auditLogService.log(userId, "ORG_DELETE", "sys_organization", id, (Map<String, Object>) null);
         organizationService.delete(id);
         return ResponseEntity.ok(ApiResponse.ok());
     }
@@ -73,9 +88,11 @@ public class OrganizationController {
     @PostMapping("/import")
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> importFromExcel(
-            @RequestParam("file") MultipartFile file) {
+            @RequestParam("file") MultipartFile file,
+            @RequestAttribute("userId") Long userId) {
         try {
             Map<String, Object> result = organizationService.importFromExcel(file);
+            auditLogService.log(userId, "ORG_IMPORT", "organization", null, result);
             return ResponseEntity.ok(ApiResponse.ok(result));
         } catch (Exception e) {
             throw new IllegalArgumentException("组织导入失败: " + e.getMessage());
@@ -84,8 +101,10 @@ public class OrganizationController {
 
     @PostMapping("/rebuild-paths")
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
-    public ResponseEntity<ApiResponse<Void>> rebuildPaths() {
+    public ResponseEntity<ApiResponse<Void>> rebuildPaths(
+            @RequestAttribute("userId") Long userId) {
         organizationService.rebuildPaths();
+        auditLogService.log(userId, "ORG_REBUILD_PATHS", "sys_organization", null, (Map<String, Object>) null);
         return ResponseEntity.ok(ApiResponse.ok());
     }
 

@@ -21,7 +21,6 @@ import java.util.*;
 public class OrganizationService {
 
     private final SysOrganizationRepository orgRepository;
-    private final AuditLogService auditLogService;
 
     public List<SysOrganization> getTree() {
         return orgRepository.findAll();
@@ -201,10 +200,7 @@ public class OrganizationService {
         int totalProcessed = created + updated;
         log.info("Organization import completed: total={}, created={}, updated={}, skipped={}",
                 totalProcessed, created, updated, skipped);
-        auditLogService.log(0L, "system", "ORG_IMPORT", "organization", null,
-                String.format("{\"total\":%d,\"created\":%d,\"updated\":%d,\"skipped\":%d}",
-                        totalProcessed, created, updated, skipped));
-        return Map.of("total", totalProcessed, "created", created, "skipped", skipped);
+        return Map.of("total", totalProcessed, "created", created, "skipped", skipped, "updated", updated);
     }
 
     @Transactional

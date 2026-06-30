@@ -49,7 +49,8 @@ public class AllocationController {
     @PostMapping("/calculate")
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> calculate(
-            @RequestBody Map<String, Object> body) {
+            @RequestBody Map<String, Object> body,
+            @RequestAttribute("userId") Long userId) {
         Long billBatchId = null;
         if (body.get("bill_batch_id") instanceof Number n) billBatchId = n.longValue();
         if (billBatchId == null) {
@@ -95,7 +96,7 @@ public class AllocationController {
         // Step 3: Calculate allocation based on matched results
         List<AllocationResult> results = allocationService.calculateAllocation(billBatchId);
 
-        auditLogService.log(0L, "system", "ALLOCATION_CALCULATE", "bill_batch", billBatchId,
+        auditLogService.log(userId, "ALLOCATION_CALCULATE", "bill_batch", billBatchId,
                 Map.of("org_count", results.size(), "matched_count", matchedCount,
                         "ownership_batch_id", ownershipBatchId != null ? ownershipBatchId : 0L,
                         "directory_batch_id", directoryBatchId != null ? directoryBatchId : 0L));
@@ -171,7 +172,7 @@ public class AllocationController {
         }
 
         AllocationResult result = confirmService.confirm(batchId, orgId, userId);
-        auditLogService.log(userId, String.valueOf(userId), "ALLOCATION_CONFIRM", "allocation_result", result.getId(),
+        auditLogService.log(userId, "ALLOCATION_CONFIRM", "allocation_result", result.getId(),
                 Map.of("batch_id", batchId, "org_id", orgId));
         return ResponseEntity.ok(ApiResponse.ok(Map.of(
                 "org_id", result.getOrgId(),
@@ -192,7 +193,7 @@ public class AllocationController {
         // 分行管理员只确认自己范围内的
         DataScope scope = dataScopeService.getDataScope(userId);
         int count = confirmService.confirmAllInScope(batchId, userId, scope);
-        auditLogService.log(userId, String.valueOf(userId), "ALLOCATION_CONFIRM_ALL", "bill_batch", batchId,
+        auditLogService.log(userId, "ALLOCATION_CONFIRM_ALL", "bill_batch", batchId,
                 Map.of("confirmed_count", count));
         return ResponseEntity.ok(ApiResponse.ok(Map.of("confirmed_count", count)));
     }
@@ -216,7 +217,7 @@ public class AllocationController {
         }
 
         List<AllocationResult> results = confirmService.withdraw(batchId, orgId, userId, reason);
-        auditLogService.log(userId, String.valueOf(userId), "ALLOCATION_WITHDRAW", "bill_batch", batchId,
+        auditLogService.log(userId, "ALLOCATION_WITHDRAW", "bill_batch", batchId,
                 Map.of("org_id", orgId, "result_count", results.size()));
         return ResponseEntity.ok(ApiResponse.ok(Map.of(
                 "org_id", orgId,
@@ -249,7 +250,7 @@ public class AllocationController {
 
         AllocationAdjustment adjustment = adjustService.adjust(
                 batchId, phoneNumber, fromOrgId, toOrgId, reason, userId);
-        auditLogService.log(userId, String.valueOf(userId), "ALLOCATION_ADJUST", "allocation_adjustment", adjustment.getId(),
+        auditLogService.log(userId, "ALLOCATION_ADJUST", "allocation_adjustment", adjustment.getId(),
                 Map.of("phone_number", phoneNumber, "from_org_id", fromOrgId, "to_org_id", toOrgId));
         return ResponseEntity.ok(ApiResponse.ok(adjustment));
     }
@@ -273,7 +274,7 @@ public class AllocationController {
         Long effectiveBranchOrgId = resolveEffectiveBranchOrgId(branchOrgId, userId);
 
         byte[] data = exportService.exportSummary(batchId, effectiveBranchOrgId);
-        auditLogService.log(userId, String.valueOf(userId), "EXPORT_SUMMARY", "bill_batch", batchId,
+        auditLogService.log(userId, "EXPORT_SUMMARY", "bill_batch", batchId,
                 Map.of("branch_org_id", effectiveBranchOrgId));
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION,
@@ -291,7 +292,7 @@ public class AllocationController {
         Long effectiveBranchOrgId = resolveEffectiveBranchOrgId(branchOrgId, userId);
 
         byte[] data = exportService.exportDetail(batchId, effectiveBranchOrgId);
-        auditLogService.log(userId, String.valueOf(userId), "EXPORT_DETAIL", "bill_batch", batchId,
+        auditLogService.log(userId, "EXPORT_DETAIL", "bill_batch", batchId,
                 Map.of("branch_org_id", effectiveBranchOrgId));
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION,
@@ -312,6 +313,8 @@ public class AllocationController {
         Long effectiveBranchOrgId = resolveEffectiveBranchOrgId(branchOrgId, userId);
 
         byte[] data = branchBillExportService.exportCostCenterMapping(batchId, effectiveBranchOrgId, userId);
+        auditLogService.log(userId, "EXPORT_COST_CENTER_MAPPING", "bill_batch", batchId,
+                Map.of("branch_org_id", effectiveBranchOrgId));
         String filename = java.net.URLEncoder.encode(
                 "分行成本中心对照表_" + batchId + ".xlsx", "UTF-8");
         return ResponseEntity.ok()
@@ -461,7 +464,7 @@ public class AllocationController {
             @RequestParam Long batchId,
             @RequestAttribute("userId") Long userId) throws Exception {
         byte[] data = branchBillExportService.exportLevel1Summary(batchId, userId);
-        auditLogService.log(userId, String.valueOf(userId), "EXPORT_L1_SUMMARY", "bill_batch", batchId,
+        auditLogService.log(userId, "EXPORT_L1_SUMMARY", "bill_batch", batchId,
                 Map.of("module", "L1_summary"));
         String filename = java.net.URLEncoder.encode(
                 "集团分摊汇总_" + batchId + ".xlsx", "UTF-8");
@@ -483,7 +486,7 @@ public class AllocationController {
             @RequestAttribute("userId") Long userId) throws Exception {
         Long effectiveBranchOrgId = resolveEffectiveBranchOrgId(branchOrgId, userId);
         byte[] data = branchBillExportService.exportLevel2BranchDetail(batchId, effectiveBranchOrgId, userId);
-        auditLogService.log(userId, String.valueOf(userId), "EXPORT_L2_BRANCH_DETAIL", "bill_batch", batchId,
+        auditLogService.log(userId, "EXPORT_L2_BRANCH_DETAIL", "bill_batch", batchId,
                 Map.of("branch_org_id", effectiveBranchOrgId));
         SysOrganization org = orgRepository.findById(effectiveBranchOrgId).orElse(null);
         String name = org != null ? org.getName() : "branch";
@@ -506,7 +509,7 @@ public class AllocationController {
             @RequestParam Long subBranchOrgId,
             @RequestAttribute("userId") Long userId) throws Exception {
         byte[] data = branchBillExportService.exportLevel3SubBranchDetail(batchId, subBranchOrgId, userId);
-        auditLogService.log(userId, String.valueOf(userId), "EXPORT_L3_SUB_BRANCH_DETAIL", "bill_batch", batchId,
+        auditLogService.log(userId, "EXPORT_L3_SUB_BRANCH_DETAIL", "bill_batch", batchId,
                 Map.of("sub_branch_org_id", subBranchOrgId));
         SysOrganization org = orgRepository.findById(subBranchOrgId).orElse(null);
         String name = org != null ? org.getName() : "sub_branch";

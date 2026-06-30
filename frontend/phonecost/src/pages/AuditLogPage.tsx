@@ -28,14 +28,31 @@ const ACTION_MAP: Record<string, string> = {
   CREATE_SNAPSHOT: '创建快照',
   BATCH_CLEAR_EXCEPTION: '批量解除例外',
   ORG_IMPORT: '导入组织架构',
-  UPGRADE_PACKAGE_UPLOAD: '上传升级包',
-  UPGRADE_APPLIED: '应用升级',
-  UPGRADE_ROLLBACK: '回滚升级',
-  BACKUP_CREATE: '创建备份',
+  ORG_CREATE: '新建组织',
+  ORG_UPDATE: '编辑组织',
+  ORG_DELETE: '删除组织',
+  ORG_REBUILD_PATHS: '重建组织路径',
+  AUTH_LOGIN: '登录',
+  AUTH_LOGIN_FAILED: '登录失败',
+  AUTH_LOGIN_DISABLED: '账号已停用',
+  AUTH_CHANGE_PASSWORD: '修改密码',
+  USER_CREATE: '新建用户',
+  USER_UPDATE: '编辑用户',
+  USER_DELETE: '删除用户',
+  USER_RESET_PASSWORD: '重置密码',
+  BACKUP_FULL: '全量备份',
+  BACKUP_INCREMENTAL: '增量备份',
   BACKUP_RESTORE: '恢复备份',
   BACKUP_DELETE: '删除备份',
-  LOGIN: '登录',
-  CHANGE_PASSWORD: '修改密码',
+  TEMPLATE_CREATE: '新建模板',
+  TEMPLATE_UPDATE: '编辑模板',
+  TEMPLATE_DELETE: '删除模板',
+  TEMPLATE_ACTIVATE: '激活模板',
+  UPGRADE_PACKAGE_UPLOAD: '上传升级包',
+  UPGRADE_APPLIED: '应用升级',
+  UPGRADE_FAILED: '升级失败',
+  UPGRADE_ROLLBACK: '回滚升级',
+  UPGRADE_PACKAGE_DELETE: '删除升级包',
 };
 
 const ACTION_COLOR: Record<string, string> = {
@@ -55,15 +72,37 @@ const ACTION_COLOR: Record<string, string> = {
   EXPORT_L3_SUB_BRANCH_DETAIL: COLORS.slate,
   EXPORT_BRANCH_BILL: COLORS.slate,
   EXPORT_COST_CENTER_MAPPING: COLORS.slate,
+  CLEAR_EXCEPTION: COLORS.sage,
+  SYNC_FROM_MATCH: COLORS.sage,
+  UPDATE_EXCEPTION_REASON: COLORS.sage,
+  CREATE_SNAPSHOT: COLORS.sage,
+  BATCH_CLEAR_EXCEPTION: COLORS.sage,
   ORG_IMPORT: COLORS.sage,
-  UPGRADE_PACKAGE_UPLOAD: COLORS.mauve,
-  UPGRADE_APPLIED: COLORS.confirmed,
-  UPGRADE_ROLLBACK: COLORS.danger,
-  BACKUP_CREATE: COLORS.mauve,
+  ORG_CREATE: COLORS.confirmed,
+  ORG_UPDATE: COLORS.pending,
+  ORG_DELETE: COLORS.danger,
+  ORG_REBUILD_PATHS: COLORS.mauve,
+  AUTH_LOGIN: COLORS.sage,
+  AUTH_LOGIN_FAILED: COLORS.danger,
+  AUTH_LOGIN_DISABLED: COLORS.danger,
+  AUTH_CHANGE_PASSWORD: COLORS.slate,
+  USER_CREATE: COLORS.confirmed,
+  USER_UPDATE: COLORS.pending,
+  USER_DELETE: COLORS.danger,
+  USER_RESET_PASSWORD: COLORS.pending,
+  BACKUP_FULL: COLORS.mauve,
+  BACKUP_INCREMENTAL: COLORS.mauve,
   BACKUP_RESTORE: COLORS.pending,
   BACKUP_DELETE: COLORS.danger,
-  LOGIN: COLORS.sage,
-  CHANGE_PASSWORD: COLORS.slate,
+  TEMPLATE_CREATE: COLORS.confirmed,
+  TEMPLATE_UPDATE: COLORS.pending,
+  TEMPLATE_DELETE: COLORS.danger,
+  TEMPLATE_ACTIVATE: COLORS.confirmed,
+  UPGRADE_PACKAGE_UPLOAD: COLORS.mauve,
+  UPGRADE_APPLIED: COLORS.confirmed,
+  UPGRADE_FAILED: COLORS.danger,
+  UPGRADE_ROLLBACK: COLORS.danger,
+  UPGRADE_PACKAGE_DELETE: COLORS.danger,
 };
 
 interface AuditLogEntry {
@@ -80,8 +119,8 @@ interface AuditLogEntry {
 
 interface PagedResult {
   content: AuditLogEntry[];
-  total_elements: number;
-  total_pages: number;
+  totalElements: number;
+  totalPages: number;
   number: number;
   size: number;
 }
@@ -112,6 +151,18 @@ const DETAIL_KEY_MAP: Record<string, string> = {
   from_org: '调出组织',
   to_org: '调入组织',
   reason: '原因',
+  username: '用户名',
+  role: '角色',
+  status: '状态',
+  target_username: '目标用户',
+  type: '类型',
+  file_path: '文件路径',
+  restored_by: '恢复人',
+  name: '名称',
+  code: '组织代码',
+  from_org_id: '调出组织ID',
+  to_org_id: '调入组织ID',
+  org_id: '组织ID',
 };
 
 /** 为每种操作生成一句可读的中文摘要 */
@@ -126,7 +177,7 @@ function renderDetailSummary(action: string, obj: Record<string, unknown>): stri
     case 'ALLOCATION_WITHDRAW':
       return '撤回分摊';
     case 'ALLOCATION_ADJUST':
-      return `调整费用${obj.phone_number ? '：' + obj.phone_number : ''}`;
+      return `调整费用${obj.phone_number ? '：' + obj.phone_number : ''}（${obj.from_org_id ? '从组织#' + obj.from_org_id : ''}${obj.to_org_id ? ' → 组织#' + obj.to_org_id : ''}）`;
     case 'EXPORT_SUMMARY':
     case 'EXPORT_DETAIL':
       return obj.branch_org_id ? `导出分行#${obj.branch_org_id}` : '导出全量数据';
@@ -142,6 +193,58 @@ function renderDetailSummary(action: string, obj: Record<string, unknown>): stri
       return obj.branch_org_id ? `导出分行#${obj.branch_org_id}成本中心` : '导出全部成本中心对照表';
     case 'ORG_IMPORT':
       return `导入 ${obj.total ?? '?'} 个组织（新增 ${obj.created ?? '?'}，跳过 ${obj.skipped ?? '?'}，更新 ${obj.updated ?? '?'}）`;
+    case 'ORG_CREATE':
+      return `新建组织「${obj.name ?? '?'}」${obj.code ? '（代码：' + obj.code + '）' : ''}`;
+    case 'ORG_UPDATE':
+      return `编辑组织「${obj.name ?? '?'}」`;
+    case 'ORG_DELETE':
+      return '删除组织';
+    case 'ORG_REBUILD_PATHS':
+      return '重建组织路径';
+    case 'AUTH_LOGIN':
+      return `用户「${obj.username ?? '?'}」登录（角色：${obj.role ?? '?'}）`;
+    case 'AUTH_LOGIN_FAILED':
+      return `用户「${obj.username ?? '?'}」登录失败`;
+    case 'AUTH_LOGIN_DISABLED':
+      return `用户「${obj.username ?? '?'}」账号已停用`;
+    case 'AUTH_CHANGE_PASSWORD':
+      return `用户「${obj.username ?? '?'}」修改密码`;
+    case 'USER_CREATE':
+      return `新建用户「${obj.username ?? '?'}」（角色：${obj.role ?? '?'}，组织ID：${obj.org_id ?? '-'}）`;
+    case 'USER_UPDATE':
+      return `编辑用户（角色：${obj.role ?? '?'}，组织ID：${obj.org_id ?? '-'}，状态：${obj.status ?? '-'}）`;
+    case 'USER_DELETE':
+      return `删除用户「${obj.username ?? '?'}」`;
+    case 'USER_RESET_PASSWORD':
+      return `重置用户「${obj.target_username ?? '?'}」密码`;
+    case 'BACKUP_FULL':
+      return `全量备份${obj.file_path ? '：' + obj.file_path : ''}`;
+    case 'BACKUP_INCREMENTAL':
+      return `增量备份${obj.file_path ? '：' + obj.file_path : ''}`;
+    case 'BACKUP_RESTORE':
+      return `恢复备份${obj.restored_by ? '（恢复人：' + obj.restored_by + '）' : ''}`;
+    case 'BACKUP_DELETE':
+      return '删除备份';
+    case 'TEMPLATE_CREATE':
+      return `新建模板「${obj.name ?? '?'}」`;
+    case 'TEMPLATE_UPDATE':
+      return `编辑模板「${obj.name ?? '?'}」`;
+    case 'TEMPLATE_DELETE':
+      return '删除模板';
+    case 'TEMPLATE_ACTIVATE':
+      return `激活模板「${obj.name ?? '?'}」`;
+    case 'BATCH_CLEAR_EXCEPTION':
+      return `批量解除例外（${obj.count ?? '?'} 条）`;
+    case 'UPGRADE_PACKAGE_DELETE':
+      return '删除升级包';
+    case 'CLEAR_EXCEPTION':
+      return '解除例外';
+    case 'SYNC_FROM_MATCH':
+      return '同步当前数据';
+    case 'UPDATE_EXCEPTION_REASON':
+      return `编辑例外原因${obj.reason ? '：' + obj.reason : ''}`;
+    case 'CREATE_SNAPSHOT':
+      return `创建快照${obj.file_name ? '：' + obj.file_name : ''}`;
     case 'UPGRADE_PACKAGE_UPLOAD':
       return `上传升级包「${obj.package_name ?? '?'}」→ v${obj.target_version ?? '?'}`;
     case 'UPGRADE_APPLIED':
@@ -200,7 +303,7 @@ const AuditLogPage: React.FC = () => {
       if (dateRange && dateRange[1]) params.set('endDate', dateRange[1].format('YYYY-MM-DD'));
       const result = await apiGet<PagedResult>(`/audit-logs?${params.toString()}`);
       setData(result.content);
-      setTotal(result.total_elements);
+      setTotal(result.totalElements);
     } catch {
       // silent
     } finally {

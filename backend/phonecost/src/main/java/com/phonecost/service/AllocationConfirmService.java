@@ -28,7 +28,6 @@ public class AllocationConfirmService {
     private final AllocationResultRepository resultRepository;
     private final AllocationAdjustmentRepository adjustmentRepository;
     private final SysOrganizationRepository orgRepository;
-    private final AuditLogService auditLogService;
 
     /**
      * 确认指定组织的分摊结果
@@ -57,8 +56,6 @@ public class AllocationConfirmService {
         }
 
         log.info("Allocation confirmed: batch={}, org={}, by={}", batchId, orgId, userId);
-        auditLogService.log(userId, "user", "ALLOCATION_CONFIRM", "allocation_result", result.getId(),
-                "{\"batch_id\":" + batchId + ",\"org_id\":" + orgId + "}");
         return result;
     }
 
@@ -115,8 +112,6 @@ public class AllocationConfirmService {
         }
 
         log.info("Allocation withdrawn: batch={}, org={}, by={}, cascade={}", batchId, orgId, userId, cascadeCount);
-        auditLogService.log(userId, "user", "ALLOCATION_WITHDRAW", "allocation_result", result.getId(),
-                "{\"batch_id\":" + batchId + ",\"org_id\":" + orgId + ",\"cascade\":" + cascadeCount + "}");
 
         return resultRepository.findByBatchIdAndDeletedAtIsNull(batchId);
     }

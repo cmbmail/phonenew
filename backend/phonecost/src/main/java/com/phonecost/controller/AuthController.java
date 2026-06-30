@@ -3,6 +3,7 @@ package com.phonecost.controller;
 import com.phonecost.dto.ApiResponse;
 import com.phonecost.domain.SysUser;
 import com.phonecost.repository.SysUserRepository;
+import com.phonecost.service.AuditLogService;
 import com.phonecost.util.JwtUtil;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -19,11 +20,13 @@ public class AuthController {
     private final SysUserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
+    private final AuditLogService auditLogService;
 
-    public AuthController(SysUserRepository userRepository, PasswordEncoder passwordEncoder, JwtUtil jwtUtil) {
+    public AuthController(SysUserRepository userRepository, PasswordEncoder passwordEncoder, JwtUtil jwtUtil, AuditLogService auditLogService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtUtil = jwtUtil;
+        this.auditLogService = auditLogService;
     }
 
     @PostMapping("/login")
@@ -32,14 +35,21 @@ public class AuthController {
             .orElseThrow(() -> new IllegalArgumentException("用户名或密码错误"));
 
         if (!passwordEncoder.matches(req.getPassword(), user.getPassword())) {
+            auditLogService.log(user.getId(), "AUTH_LOGIN_FAILED", "sys_user", user.getId(),
+                    Map.of("username", req.getUsername()));
             throw new IllegalArgumentException("用户名或密码错误");
         }
         if (user.getStatus() != 1) {
+            auditLogService.log(user.getId(), "AUTH_LOGIN_DISABLED", "sys_user", user.getId(),
+                    Map.of("username", req.getUsername()));
             throw new IllegalArgumentException("账号已被停用");
         }
 
         String accessToken = jwtUtil.generateAccessToken(user.getId(), user.getUsername(), user.getRole(), user.getOrgId());
         String refreshToken = jwtUtil.generateRefreshToken(user.getId());
+
+        auditLogService.log(user.getId(), "AUTH_LOGIN", "sys_user", user.getId(),
+                Map.of("username", user.getUsername(), "role", user.getRole()));
 
         return ResponseEntity.ok(ApiResponse.ok(Map.of(
             "access_token", accessToken,
@@ -91,6 +101,8 @@ public class AuthController {
         user.setPassword(passwordEncoder.encode(req.getNewPassword()));
         user.setMustChangePwd((byte) 0);
         userRepository.save(user);
+        auditLogService.log(userId, "AUTH_CHANGE_PASSWORD", "sys_user", userId,
+                Map.of("username", user.getUsername()));
         return ResponseEntity.ok(ApiResponse.ok());
     }
 

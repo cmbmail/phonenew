@@ -2,6 +2,7 @@ package com.phonecost.controller;
 
 import com.phonecost.domain.VersionUpgradePackage;
 import com.phonecost.dto.ApiResponse;
+import com.phonecost.service.AuditLogService;
 import com.phonecost.service.VersionUpgradeService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -22,6 +23,7 @@ import java.util.Map;
 public class VersionUpgradeController {
 
     private final VersionUpgradeService versionUpgradeService;
+    private final AuditLogService auditLogService;
 
     /** 获取当前版本信息 */
     @GetMapping("/current")
@@ -85,6 +87,7 @@ public class VersionUpgradeController {
     public ResponseEntity<ApiResponse<Void>> deletePackage(
             @PathVariable Long id,
             @RequestAttribute("userId") Long userId) {
+        auditLogService.log(userId, "UPGRADE_PACKAGE_DELETE", "version_upgrade_package", id, (Map<String, Object>) null);
         versionUpgradeService.deletePackage(id, userId);
         return ResponseEntity.ok(ApiResponse.ok(null));
     }

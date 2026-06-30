@@ -6,6 +6,7 @@ import com.phonecost.dto.ApiResponse;
 import com.phonecost.repository.SysOrganizationRepository;
 import com.phonecost.service.DataScope;
 import com.phonecost.service.DataScopeService;
+import com.phonecost.service.AuditLogService;
 import com.phonecost.service.UserService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -28,6 +29,7 @@ public class UserController {
     private final UserService userService;
     private final DataScopeService dataScopeService;
     private final SysOrganizationRepository orgRepository;
+    private final AuditLogService auditLogService;
 
     @GetMapping
     public ResponseEntity<ApiResponse<List<SysUser>>> list(
@@ -74,7 +76,9 @@ public class UserController {
 
     @PostMapping
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
-    public ResponseEntity<ApiResponse<SysUser>> create(@Valid @RequestBody CreateUserRequest req) {
+    public ResponseEntity<ApiResponse<SysUser>> create(
+            @Valid @RequestBody CreateUserRequest req,
+            @RequestAttribute("userId") Long userId) {
         SysUser user = SysUser.builder()
                 .username(req.getUsername())
                 .password(req.getPassword())
@@ -83,36 +87,56 @@ public class UserController {
                 .orgId(req.getOrgId())
                 .status(req.getStatus())
                 .build();
-        return ResponseEntity.ok(ApiResponse.ok(userService.create(user)));
+        SysUser created = userService.create(user);
+        auditLogService.log(userId, "USER_CREATE", "sys_user", created.getId(),
+                Map.of("username", created.getUsername(), "role", req.getRole(), "org_id", req.getOrgId() != null ? req.getOrgId() : 0));
+        return ResponseEntity.ok(ApiResponse.ok(created));
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
-    public ResponseEntity<ApiResponse<SysUser>> update(@PathVariable Long id,
-                                                        @RequestBody UpdateUserRequest req) {
+    public ResponseEntity<ApiResponse<SysUser>> update(
+            @PathVariable Long id,
+            @RequestBody UpdateUserRequest req,
+            @RequestAttribute("userId") Long userId) {
         SysUser updates = new SysUser();
         updates.setRealName(req.getRealName());
         updates.setRole(req.getRole());
         updates.setOrgId(req.getOrgId());
         updates.setStatus(req.getStatus());
-        return ResponseEntity.ok(ApiResponse.ok(userService.update(id, updates)));
+        SysUser updated = userService.update(id, updates);
+        auditLogService.log(userId, "USER_UPDATE", "sys_user", id,
+                Map.of("role", req.getRole() != null ? req.getRole() : 0,
+                        "org_id", req.getOrgId() != null ? req.getOrgId() : 0,
+                        "status", req.getStatus() != null ? req.getStatus() : 0));
+        return ResponseEntity.ok(ApiResponse.ok(updated));
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
-    public ResponseEntity<ApiResponse<Void>> delete(@PathVariable Long id) {
+    public ResponseEntity<ApiResponse<Void>> delete(
+            @PathVariable Long id,
+            @RequestAttribute("userId") Long userId) {
+        SysUser target = userService.getById(id);
+        auditLogService.log(userId, "USER_DELETE", "sys_user", id,
+                Map.of("username", target.getUsername()));
         userService.delete(id);
         return ResponseEntity.ok(ApiResponse.ok());
     }
 
     @PutMapping("/{id}/reset-password")
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
-    public ResponseEntity<ApiResponse<Void>> resetPassword(@PathVariable Long id,
-                                                            @RequestBody Map<String, String> body) {
+    public ResponseEntity<ApiResponse<Void>> resetPassword(
+            @PathVariable Long id,
+            @RequestBody Map<String, String> body,
+            @RequestAttribute("userId") Long userId) {
         String newPassword = body.get("new_password");
         if (newPassword == null || newPassword.isEmpty()) {
             throw new IllegalArgumentException("新密码不能为空");
         }
+        SysUser target = userService.getById(id);
+        auditLogService.log(userId, "USER_RESET_PASSWORD", "sys_user", id,
+                Map.of("target_username", target.getUsername()));
         userService.resetPassword(id, newPassword);
         return ResponseEntity.ok(ApiResponse.ok());
     }

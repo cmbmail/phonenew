@@ -34,7 +34,6 @@ public class AllocationExportService {
     private final AllocationResultRepository resultRepository;
     private final BillDetailRepository billDetailRepository;
     private final SysOrganizationRepository orgRepository;
-    private final AuditLogService auditLogService;
 
     /**
      * Export summary Excel for a branch org
@@ -80,8 +79,6 @@ public class AllocationExportService {
             sheet.autoSizeColumn(1);
 
             wb.write(out);
-            auditLogService.log(0L, "system", "EXPORT_SUMMARY", "bill_batch", batchId,
-                    "{\"branch_org_id\":" + branchOrgId + "}");
             return out.toByteArray();
         }
     }
@@ -175,8 +172,6 @@ public class AllocationExportService {
             sheet.autoSizeColumn(2);
 
             wb.write(out);
-            auditLogService.log(0L, "system", "EXPORT_DETAIL", "bill_batch", batchId,
-                    "{\"branch_org_id\":" + branchOrgId + "}");
             return out.toByteArray();
         }
     }

@@ -24,8 +24,8 @@ interface BackupRecord {
 
 interface PagedResult {
   content: BackupRecord[];
-  total_elements: number;
-  total_pages: number;
+  totalElements: number;
+  totalPages: number;
   number: number;
   size: number;
 }
@@ -97,7 +97,7 @@ function BackupTab() {
     try {
       const res = await apiGet<PagedResult>(`/backups?page=${page}&size=${pageSize}`);
       setData(res.content || []);
-      setTotal(res.total_elements || 0);
+      setTotal(res.totalElements || 0);
     } catch {
       message.error('加载备份列表失败');
     } finally {

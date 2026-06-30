@@ -37,7 +37,6 @@ public class BranchBillExportService {
     private final BillDetailRepository billDetailRepository;
     private final SysOrganizationRepository orgRepository;
     private final BillBatchRepository billBatchRepository;
-    private final AuditLogService auditLogService;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final DateTimeFormatter DTF = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -147,8 +146,6 @@ public class BranchBillExportService {
             autoSizeColumns(sheet, headers.length);
             wb.write(out);
 
-            auditLog(operatorId, "EXPORT_L1_SUMMARY", batchId,
-                    "{\"module\":\"L1_summary\"}");
             log.info("L1 summary exported: batch={}, branches={}", batchId, branches.size());
             return out.toByteArray();
         }
@@ -203,8 +200,6 @@ public class BranchBillExportService {
                     branchPath, headerStyle, numberStyle);
 
             wb.write(out);
-            auditLog(operatorId, "EXPORT_L2_BRANCH_DETAIL", batchId,
-                    "{\"module\":\"L2_branch\",\"branch_org_id\":" + branchOrgId + "}");
             log.info("L2 branch detail exported: batch={}, branch={}, children={}",
                     batchId, branchName, directChildren.size());
             return out.toByteArray();
@@ -261,8 +256,6 @@ public class BranchBillExportService {
                     subBranchPath, headerStyle, numberStyle);
 
             wb.write(out);
-            auditLog(operatorId, "EXPORT_L3_SUB_BRANCH_DETAIL", batchId,
-                    "{\"module\":\"L3_sub_branch\",\"sub_branch_org_id\":" + subBranchOrgId + "}");
             log.info("L3 sub-branch detail exported: batch={}, subBranch={}, children={}",
                     batchId, subBranchName, directChildren.size());
             return out.toByteArray();
@@ -598,8 +591,6 @@ public class BranchBillExportService {
             }
             autoSizeColumns(sheet, headers.length);
             wb.write(out);
-            auditLog(operatorId, "EXPORT_COST_CENTER_MAPPING", batchId,
-                    "{\"branch_org_id\":" + (branchOrgId != null ? branchOrgId : "null") + "}");
             return out.toByteArray();
         }
     }
@@ -1013,11 +1004,5 @@ public class BranchBillExportService {
 
     private static BigDecimal safeAdd(BigDecimal a, BigDecimal b) {
         return (a != null ? a : ZERO).add(b != null ? b : ZERO);
-    }
-
-    private void auditLog(Long operatorId, String action, Long targetId, String extra) {
-        auditLogService.log(
-                operatorId != null ? operatorId : 0L, "user",
-                action, "bill_batch", targetId, extra);
     }
 }
