@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Card, Table, Tag, Typography, Empty, Spin } from 'antd';
+import { Card, Table, Tag, Typography, Empty, Skeleton } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { getDashboardStats } from '../api/dashboard';
 import type { BranchSummaryItem, FeeBreakdownItem } from '../api/dashboard';
@@ -194,8 +194,21 @@ export default function Dashboard() {
 
   if (isLoading || !stats) {
     return (
-      <div style={{ textAlign: 'center', padding: 80 }}>
-        <Spin size="large" />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} style={{ background: COLORS.white, borderRadius: 16, padding: 20, minHeight: 180, boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+              <Skeleton active paragraph={{ rows: 3 }} />
+            </div>
+          ))}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          {Array.from({ length: 2 }).map((_, i) => (
+            <Card key={i} bordered={false} style={{ borderRadius: 16, boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+              <Skeleton active paragraph={{ rows: 6 }} />
+            </Card>
+          ))}
+        </div>
       </div>
     );
   }

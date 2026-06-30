@@ -130,19 +130,19 @@ const AppLayout: React.FC = () => {
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Sider collapsible collapsed={collapsed} onCollapse={setCollapsed} style={{ overflow: 'hidden', height: '100vh', position: 'fixed', left: 0, background: COLORS.charcoal }}>
+      <Sider collapsible collapsed={collapsed} onCollapse={setCollapsed} style={{ overflow: 'hidden', height: '100vh', position: 'fixed', left: 0, background: COLORS.charcoal }} aria-label="侧边导航栏" role="navigation">
         <div style={{ height: 36, margin: '16px 12px', background: 'rgba(139,157,158,0.25)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <Text style={{ color: '#fff', fontSize: collapsed ? 14 : 15, fontWeight: 600, letterSpacing: 1 }}>{collapsed ? 'PC' : '费用分摊'}</Text>
         </div>
-        <div style={{ overflow: 'auto', height: 'calc(100vh - 36px - 32px - 48px)' }}>
-          <Menu theme="dark" mode="inline" selectedKeys={[location.pathname]} openKeys={openKeys} onOpenChange={handleOpenChange} items={menuItems} onClick={({ key }) => navigate(key)} />
-        </div>
+        <nav style={{ overflow: 'auto', height: 'calc(100vh - 36px - 32px - 48px)' }} aria-label="主导航">
+          <Menu theme="dark" mode="inline" selectedKeys={[location.pathname]} openKeys={openKeys} onOpenChange={handleOpenChange} items={menuItems} onClick={({ key }) => navigate(key)} aria-label="主菜单" />
+        </nav>
       </Sider>
       <Layout style={{ marginLeft: collapsed ? 80 : 200, transition: 'margin-left 0.2s', background: COLORS.cream }}>
-        <Header style={{ padding: '0 24px', background: COLORS.white, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', borderBottom: `1px solid ${COLORS.border}`, gap: 16, boxShadow: '0 1px 4px rgba(0,0,0,0.03)' }}>
-          <Dropdown menu={userMenu}><div style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}><Avatar size="small" style={{ background: COLORS.sage }}>{(realName || username || '?')[0]}</Avatar><Text>{realName || username}</Text></div></Dropdown>
+        <Header style={{ padding: '0 24px', background: COLORS.white, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', borderBottom: `1px solid ${COLORS.border}`, gap: 16, boxShadow: '0 1px 4px rgba(0,0,0,0.03)' }} role="banner">
+          <Dropdown menu={userMenu}><div style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }} role="button" aria-label="用户菜单" tabIndex={0}><Avatar size="small" style={{ background: COLORS.sage }} aria-hidden="true">{(realName || username || '?')[0]}</Avatar><Text>{realName || username}</Text></div></Dropdown>
         </Header>
-        <Content style={{ margin: 20, padding: 24, background: COLORS.white, borderRadius: 12, minHeight: 360, boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}><Outlet /></Content>
+        <main style={{ margin: 20, padding: 24, background: COLORS.white, borderRadius: 12, minHeight: 360, boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }} role="main"><Outlet /></main>
       </Layout>
       <Modal title="修改密码" open={changePwdOpen || mustChangePwd} onCancel={mustChangePwd ? undefined : () => setChangePwdOpen(false)} footer={null} closable={!mustChangePwd} maskClosable={!mustChangePwd}>
         {mustChangePwd && <Typography.Paragraph type="warning" style={{ marginBottom: 16 }}>首次登录需要修改密码后才能使用系统</Typography.Paragraph>}

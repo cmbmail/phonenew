@@ -6,7 +6,9 @@ body {
   background: #F5F2ED;
 }
 #root { min-height: 100vh; }
-.ant-table-thead > tr > th { text-align: center !important; background: #F5F2ED !important; }
-.ant-card { box-shadow: 0 2px 8px rgba(0,0,0,0.04) !important; }
-.ant-tabs-top > .ant-tabs-nav::before { border-bottom: 1px solid #E8E5E0 !important; }
-.ant-layout-sider-trigger { background: #3D4248 !important; }
+
+/* 表头居中 — ConfigProvider不支持text-align，需保留 */
+.ant-table-thead > tr > th { text-align: center; }
+
+/* 侧边栏折叠按钮背景色 — Sider trigger不接受ConfigProvider token */
+.ant-layout-sider-trigger { background: #3D4248; }
