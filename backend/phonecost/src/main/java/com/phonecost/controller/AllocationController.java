@@ -274,11 +274,13 @@ public class AllocationController {
         Long effectiveBranchOrgId = resolveEffectiveBranchOrgId(branchOrgId, userId);
 
         byte[] data = exportService.exportSummary(batchId, effectiveBranchOrgId);
-        auditLogService.log(userId, "EXPORT_SUMMARY", "bill_batch", batchId,
-                Map.of("branch_org_id", effectiveBranchOrgId));
+        java.util.HashMap<String, Object> summaryDetail = new java.util.HashMap<>();
+        summaryDetail.put("branch_org_id", effectiveBranchOrgId);
+        auditLogService.log(userId, "EXPORT_SUMMARY", "bill_batch", batchId, summaryDetail);
+        String filename = java.net.URLEncoder.encode(
+                "分行费用分摊汇总_" + batchId + ".xlsx", "UTF-8");
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename=\"分行费用分摊汇总.xlsx\"")
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
                 .contentType(MediaType.parseMediaType(
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
                 .body(data);
@@ -292,11 +294,13 @@ public class AllocationController {
         Long effectiveBranchOrgId = resolveEffectiveBranchOrgId(branchOrgId, userId);
 
         byte[] data = exportService.exportDetail(batchId, effectiveBranchOrgId);
-        auditLogService.log(userId, "EXPORT_DETAIL", "bill_batch", batchId,
-                Map.of("branch_org_id", effectiveBranchOrgId));
+        java.util.HashMap<String, Object> detailMap = new java.util.HashMap<>();
+        detailMap.put("branch_org_id", effectiveBranchOrgId);
+        auditLogService.log(userId, "EXPORT_DETAIL", "bill_batch", batchId, detailMap);
+        String detailFilename = java.net.URLEncoder.encode(
+                "分行费用分摊明细_" + batchId + ".xlsx", "UTF-8");
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename=\"分行费用分摊明细.xlsx\"")
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + detailFilename + "\"")
                 .contentType(MediaType.parseMediaType(
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
                 .body(data);
@@ -313,8 +317,9 @@ public class AllocationController {
         Long effectiveBranchOrgId = resolveEffectiveBranchOrgId(branchOrgId, userId);
 
         byte[] data = branchBillExportService.exportCostCenterMapping(batchId, effectiveBranchOrgId, userId);
-        auditLogService.log(userId, "EXPORT_COST_CENTER_MAPPING", "bill_batch", batchId,
-                Map.of("branch_org_id", effectiveBranchOrgId));
+        java.util.HashMap<String, Object> ccmDetail = new java.util.HashMap<>();
+        ccmDetail.put("branch_org_id", effectiveBranchOrgId);
+        auditLogService.log(userId, "EXPORT_COST_CENTER_MAPPING", "bill_batch", batchId, ccmDetail);
         String filename = java.net.URLEncoder.encode(
                 "分行成本中心对照表_" + batchId + ".xlsx", "UTF-8");
         return ResponseEntity.ok()

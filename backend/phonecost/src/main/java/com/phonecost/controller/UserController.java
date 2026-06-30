@@ -89,7 +89,7 @@ public class UserController {
                 .build();
         SysUser created = userService.create(user);
         auditLogService.log(userId, "USER_CREATE", "sys_user", created.getId(),
-                Map.of("username", created.getUsername(), "role", req.getRole(), "org_id", req.getOrgId() != null ? req.getOrgId() : 0));
+                Map.of("username", created.getUsername(), "role", req.getRole() != null ? req.getRole() : 0, "org_id", req.getOrgId() != null ? req.getOrgId() : 0));
         return ResponseEntity.ok(ApiResponse.ok(created));
     }
 

@@ -59,7 +59,7 @@ public class OrganizationController {
             @RequestAttribute("userId") Long userId) {
         SysOrganization created = organizationService.create(org);
         auditLogService.log(userId, "ORG_CREATE", "sys_organization", created.getId(),
-                Map.of("name", created.getName(), "code", created.getCode() != null ? created.getCode() : ""));
+                Map.of("name", created.getName() != null ? created.getName() : "", "code", created.getCode() != null ? created.getCode() : ""));
         return ResponseEntity.ok(ApiResponse.ok(created));
     }
 
@@ -71,7 +71,7 @@ public class OrganizationController {
             @RequestAttribute("userId") Long userId) {
         SysOrganization updated = organizationService.update(id, org);
         auditLogService.log(userId, "ORG_UPDATE", "sys_organization", id,
-                Map.of("name", updated.getName()));
+                Map.of("name", updated.getName() != null ? updated.getName() : ""));
         return ResponseEntity.ok(ApiResponse.ok(updated));
     }
 
