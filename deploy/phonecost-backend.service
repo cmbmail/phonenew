@@ -1,0 +1,24 @@
+[Unit]
+Description=PhoneCost Backend
+After=mysqld.service redis.service
+Requires=mysqld.service redis.service
+
+[Service]
+Type=simple
+User=admin
+WorkingDirectory=/data/apps/phonecost/backend/phonecost
+ExecStart=/usr/bin/java -jar target/phonecost-0.1.0-SNAPSHOT.jar --spring.profiles.active=prod
+Restart=always
+RestartSec=10
+Environment=DB_HOST=localhost
+Environment=DB_PORT=3306
+Environment=DB_NAME=phonecost
+Environment=DB_USER=phonecost_app
+Environment=DB_PASSWORD=          # 必填: 数据库应用用户密码
+Environment=REDIS_HOST=localhost
+Environment=REDIS_PORT=6379
+Environment=REDIS_PASSWORD=       # 必填: Redis密码
+Environment=JWT_SECRET=           # 必填: JWT签名密钥
+
+[Install]
+WantedBy=multi-user.target
