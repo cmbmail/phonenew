@@ -25,11 +25,13 @@ public class BillTemplateController {
     private final AuditLogService auditLogService;
 
     @GetMapping
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<ApiResponse<List<BillTemplate>>> listTemplates() {
         return ResponseEntity.ok(ApiResponse.ok(templateService.listTemplates()));
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<ApiResponse<BillTemplate>> getTemplate(@PathVariable Long id) {
         return ResponseEntity.ok(ApiResponse.ok(templateService.getTemplate(id)));
     }

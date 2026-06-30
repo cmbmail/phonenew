@@ -32,6 +32,7 @@ public class UserController {
     private final AuditLogService auditLogService;
 
     @GetMapping
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<ApiResponse<List<SysUser>>> list(
             @RequestAttribute("userId") Long userId,
             @RequestParam(required = false) Long org_id) {
@@ -63,6 +64,7 @@ public class UserController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<ApiResponse<SysUser>> getById(
             @PathVariable Long id,
             @RequestAttribute("userId") Long currentUserId) {
