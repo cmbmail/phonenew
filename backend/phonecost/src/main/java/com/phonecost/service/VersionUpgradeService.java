@@ -10,7 +10,6 @@ import com.phonecost.repository.SystemVersionRepository;
 import com.phonecost.repository.VersionUpgradePackageRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -26,6 +25,8 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+
+import com.zaxxer.hikari.HikariDataSource;
 
 /**
  * 版本升级服务
@@ -165,8 +166,6 @@ public class VersionUpgradeService {
         }
 
         // Step 2: Extract and execute SQL
-        pkg.setStatus("APPLIED");
-        pkg.setAppliedAt(LocalDateTime.now());
         Path stagingDir = null;
         List<String> executedStatements = new ArrayList<>();
 
@@ -200,7 +199,9 @@ public class VersionUpgradeService {
             }
         }
 
-        // Step 3: Update version records
+        // Step 3: Update package status + version records (only after SQL success)
+        pkg.setStatus("APPLIED");
+        pkg.setAppliedAt(LocalDateTime.now());
         if (currentVersion != null) {
             currentVersion.setIsCurrent(false);
             versionRepository.save(currentVersion);
@@ -234,6 +235,7 @@ public class VersionUpgradeService {
      * 需要 MySQL 连接池释放后才能获得独占访问，否则会 metadata lock 死锁。
      */
     public Map<String, Object> rollbackUpgrade(Long versionId, Long userId) {
+        // Pre-read target version info BEFORE restore (DB will be overwritten)
         SystemVersion targetVersion = versionRepository.findById(versionId)
                 .orElseThrow(() -> new RuntimeException("版本记录不存在: " + versionId));
 
@@ -252,44 +254,39 @@ public class VersionUpgradeService {
             throw new RuntimeException("关联的备份状态不可用于恢复: " + backup.getStatus());
         }
 
-        // Step 1: Restore backup
-        log.info("Rolling back from v{} using backup #{}", targetVersion.getVersion(), backup.getId());
-        Map<String, Object> restoreResult = backupService.restoreBackup(backup.getId());
+        String rolledBackFromVersion = targetVersion.getVersion();
+        Long backupId = backup.getId();
 
-        // Step 2: Find previous version and set as current
-        targetVersion.setIsCurrent(false);
-        versionRepository.save(targetVersion);
+        // Step 1: Restore backup — DB is now reverted to pre-upgrade state
+        log.info("Rolling back from v{} using backup #{}", rolledBackFromVersion, backupId);
+        backupService.restoreBackup(backupId);
 
-        // Find the most recent non-current version that is not this one
-        List<SystemVersion> allVersions = versionRepository.findAll();
-        SystemVersion previousVersion = allVersions.stream()
-                .filter(v -> !v.getId().equals(versionId))
-                .filter(v -> v.getDeletedAt() == null)
-                .max(Comparator.comparing(SystemVersion::getCreatedAt))
-                .orElse(null);
+        // Step 1.5: Evict stale connections from pool
+        // restoreBackup uses external `mysql` process which causes MySQL to drop all existing connections.
+        // HikariCP pool still holds dead connections → evict them to force fresh connections on next use.
+        evictStaleConnections();
 
+        // Wait briefly for MySQL to settle after full restore
+        try { Thread.sleep(1000); } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
+
+        // Step 2: DB is restored — refresh JPA state from the now-restored database
+        // The pre-restore entities are stale; we must re-read from DB
+        SystemVersion previousVersion = versionRepository.findByIsCurrentTrueAndDeletedAtIsNull().orElse(null);
         if (previousVersion != null) {
-            previousVersion.setIsCurrent(true);
-            versionRepository.save(previousVersion);
+            // The restored DB already has is_current=1 on the correct version, no action needed
+            log.info("Current version after rollback: v{}", previousVersion.getVersion());
         }
-
-        // Mark the upgrade package as rolled back
-        packageRepository.findByTargetVersionAndDeletedAtIsNull(targetVersion.getVersion())
-                .ifPresent(pkg -> {
-                    pkg.setStatus("ROLLED_BACK");
-                    packageRepository.save(pkg);
-                });
 
         String rolledBackTo = previousVersion != null ? previousVersion.getVersion() : "unknown";
 
         auditLogService.log(userId, String.valueOf(userId), "UPGRADE_ROLLBACK", "system_version", versionId,
-                Map.of("rolled_back_from", targetVersion.getVersion(), "rolled_back_to", rolledBackTo,
-                        "backup_id", backup.getId()));
+                Map.of("rolled_back_from", rolledBackFromVersion, "rolled_back_to", rolledBackTo,
+                        "backup_id", backupId));
 
         return Map.of(
-                "rolled_back_from", targetVersion.getVersion(),
+                "rolled_back_from", rolledBackFromVersion,
                 "rolled_back_to", rolledBackTo,
-                "backup_id", backup.getId()
+                "backup_id", backupId
         );
     }
 
@@ -299,14 +296,21 @@ public class VersionUpgradeService {
     public Map<String, Object> getCurrentVersion() {
         SystemVersion current = versionRepository.findByIsCurrentTrueAndDeletedAtIsNull().orElse(null);
         if (current == null) {
-            // Initialize if no version record exists
-            SystemVersion initial = SystemVersion.builder()
-                    .version("1.0.0")
-                    .description("初始版本")
-                    .isCurrent(true)
-                    .build();
-            initial = versionRepository.save(initial);
-            return versionToMap(initial);
+            // Initialize if no version record exists (handle concurrent creation)
+            try {
+                SystemVersion initial = SystemVersion.builder()
+                        .version("1.0.0")
+                        .description("初始版本")
+                        .isCurrent(true)
+                        .build();
+                initial = versionRepository.save(initial);
+                return versionToMap(initial);
+            } catch (Exception e) {
+                // Concurrent creation — just query again
+                current = versionRepository.findByIsCurrentTrueAndDeletedAtIsNull().orElse(null);
+                if (current != null) return versionToMap(current);
+                throw new RuntimeException("初始化系统版本失败: " + e.getMessage(), e);
+            }
         }
         return versionToMap(current);
     }
@@ -359,6 +363,27 @@ public class VersionUpgradeService {
 
     // === Private helpers ===
 
+    /**
+     * 清除HikariCP连接池中的失效连接
+     * restoreBackup通过外部mysql进程恢复数据，会导致MySQL断开所有现有连接，
+     * 但HikariCP连接池不知道连接已断开，后续使用时会报Broken pipe。
+     */
+    private void evictStaleConnections() {
+        try {
+            if (dataSource instanceof HikariDataSource hikari) {
+                hikari.getHikariPoolMXBean().softEvictConnections();
+                log.info("Evicted stale connections from HikariCP pool");
+            } else {
+                // Fallback: close one connection to trigger pool refresh
+                try (Connection conn = dataSource.getConnection()) {
+                    // Just open and close to validate
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to evict stale connections (non-fatal)", e);
+        }
+    }
+
     private Map<String, String> extractZip(Path zipPath, Path stagingDir) throws IOException {
         Map<String, String> result = new HashMap<>();
         try (ZipInputStream zis = new ZipInputStream(Files.newInputStream(zipPath))) {
@@ -382,13 +407,15 @@ public class VersionUpgradeService {
 
     private List<String> executeSqlScript(String sqlContent) throws Exception {
         List<String> statements = new ArrayList<>();
-        // Split by semicolons, ignore empty and comment-only lines
-        String[] parts = sqlContent.split(";");
+        // Strip block comments /* ... */ and line comments -- ...\n
+        String cleaned = sqlContent.replaceAll("/\\*.*?\\*/", "").replaceAll("--[^\\n]*", "");
+        // Split by semicolons, ignore empty fragments
+        String[] parts = cleaned.split(";");
         try (Connection conn = dataSource.getConnection();
              Statement stmt = conn.createStatement()) {
             for (String part : parts) {
                 String trimmed = part.trim();
-                if (trimmed.isEmpty() || trimmed.startsWith("--") || trimmed.startsWith("/*")) continue;
+                if (trimmed.isEmpty()) continue;
                 try {
                     stmt.execute(trimmed);
                     statements.add(trimmed.length() > 80 ? trimmed.substring(0, 80) + "..." : trimmed);

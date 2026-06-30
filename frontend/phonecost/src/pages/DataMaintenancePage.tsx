@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
-import { Card, Table, Button, Tag, Popconfirm, message, Row, Col, Statistic, Tooltip, Modal, Steps, Typography, Tabs, Upload, Descriptions, Empty, Badge } from 'antd';
+import { useState, useCallback, useEffect } from 'react';
+import { Card, Table, Button, Tag, Popconfirm, message, Row, Col, Statistic, Tooltip, Modal, Steps, Typography, Tabs, Upload, Empty, Badge } from 'antd';
 import { SafetyCertificateOutlined, DatabaseOutlined, ReloadOutlined, CloudUploadOutlined, CloudDownloadOutlined, DeleteOutlined, UndoOutlined, CheckCircleOutlined, RocketOutlined, HistoryOutlined, UploadOutlined, RollbackOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { apiGet, apiPost, apiDelete, apiUpload } from '../lib/request';
 import { COLORS } from '../theme/morandi';
@@ -317,7 +317,6 @@ function VersionUpgradeTab() {
   const [uploading, setUploading] = useState(false);
   const [applyingId, setApplyingId] = useState<number | null>(null);
   const [rollbackVersionId, setRollbackVersionId] = useState<number | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -461,7 +460,7 @@ function VersionUpgradeTab() {
               cancelText="取消"
             >
               <Button type="link" size="small" icon={<RollbackOutlined />}
-                loading={rollbackVersionId != null}
+                loading={rollbackVersionId === r.id}
                 style={{ color: COLORS.pending, padding: '0 4px' }}>回滚</Button>
             </Popconfirm>
           )}
