@@ -1,11 +1,12 @@
-import { useState, useCallback, useEffect } from 'react';
-import { Card, Table, Button, Tag, Popconfirm, message, Row, Col, Statistic, Tooltip, Modal, Steps, Typography } from 'antd';
-import { SafetyCertificateOutlined, DatabaseOutlined, ReloadOutlined, CloudUploadOutlined, CloudDownloadOutlined, DeleteOutlined, UndoOutlined, CheckCircleOutlined } from '@ant-design/icons';
-import { apiGet, apiPost, apiDelete } from '../lib/request';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { Card, Table, Button, Tag, Popconfirm, message, Row, Col, Statistic, Tooltip, Modal, Steps, Typography, Tabs, Upload, Descriptions, Empty, Badge } from 'antd';
+import { SafetyCertificateOutlined, DatabaseOutlined, ReloadOutlined, CloudUploadOutlined, CloudDownloadOutlined, DeleteOutlined, UndoOutlined, CheckCircleOutlined, RocketOutlined, HistoryOutlined, UploadOutlined, RollbackOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { apiGet, apiPost, apiDelete, apiUpload } from '../lib/request';
 import { COLORS } from '../theme/morandi';
 
 const { Text } = Typography;
 
+// ==================== Backup Types ====================
 interface BackupRecord {
   id: number;
   backup_type: string;
@@ -42,6 +43,29 @@ interface RestoreResponse {
   steps: RestoreStep[];
 }
 
+// ==================== Version Upgrade Types ====================
+interface VersionInfo {
+  id: number;
+  version: string;
+  description: string;
+  is_current: boolean;
+  backup_id: number | null;
+  created_at: string;
+}
+
+interface UpgradePackage {
+  id: number;
+  package_name: string;
+  target_version: string;
+  description: string | null;
+  file_size: number;
+  status: string;
+  applied_at: string | null;
+  error_message: string | null;
+  created_at: string;
+}
+
+// ==================== Common Helpers ====================
 const formatSize = (bytes: number) => {
   if (!bytes || bytes === 0) return '-';
   if (bytes < 1024) return bytes + ' B';
@@ -54,7 +78,8 @@ const formatDate = (s: string) => {
   return s.replace('T', ' ').slice(0, 19);
 };
 
-export default function DataMaintenancePage() {
+// ==================== Backup Management Tab ====================
+function BackupTab() {
   const [data, setData] = useState<BackupRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -200,20 +225,17 @@ export default function DataMaintenancePage() {
   ];
 
   return (
-    <Card title={<><SafetyCertificateOutlined style={{ marginRight: 8 }} />数据维护</>}
-      styles={{ body: { padding: '16px 20px' } }}
-      extra={
-        <div style={{ display: 'flex', gap: 8 }}>
-          <Button icon={<CloudUploadOutlined />} onClick={handleFullBackup}
-            loading={actionLoading === 'full'}
-            style={{ borderColor: COLORS.sage, color: COLORS.sage }}>全量备份</Button>
-          <Button icon={<CloudDownloadOutlined />} onClick={handleIncrementalBackup}
-            loading={actionLoading === 'incr'}
-            style={{ borderColor: COLORS.slate, color: COLORS.slate }}>增量备份</Button>
-          <Button icon={<ReloadOutlined />} onClick={fetchData}>刷新</Button>
-        </div>
-      }
-    >
+    <>
+      <div style={{ marginBottom: 16, display: 'flex', gap: 8 }}>
+        <Button icon={<CloudUploadOutlined />} onClick={handleFullBackup}
+          loading={actionLoading === 'full'}
+          style={{ borderColor: COLORS.sage, color: COLORS.sage }}>全量备份</Button>
+        <Button icon={<CloudDownloadOutlined />} onClick={handleIncrementalBackup}
+          loading={actionLoading === 'incr'}
+          style={{ borderColor: COLORS.slate, color: COLORS.slate }}>增量备份</Button>
+        <Button icon={<ReloadOutlined />} onClick={fetchData}>刷新</Button>
+      </div>
+
       <Row gutter={16} style={{ marginBottom: 20 }}>
         <Col span={6}><Statistic title="备份总数" value={total} prefix={<DatabaseOutlined />} /></Col>
         <Col span={6}><Statistic title="全量备份" value={fullCount} valueStyle={{ color: COLORS.sage }} /></Col>
@@ -282,6 +304,286 @@ export default function DataMaintenancePage() {
           </>
         )}
       </Modal>
+    </>
+  );
+}
+
+// ==================== Version Upgrade Tab ====================
+function VersionUpgradeTab() {
+  const [currentVersion, setCurrentVersion] = useState<VersionInfo | null>(null);
+  const [versionHistory, setVersionHistory] = useState<VersionInfo[]>([]);
+  const [packages, setPackages] = useState<UpgradePackage[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [applyingId, setApplyingId] = useState<number | null>(null);
+  const [rollbackVersionId, setRollbackVersionId] = useState<number | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const fetchAll = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [ver, hist, pkgs] = await Promise.all([
+        apiGet<VersionInfo>('/version/current'),
+        apiGet<VersionInfo[]>('/version/history'),
+        apiGet<UpgradePackage[]>('/version/packages'),
+      ]);
+      setCurrentVersion(ver);
+      setVersionHistory(hist || []);
+      setPackages(pkgs || []);
+    } catch {
+      message.error('加载版本信息失败');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  const handleUpload = async (file: File) => {
+    const isZip = file.name.endsWith('.zip');
+    if (!isZip) {
+      message.error('请上传 ZIP 格式的升级包');
+      return false;
+    }
+
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      message.loading({ content: '正在上传并验证升级包...', key: 'upload', duration: 0 });
+      await apiUpload<UpgradePackage>('/version/packages/upload', formData);
+      message.success({ content: '升级包上传成功', key: 'upload' });
+      fetchAll();
+    } catch (e: unknown) {
+      const errMsg = e instanceof Error ? e.message : '上传失败';
+      message.error({ content: errMsg, key: 'upload' });
+    } finally {
+      setUploading(false);
+    }
+    return false;
+  };
+
+  const handleApply = async (pkgId: number) => {
+    setApplyingId(pkgId);
+    try {
+      message.loading({ content: '正在应用升级，请勿操作...', key: 'apply', duration: 0 });
+      const result = await apiPost<{ previous_version: string; target_version: string; backup_id: number; sql_statements: number }>(`/version/packages/${pkgId}/apply`);
+      message.success({ content: `升级成功：${result.previous_version} → ${result.target_version}，执行 ${result.sql_statements} 条SQL`, key: 'apply' });
+      fetchAll();
+    } catch (e: unknown) {
+      const errMsg = e instanceof Error ? e.message : '升级失败';
+      message.error({ content: errMsg, key: 'apply' });
+    } finally {
+      setApplyingId(null);
+    }
+  };
+
+  const handleRollback = async (versionId: number) => {
+    setRollbackVersionId(versionId);
+    try {
+      message.loading({ content: '正在回滚，请勿操作...', key: 'rollback', duration: 0 });
+      const result = await apiPost<{ rolled_back_from: string; rolled_back_to: string; backup_id: number }>(`/version/packages/${versionId}/rollback`);
+      message.success({ content: `回滚成功：${result.rolled_back_from} → ${result.rolled_back_to}`, key: 'rollback' });
+      fetchAll();
+    } catch (e: unknown) {
+      const errMsg = e instanceof Error ? e.message : '回滚失败';
+      message.error({ content: errMsg, key: 'rollback' });
+    } finally {
+      setRollbackVersionId(null);
+    }
+  };
+
+  const handleDeletePackage = async (pkgId: number) => {
+    try {
+      await apiDelete(`/version/packages/${pkgId}`);
+      message.success('升级包已删除');
+      fetchAll();
+    } catch {
+      message.error('删除失败');
+    }
+  };
+
+  const statusMap: Record<string, { label: string; color: string }> = {
+    UPLOADED: { label: '待应用', color: COLORS.pending },
+    APPLIED: { label: '已应用', color: COLORS.confirmed },
+    FAILED: { label: '失败', color: COLORS.danger },
+    ROLLED_BACK: { label: '已回滚', color: COLORS.slate },
+  };
+
+  const pkgColumns = [
+    { title: '上传时间', dataIndex: 'created_at', key: 'created_at', width: 160, render: formatDate },
+    { title: '升级包', dataIndex: 'package_name', key: 'package_name', width: 180,
+      render: (v: string) => <span style={{ fontWeight: 500 }}>{v}</span> },
+    { title: '目标版本', dataIndex: 'target_version', key: 'target_version', width: 100,
+      render: (v: string) => <Tag style={{ fontFamily: 'monospace' }}>{v}</Tag> },
+    { title: '描述', dataIndex: 'description', key: 'description', width: 200,
+      render: (v: string | null) => v || '-' },
+    { title: '文件大小', dataIndex: 'file_size', key: 'file_size', width: 90, render: formatSize },
+    { title: '状态', dataIndex: 'status', key: 'status', width: 80,
+      render: (v: string) => {
+        const info = statusMap[v] || { label: v, color: COLORS.textMuted };
+        return <Tag color={info.color}>{info.label}</Tag>;
+      } },
+    { title: '错误信息', dataIndex: 'error_message', key: 'error_message', width: 180,
+      render: (v: string | null) => v
+        ? <Tooltip title={v}><span style={{ color: COLORS.danger, cursor: 'help', fontSize: 12 }}>{v.slice(0, 40)}...</span></Tooltip>
+        : '-' },
+    { title: '操作', key: 'actions', width: 200, fixed: 'right' as const,
+      render: (_: unknown, r: UpgradePackage) => (
+        <>
+          {(r.status === 'UPLOADED' || r.status === 'FAILED') && (
+            <Popconfirm
+              title="确定应用此升级包？"
+              description="系统将自动备份当前数据库，然后执行升级SQL脚本。"
+              onConfirm={() => handleApply(r.id)}
+              okText="应用升级"
+              cancelText="取消"
+            >
+              <Button type="link" size="small" icon={<ThunderboltOutlined />}
+                loading={applyingId === r.id}
+                style={{ color: COLORS.confirmed, padding: '0 4px' }}>应用</Button>
+            </Popconfirm>
+          )}
+          {r.status === 'APPLIED' && (
+            <Popconfirm
+              title="确定回滚此版本？"
+              description="将恢复升级前的数据库备份，当前版本数据将被覆盖。"
+              onConfirm={() => {
+                // Find the version history entry for this target version to get its ID
+                const versionEntry = versionHistory.find(v => v.version === r.target_version);
+                if (versionEntry) {
+                  handleRollback(versionEntry.id);
+                } else {
+                  message.error('未找到版本记录');
+                }
+              }}
+              okText="确定回滚"
+              cancelText="取消"
+            >
+              <Button type="link" size="small" icon={<RollbackOutlined />}
+                loading={rollbackVersionId != null}
+                style={{ color: COLORS.pending, padding: '0 4px' }}>回滚</Button>
+            </Popconfirm>
+          )}
+          {r.status !== 'APPLIED' && (
+            <Popconfirm title="确定删除该升级包？" onConfirm={() => handleDeletePackage(r.id)} okText="删除" cancelText="取消">
+              <Button type="link" size="small" danger icon={<DeleteOutlined />} style={{ padding: '0 4px' }}>删除</Button>
+            </Popconfirm>
+          )}
+        </>
+      ) },
+  ];
+
+  const historyColumns = [
+    { title: '版本号', dataIndex: 'version', key: 'version', width: 100,
+      render: (v: string, r: VersionInfo) => (
+        <span style={{ fontFamily: 'monospace', fontWeight: r.is_current ? 600 : 400 }}>{v}</span>
+      ) },
+    { title: '描述', dataIndex: 'description', key: 'description', width: 250 },
+    { title: '关联备份', dataIndex: 'backup_id', key: 'backup_id', width: 80,
+      render: (v: number | null) => v ? `#${v}` : '-' },
+    { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 160, render: formatDate },
+    { title: '状态', key: 'current', width: 80,
+      render: (_: unknown, r: VersionInfo) => r.is_current
+        ? <Badge status="success" text="当前" />
+        : <Text type="secondary">历史</Text> },
+  ];
+
+  return (
+    <div>
+      {/* Current Version Info */}
+      <div style={{ marginBottom: 20, padding: '16px 20px', background: COLORS.cream, borderRadius: 10, border: `1px solid ${COLORS.border}` }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <RocketOutlined style={{ fontSize: 20, color: COLORS.sage }} />
+            <div>
+              <div style={{ fontSize: 13, color: COLORS.textMuted, marginBottom: 4 }}>当前系统版本</div>
+              <div style={{ fontSize: 22, fontWeight: 600, fontFamily: 'monospace', color: COLORS.charcoal }}>
+                {currentVersion?.version || '加载中...'}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <Upload
+              beforeUpload={handleUpload}
+              showUploadList={false}
+              accept=".zip"
+            >
+              <Button icon={<UploadOutlined />} loading={uploading}
+                style={{ borderColor: COLORS.sage, color: COLORS.sage }}>
+                上传升级包
+              </Button>
+            </Upload>
+            <Button icon={<ReloadOutlined />} onClick={fetchAll} loading={loading}>刷新</Button>
+          </div>
+        </div>
+        {currentVersion?.description && (
+          <div style={{ marginTop: 8, fontSize: 13, color: COLORS.textMuted, paddingLeft: 36 }}>
+            {currentVersion.description}
+          </div>
+        )}
+      </div>
+
+      {/* Upgrade Packages Table */}
+      <div style={{ marginBottom: 4 }}>
+        <Text strong style={{ fontSize: 14 }}>升级包管理</Text>
+      </div>
+      <Table
+        columns={pkgColumns}
+        dataSource={packages}
+        rowKey="id"
+        size="small"
+        loading={loading}
+        pagination={false}
+        locale={{ emptyText: <Empty description="暂无升级包" /> }}
+        scroll={{ x: 1100 }}
+      />
+
+      {/* Version History */}
+      <div style={{ marginTop: 28, marginBottom: 4 }}>
+        <Text strong style={{ fontSize: 14 }}><HistoryOutlined style={{ marginRight: 6 }} />版本历史</Text>
+      </div>
+      <Table
+        columns={historyColumns}
+        dataSource={versionHistory}
+        rowKey="id"
+        size="small"
+        loading={loading}
+        pagination={false}
+        locale={{ emptyText: <Empty description="暂无版本记录" /> }}
+        scroll={{ x: 600 }}
+      />
+
+      <div style={{ marginTop: 16, padding: 12, background: COLORS.cream, borderRadius: 8, fontSize: 12, color: COLORS.textMuted }}>
+        <p style={{ margin: '4px 0' }}><strong>升级包格式：</strong>ZIP文件，包含 manifest.json（版本号和描述）和 upgrade.sql（SQL迁移脚本）。</p>
+        <p style={{ margin: '4px 0' }}><strong>升级流程：</strong>上传 → 应用（自动备份 → 执行SQL → 更新版本号）。</p>
+        <p style={{ margin: '4px 0' }}><strong>回滚说明：</strong>回滚将恢复升级前的数据库备份，并回退版本号。</p>
+      </div>
+    </div>
+  );
+}
+
+// ==================== Main Page ====================
+export default function DataMaintenancePage() {
+  const tabItems = [
+    {
+      key: 'backup',
+      label: <span><DatabaseOutlined style={{ marginRight: 6 }} />备份管理</span>,
+      children: <BackupTab />,
+    },
+    {
+      key: 'version',
+      label: <span><RocketOutlined style={{ marginRight: 6 }} />版本更新</span>,
+      children: <VersionUpgradeTab />,
+    },
+  ];
+
+  return (
+    <Card
+      title={<><SafetyCertificateOutlined style={{ marginRight: 8 }} />数据维护</>}
+      styles={{ body: { padding: '16px 20px' } }}
+    >
+      <Tabs items={tabItems} type="card" />
     </Card>
   );
 }
