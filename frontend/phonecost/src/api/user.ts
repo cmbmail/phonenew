@@ -12,7 +12,10 @@ export interface UserItem {
   updated_at: string;
 }
 
-export const getUsers = () => apiGet<UserItem[]>('/users');
+export const getUsers = (orgId?: number) => {
+  const params = orgId ? `?org_id=${orgId}` : '';
+  return apiGet<UserItem[]>(`/users${params}`);
+};
 
 export const createUser = (data: {
   username: string;

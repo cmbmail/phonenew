@@ -25,9 +25,9 @@ const allMenuItems: MenuItemDef[] = [
     label: '费用分摊',
     children: [
       { key: '/bill', icon: <FileTextOutlined />, label: '账单管理' },
-      { key: '/allocation', icon: <PhoneOutlined />, label: '分摊汇总' },
-      { key: '/allocation/branch', icon: <BankOutlined />, label: '一级分行' },
-      { key: '/allocation/sub-branch', icon: <BranchesOutlined />, label: '二级分行' },
+      { key: '/allocation', icon: <PhoneOutlined />, label: '分摊汇总', roles: [1, 4] },
+      { key: '/allocation/branch', icon: <BankOutlined />, label: '一级分行', roles: [1, 2, 4] },
+      { key: '/allocation/sub-branch', icon: <BranchesOutlined />, label: '二级分行', roles: [1, 2, 3, 4] },
       { key: '/allocation/analysis', icon: <BarChartOutlined />, label: '费用分析' },
     ],
   },

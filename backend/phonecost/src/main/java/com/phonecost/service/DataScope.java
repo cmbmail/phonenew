@@ -7,7 +7,7 @@ import java.util.List;
  * 根据用户角色决定可见的数据范围：
  * - ADMIN(1)/FINANCE(4): 全部数据
  * - BRANCH(2): 本分行及下级子树
- * - DEPARTMENT(3): 仅本部门
+ * - DEPARTMENT(3): 本部门及所有下级子组织
  */
 public class DataScope {
 

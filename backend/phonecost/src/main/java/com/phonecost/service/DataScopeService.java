@@ -17,7 +17,7 @@ import java.util.List;
  * 角色与范围映射：
  * - ADMIN(1): 全量数据
  * - BRANCH(2): 本分行及下级子树
- * - DEPARTMENT(3): 仅本部门
+ * - DEPARTMENT(3): 本部门及所有下级子组织
  * - FINANCE(4): 全量数据（财务需要看所有分行）
  */
 @Slf4j
@@ -66,9 +66,12 @@ public class DataScopeService {
         }
 
         if (role == 3) {
-            // DEPARTMENT: 仅本部门
-            log.debug("DataScope: userId={}, role=DEPARTMENT, orgId={}", userId, orgId);
-            return DataScope.singleOrgScope(orgId);
+            // DEPARTMENT: 本部门及所有下级子组织
+            List<SysOrganization> descendants = orgRepository
+                    .findByPathStartingWithAndDeletedAtIsNull(org.getPath());
+            List<Long> orgIds = descendants.stream().map(SysOrganization::getId).toList();
+            log.debug("DataScope: userId={}, role=DEPARTMENT, orgId={}, subtreeSize={}", userId, orgId, orgIds.size());
+            return DataScope.subtreeScope(org.getPath(), orgIds);
         }
 
         // 未知角色，默认无权限
@@ -102,7 +105,11 @@ public class DataScopeService {
         }
 
         if (role == 3) {
-            return DataScope.singleOrgScope(orgId);
+            // DEPARTMENT: 本部门及所有下级子组织
+            List<SysOrganization> descendants = orgRepository
+                    .findByPathStartingWithAndDeletedAtIsNull(org.getPath());
+            List<Long> orgIds = descendants.stream().map(SysOrganization::getId).toList();
+            return DataScope.subtreeScope(org.getPath(), orgIds);
         }
 
         return DataScope.singleOrgScope(-999L);

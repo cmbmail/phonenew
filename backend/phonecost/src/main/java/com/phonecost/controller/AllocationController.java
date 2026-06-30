@@ -325,56 +325,129 @@ public class AllocationController {
 
     /**
      * L1 分摊汇总数据（JSON，供前端表格展示）
+     * 只有集团管理员和财务可以看全量L1汇总
      */
     @GetMapping("/l1-summary-data")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_FINANCE')")
     public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getL1SummaryData(
-            @RequestParam Long batchId) {
+            @RequestParam Long batchId,
+            @RequestAttribute("userId") Long userId) {
+        DataScope scope = dataScopeService.getDataScope(userId);
         List<Map<String, Object>> data = branchBillExportService.getL1SummaryData(batchId);
+        // 按数据范围过滤：分行管理员只看管辖分行，部门管理员看自己的
+        if (!scope.isAllScope()) {
+            List<Long> visibleIds = scope.getVisibleOrgIds();
+            if (visibleIds != null) {
+                data = data.stream()
+                        .filter(row -> {
+                            Object orgId = row.get("org_id");
+                            if (orgId == null) return true; // 未归属
+                            return visibleIds.contains(((Number) orgId).longValue());
+                        })
+                        .toList();
+            }
+        }
         return ResponseEntity.ok(ApiResponse.ok(data));
     }
 
     /**
      * L1 分摊明细数据（JSON，供前端分摊明细4个Tab展示）
      * sheetType: CALL / RECORDING / CRBT / FLASH_MSG
+     * 集团管理员和财务可看全量，其他人按范围过滤
      */
     @GetMapping("/l1-detail")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_FINANCE')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_FINANCE', 'ROLE_BRANCH', 'ROLE_DEPARTMENT')")
     public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getL1DetailData(
             @RequestParam Long batchId,
-            @RequestParam String sheetType) {
+            @RequestParam String sheetType,
+            @RequestAttribute("userId") Long userId) {
+        DataScope scope = dataScopeService.getDataScope(userId);
         List<Map<String, Object>> data = branchBillExportService.getL1DetailData(batchId, sheetType);
+        if (!scope.isAllScope()) {
+            List<Long> visibleIds = scope.getVisibleOrgIds();
+            if (visibleIds != null) {
+                data = data.stream()
+                        .filter(row -> {
+                            Object orgId = row.get("org_id");
+                            if (orgId == null) return true;
+                            return visibleIds.contains(((Number) orgId).longValue());
+                        })
+                        .toList();
+            }
+        }
         return ResponseEntity.ok(ApiResponse.ok(data));
     }
 
     /**
      * L2 一级分行分摊明细数据（JSON，供前端分摊明细4个Tab展示）
      * 只返回该一级分行下属组织的明细
+     * 部门管理员只能看到自己所属分行（通过resolveEffectiveBranchOrgId自动定位）
      */
     @GetMapping("/l2-detail")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_FINANCE', 'ROLE_BRANCH')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_FINANCE', 'ROLE_BRANCH', 'ROLE_DEPARTMENT')")
     public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getL2DetailData(
             @RequestParam Long batchId,
             @RequestParam Long branchOrgId,
             @RequestParam String sheetType,
             @RequestAttribute("userId") Long userId) {
-        Long effectiveBranchOrgId = resolveEffectiveBranchOrgId(branchOrgId, userId);
-        List<Map<String, Object>> data = branchBillExportService.getL2DetailData(batchId, effectiveBranchOrgId, sheetType);
+        DataScope scope = dataScopeService.getDataScope(userId);
+        // 非全量权限：校验请求的branchOrgId是否在管辖范围
+        if (!scope.isAllScope() && !scope.isOrgVisible(branchOrgId)) {
+            // 部门管理员可能不直接属于一级分行，需要检查是否属于该分行子树
+            // 使用resolveEffectiveBranchOrgId自动定位到用户所属分行
+            Long effectiveBranchOrgId = resolveEffectiveBranchOrgId(branchOrgId, userId);
+            if (!effectiveBranchOrgId.equals(branchOrgId)) {
+                branchOrgId = effectiveBranchOrgId;
+            }
+        }
+        List<Map<String, Object>> data = branchBillExportService.getL2DetailData(batchId, branchOrgId, sheetType);
+        // 再按数据范围过滤明细行
+        if (!scope.isAllScope()) {
+            List<Long> visibleIds = scope.getVisibleOrgIds();
+            if (visibleIds != null) {
+                data = data.stream()
+                        .filter(row -> {
+                            Object orgId = row.get("org_id");
+                            if (orgId == null) return true;
+                            return visibleIds.contains(((Number) orgId).longValue());
+                        })
+                        .toList();
+            }
+        }
         return ResponseEntity.ok(ApiResponse.ok(data));
     }
 
     /**
      * L3 二级分行分摊明细数据（JSON，供前端分摊明细4个Tab展示）
      * 只返回该二级分行下属组织的明细
+     * 部门管理员只能看到自己所属支行
      */
     @GetMapping("/l3-detail")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_FINANCE', 'ROLE_BRANCH')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_FINANCE', 'ROLE_BRANCH', 'ROLE_DEPARTMENT')")
     public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getL3DetailData(
             @RequestParam Long batchId,
             @RequestParam Long subBranchOrgId,
             @RequestParam String sheetType,
             @RequestAttribute("userId") Long userId) {
+        DataScope scope = dataScopeService.getDataScope(userId);
+        // 校验：请求的subBranchOrgId必须在管辖范围
+        if (!scope.isAllScope() && !scope.isOrgVisible(subBranchOrgId)) {
+            return ResponseEntity.ok(ApiResponse.ok(List.of()));
+        }
         List<Map<String, Object>> data = branchBillExportService.getL3DetailData(batchId, subBranchOrgId, sheetType);
+        // 再按数据范围过滤明细行
+        if (!scope.isAllScope()) {
+            List<Long> visibleIds = scope.getVisibleOrgIds();
+            if (visibleIds != null) {
+                data = data.stream()
+                        .filter(row -> {
+                            Object orgId = row.get("org_id");
+                            if (orgId == null) return true;
+                            return visibleIds.contains(((Number) orgId).longValue());
+                        })
+                        .toList();
+            }
+        }
         return ResponseEntity.ok(ApiResponse.ok(data));
     }
 
@@ -383,7 +456,7 @@ public class AllocationController {
      * 每个一级分行一行，汇总其所有下属费用
      */
     @GetMapping("/export/l1-summary")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_FINANCE', 'ROLE_BRANCH')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_FINANCE', 'ROLE_BRANCH', 'ROLE_DEPARTMENT')")
     public ResponseEntity<byte[]> exportL1Summary(
             @RequestParam Long batchId,
             @RequestAttribute("userId") Long userId) throws Exception {
@@ -403,7 +476,7 @@ public class AllocationController {
      * L2 一级分行明细：一级分行 → 直属下级（二级分行+部门+支行）
      */
     @GetMapping("/export/l2-branch-detail")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_FINANCE', 'ROLE_BRANCH')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_FINANCE', 'ROLE_BRANCH', 'ROLE_DEPARTMENT')")
     public ResponseEntity<byte[]> exportL2BranchDetail(
             @RequestParam Long batchId,
             @RequestParam Long branchOrgId,
@@ -427,7 +500,7 @@ public class AllocationController {
      * L3 二级分行明细：二级分行 → 下属部门+支行
      */
     @GetMapping("/export/l3-sub-branch-detail")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_FINANCE', 'ROLE_BRANCH')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_FINANCE', 'ROLE_BRANCH', 'ROLE_DEPARTMENT')")
     public ResponseEntity<byte[]> exportL3SubBranchDetail(
             @RequestParam Long batchId,
             @RequestParam Long subBranchOrgId,
@@ -446,16 +519,50 @@ public class AllocationController {
                 .body(data);
     }
 
-    /** Resolve effective branch org ID based on user's data scope */
+    /** Resolve effective branch org ID based on user's data scope
+     *  Always returns a 一级分行 (type=2) org ID for L2 page usage
+     */
     private Long resolveEffectiveBranchOrgId(Long branchOrgId, Long userId) {
         DataScope scope = dataScopeService.getDataScope(userId);
         if (scope.isAllScope()) return branchOrgId;
-        if (scope.getSingleOrgId() != null) return scope.getSingleOrgId();
+        if (scope.getSingleOrgId() != null) {
+            // 单组织范围：从该组织path向上查找一级分行
+            SysOrganization org = orgRepository.findById(scope.getSingleOrgId()).orElse(null);
+            if (org != null && org.getPath() != null) {
+                String[] segments = org.getPath().split("/");
+                for (int i = segments.length - 1; i >= 0; i--) {
+                    if (segments[i].isEmpty()) continue;
+                    Long segId = Long.parseLong(segments[i]);
+                    SysOrganization ancestor = orgRepository.findById(segId).orElse(null);
+                    if (ancestor != null && ancestor.getType() == 2) {
+                        return ancestor.getId();
+                    }
+                }
+            }
+            return scope.getSingleOrgId();
+        }
         if (scope.getPathPrefix() != null) {
+            // 子树范围：pathPrefix末尾组织可能是一级分行或二级分行
+            // 需要找到一级分行
             String path = scope.getPathPrefix();
             String trimmed = path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
             int lastSlash = trimmed.lastIndexOf('/');
-            return Long.parseLong(trimmed.substring(lastSlash + 1));
+            Long lastOrgId = Long.parseLong(trimmed.substring(lastSlash + 1));
+            SysOrganization org = orgRepository.findById(lastOrgId).orElse(null);
+            if (org != null && org.getType() == 2) {
+                return lastOrgId; // Already a 一级分行
+            }
+            // 不是一级分行，从path向上查找
+            String[] segments = path.split("/");
+            for (int i = segments.length - 1; i >= 0; i--) {
+                if (segments[i].isEmpty()) continue;
+                Long segId = Long.parseLong(segments[i]);
+                SysOrganization ancestor = orgRepository.findById(segId).orElse(null);
+                if (ancestor != null && ancestor.getType() == 2) {
+                    return ancestor.getId();
+                }
+            }
+            return lastOrgId;
         }
         return branchOrgId;
     }
@@ -469,29 +576,51 @@ public class AllocationController {
     // ==================== 费用分析 ====================
 
     @GetMapping("/analysis/monthly-comparison")
-    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> monthlyComparison() {
-        return ResponseEntity.ok(ApiResponse.ok(feeAnalysisService.monthlyComparison()));
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> monthlyComparison(
+            @RequestAttribute("userId") Long userId) {
+        DataScope scope = dataScopeService.getDataScope(userId);
+        return ResponseEntity.ok(ApiResponse.ok(feeAnalysisService.monthlyComparison(scope)));
     }
 
     @GetMapping("/analysis/l1-monthly")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> analyzeL1Monthly(@RequestParam Long orgId) {
+    public ResponseEntity<ApiResponse<Map<String, Object>>> analyzeL1Monthly(
+            @RequestParam Long orgId,
+            @RequestAttribute("userId") Long userId) {
+        DataScope scope = dataScopeService.getDataScope(userId);
+        if (!scope.isAllScope() && !scope.isOrgVisible(orgId)) {
+            return ResponseEntity.ok(ApiResponse.ok(Map.of("org_id", orgId, "org_name", "", "month_count", 0, "total_fee", BigDecimal.ZERO, "avg_monthly_fee", BigDecimal.ZERO, "rows", Collections.emptyList())));
+        }
         return ResponseEntity.ok(ApiResponse.ok(feeAnalysisService.analyzeL1Monthly(orgId)));
     }
 
     @GetMapping("/analysis/l2-monthly")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> analyzeL2Monthly(@RequestParam Long orgId) {
+    public ResponseEntity<ApiResponse<Map<String, Object>>> analyzeL2Monthly(
+            @RequestParam Long orgId,
+            @RequestAttribute("userId") Long userId) {
+        DataScope scope = dataScopeService.getDataScope(userId);
+        if (!scope.isAllScope() && !scope.isOrgVisible(orgId)) {
+            return ResponseEntity.ok(ApiResponse.ok(Map.of("org_id", orgId, "org_name", "", "month_count", 0, "total_fee", BigDecimal.ZERO, "avg_monthly_fee", BigDecimal.ZERO, "rows", Collections.emptyList())));
+        }
         return ResponseEntity.ok(ApiResponse.ok(feeAnalysisService.analyzeL2Monthly(orgId)));
     }
 
     @GetMapping("/analysis/dept-monthly")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> analyzeDeptMonthly(@RequestParam Long orgId) {
+    public ResponseEntity<ApiResponse<Map<String, Object>>> analyzeDeptMonthly(
+            @RequestParam Long orgId,
+            @RequestAttribute("userId") Long userId) {
+        DataScope scope = dataScopeService.getDataScope(userId);
+        if (!scope.isAllScope() && !scope.isOrgVisible(orgId)) {
+            return ResponseEntity.ok(ApiResponse.ok(Map.of("org_id", orgId, "org_name", "", "month_count", 0, "total_fee", BigDecimal.ZERO, "avg_monthly_fee", BigDecimal.ZERO, "rows", Collections.emptyList())));
+        }
         return ResponseEntity.ok(ApiResponse.ok(feeAnalysisService.analyzeDeptMonthly(orgId)));
     }
 
     @GetMapping("/analysis/phone-list")
     public ResponseEntity<ApiResponse<Map<String, Object>>> analyzePhoneList(
-            @RequestParam(required = false) Long orgId) {
-        return ResponseEntity.ok(ApiResponse.ok(feeAnalysisService.analyzePhoneList(orgId)));
+            @RequestParam(required = false) Long orgId,
+            @RequestAttribute("userId") Long userId) {
+        DataScope scope = dataScopeService.getDataScope(userId);
+        return ResponseEntity.ok(ApiResponse.ok(feeAnalysisService.analyzePhoneList(orgId, scope)));
     }
 
     @GetMapping("/analysis")
@@ -499,14 +628,68 @@ public class AllocationController {
             @RequestParam Long batchId,
             @RequestParam String dimension,
             @RequestParam(required = false) Long orgId,
-            @RequestParam(required = false) String phoneNumber) {
+            @RequestParam(required = false) String phoneNumber,
+            @RequestAttribute("userId") Long userId) {
+        DataScope scope = dataScopeService.getDataScope(userId);
         Map<String, Object> data = switch (dimension) {
-            case "ALL" -> feeAnalysisService.analyzeAll(batchId);
-            case "L1" -> Map.of("rows", feeAnalysisService.analyzeL1(batchId));
-            case "L2" -> Map.of("rows", feeAnalysisService.analyzeL2(batchId, orgId != null ? orgId : 0L));
-            case "DEPARTMENT" -> Map.of("rows", feeAnalysisService.analyzeDepartment(batchId, orgId != null ? orgId : 0L));
+            case "ALL" -> feeAnalysisService.analyzeAll(batchId, scope);
+            case "L1" -> {
+                List<Map<String, Object>> l1Rows = feeAnalysisService.analyzeL1(batchId);
+                if (!scope.isAllScope()) {
+                    List<Long> visibleIds = scope.getVisibleOrgIds();
+                    if (visibleIds != null) {
+                        l1Rows = l1Rows.stream()
+                                .filter(row -> {
+                                    Object oid = row.get("org_id");
+                                    if (oid == null) return true;
+                                    return visibleIds.contains(((Number) oid).longValue());
+                                })
+                                .toList();
+                    }
+                }
+                yield Map.of("rows", l1Rows);
+            }
+            case "L2" -> {
+                // 校验 orgId 在可见范围内
+                if (orgId != null && !scope.isAllScope() && !scope.isOrgVisible(orgId)) {
+                    yield Map.of("rows", Collections.emptyList());
+                }
+                List<Map<String, Object>> l2Rows = feeAnalysisService.analyzeL2(batchId, orgId != null ? orgId : 0L);
+                if (!scope.isAllScope()) {
+                    List<Long> visibleIds = scope.getVisibleOrgIds();
+                    if (visibleIds != null) {
+                        l2Rows = l2Rows.stream()
+                                .filter(row -> {
+                                    Object oid = row.get("org_id");
+                                    if (oid == null) return true;
+                                    return visibleIds.contains(((Number) oid).longValue());
+                                })
+                                .toList();
+                    }
+                }
+                yield Map.of("rows", l2Rows);
+            }
+            case "DEPARTMENT" -> {
+                if (orgId != null && !scope.isAllScope() && !scope.isOrgVisible(orgId)) {
+                    yield Map.of("rows", Collections.emptyList());
+                }
+                List<Map<String, Object>> deptRows = feeAnalysisService.analyzeDepartment(batchId, orgId != null ? orgId : 0L);
+                if (!scope.isAllScope()) {
+                    List<Long> visibleIds = scope.getVisibleOrgIds();
+                    if (visibleIds != null) {
+                        deptRows = deptRows.stream()
+                                .filter(row -> {
+                                    Object oid = row.get("org_id");
+                                    if (oid == null) return true;
+                                    return visibleIds.contains(((Number) oid).longValue());
+                                })
+                                .toList();
+                    }
+                }
+                yield Map.of("rows", deptRows);
+            }
             case "PHONE" -> (phoneNumber != null && !phoneNumber.isEmpty())
-                    ? feeAnalysisService.analyzePhone(phoneNumber)
+                    ? feeAnalysisService.analyzePhone(phoneNumber, scope)
                     : Map.of("rows", Collections.emptyList(), "phone_number", phoneNumber != null ? phoneNumber : "", "month_count", 0, "total_fee", BigDecimal.ZERO, "avg_monthly_fee", BigDecimal.ZERO);
             default -> throw new IllegalArgumentException("不支持的分析维度: " + dimension);
         };

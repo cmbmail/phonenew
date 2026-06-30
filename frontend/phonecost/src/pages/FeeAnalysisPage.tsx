@@ -79,10 +79,6 @@ interface L1MonthlyResult {
 
 type Dimension = '全部' | '一级分行' | '二级分行' | '部门' | '单个号码';
 
-const DIM_MAP: Record<Dimension, string> = {
-  '全部': 'ALL', '一级分行': 'L1', '二级分行': 'L2', '部门': 'DEPARTMENT', '单个号码': 'PHONE',
-};
-
 const ORG_TYPE_LABEL: Record<number, string> = { 1: '集团', 2: '一级分行', 3: '二级分行', 4: '部门', 5: '综合支行', 6: '零专支行' };
 
 const money = (v: unknown) => {

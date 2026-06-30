@@ -27,8 +27,10 @@ public class FeeAnalysisService {
     /**
      * 全部维度：返回总体费用汇总
      */
-    public Map<String, Object> analyzeAll(Long batchId) {
-        List<AllocationResult> results = allocationResultRepository.findByBatchIdAndDeletedAtIsNull(batchId);
+    public Map<String, Object> analyzeAll(Long batchId, DataScope scope) {
+        List<AllocationResult> allResults = allocationResultRepository.findByBatchIdAndDeletedAtIsNull(batchId);
+        // Apply DataScope filtering
+        List<AllocationResult> results = scope.filterByOrgId(allResults, AllocationResult::getOrgId);
 
         BigDecimal totalRent = BigDecimal.ZERO, totalCall = BigDecimal.ZERO, totalRecording = BigDecimal.ZERO;
         BigDecimal totalCrbt = BigDecimal.ZERO, totalFlash = BigDecimal.ZERO, totalFee = BigDecimal.ZERO;
@@ -265,7 +267,7 @@ public class FeeAnalysisService {
     /**
      * 号码列表：返回所有号码的累计费用汇总，按总费用降序，支持按一级分行过滤
      */
-    public Map<String, Object> analyzePhoneList(Long l1OrgId) {
+    public Map<String, Object> analyzePhoneList(Long l1OrgId, DataScope scope) {
         List<BillDetail> allDetails = billDetailRepository.findAll();
 
         Map<Long, SysOrganization> orgMap = orgRepository.findAll().stream()
@@ -283,6 +285,19 @@ public class FeeAnalysisService {
                     if (o.getPath() != null && o.getPath().startsWith(l1Path)) {
                         filterOrgIds.add(o.getId());
                     }
+                }
+            }
+        }
+
+        // Apply DataScope: intersect with scope's visibleOrgIds
+        if (!scope.isAllScope()) {
+            List<Long> scopeOrgIds = scope.getVisibleOrgIds();
+            if (scopeOrgIds != null) {
+                Set<Long> scopeSet = new HashSet<>(scopeOrgIds);
+                if (filterOrgIds != null) {
+                    filterOrgIds.retainAll(scopeSet);
+                } else {
+                    filterOrgIds = scopeSet;
                 }
             }
         }
@@ -357,11 +372,22 @@ public class FeeAnalysisService {
     /**
      * 单个号码维度：查询指定号码近一年的月度费用清单
      */
-    public Map<String, Object> analyzePhone(String phoneNumber) {
+    public Map<String, Object> analyzePhone(String phoneNumber, DataScope scope) {
         List<BillDetail> details = billDetailRepository.findByPhoneNumberAndDeletedAtIsNull(phoneNumber);
         Map<Long, SysOrganization> orgMap = orgRepository.findAll().stream()
                 .filter(o -> o.getDeletedAt() == null)
                 .collect(Collectors.toMap(SysOrganization::getId, o -> o, (a, b) -> a));
+
+        // Apply DataScope: only include details belonging to visible orgs
+        if (!scope.isAllScope()) {
+            List<Long> visibleIds = scope.getVisibleOrgIds();
+            if (visibleIds != null) {
+                Set<Long> visibleSet = new HashSet<>(visibleIds);
+                details = details.stream()
+                        .filter(d -> d.getOrgId() == null || visibleSet.contains(d.getOrgId()))
+                        .toList();
+            }
+        }
 
         // Group by batch_id (month)
         Map<Long, List<BillDetail>> byBatch = details.stream()
@@ -446,12 +472,14 @@ public class FeeAnalysisService {
     /**
      * 月度总费用对比：返回近12个月（或所有有数据的月份）的费用汇总
      */
-    public List<Map<String, Object>> monthlyComparison() {
+    public List<Map<String, Object>> monthlyComparison(DataScope scope) {
         List<BillBatch> batches = billBatchRepository.findByDeletedAtIsNullOrderByBillingMonthAsc();
         List<Map<String, Object>> rows = new ArrayList<>();
 
         for (BillBatch batch : batches) {
-            List<AllocationResult> results = allocationResultRepository.findByBatchIdAndDeletedAtIsNull(batch.getId());
+            List<AllocationResult> allResults = allocationResultRepository.findByBatchIdAndDeletedAtIsNull(batch.getId());
+            // Apply DataScope filtering
+            List<AllocationResult> results = scope.filterByOrgId(allResults, AllocationResult::getOrgId);
 
             BigDecimal totalRent = BigDecimal.ZERO, totalCall = BigDecimal.ZERO, totalRecording = BigDecimal.ZERO;
             BigDecimal totalCrbt = BigDecimal.ZERO, totalFlash = BigDecimal.ZERO, totalFee = BigDecimal.ZERO;

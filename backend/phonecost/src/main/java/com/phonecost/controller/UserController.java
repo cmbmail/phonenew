@@ -1,7 +1,9 @@
 package com.phonecost.controller;
 
+import com.phonecost.domain.SysOrganization;
 import com.phonecost.domain.SysUser;
 import com.phonecost.dto.ApiResponse;
+import com.phonecost.repository.SysOrganizationRepository;
 import com.phonecost.service.DataScope;
 import com.phonecost.service.DataScopeService;
 import com.phonecost.service.UserService;
@@ -15,6 +17,8 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/users")
@@ -23,15 +27,36 @@ public class UserController {
 
     private final UserService userService;
     private final DataScopeService dataScopeService;
+    private final SysOrganizationRepository orgRepository;
 
     @GetMapping
     public ResponseEntity<ApiResponse<List<SysUser>>> list(
-            @RequestAttribute("userId") Long userId) {
+            @RequestAttribute("userId") Long userId,
+            @RequestParam(required = false) Long org_id) {
         DataScope scope = dataScopeService.getDataScope(userId);
         List<SysUser> allUsers = userService.list();
-        List<SysUser> filtered = scope.filterByOrgId(
-                allUsers.stream().filter(u -> u.getDeletedAt() == null).toList(),
-                SysUser::getOrgId);
+        List<SysUser> activeUsers = allUsers.stream().filter(u -> u.getDeletedAt() == null).toList();
+
+        if (org_id != null) {
+            // Must be within caller's data scope
+            if (!scope.isOrgVisible(org_id)) {
+                return ResponseEntity.ok(ApiResponse.ok(List.of()));
+            }
+            // Get subtree org IDs for the requested org
+            SysOrganization targetOrg = orgRepository.findById(org_id).orElse(null);
+            if (targetOrg == null) {
+                return ResponseEntity.ok(ApiResponse.ok(List.of()));
+            }
+            List<SysOrganization> descendants = orgRepository.findByPathStartingWithAndDeletedAtIsNull(targetOrg.getPath());
+            Set<Long> subtreeIds = descendants.stream().map(SysOrganization::getId).collect(Collectors.toSet());
+
+            List<SysUser> filtered = activeUsers.stream()
+                    .filter(u -> u.getOrgId() != null && subtreeIds.contains(u.getOrgId()))
+                    .toList();
+            return ResponseEntity.ok(ApiResponse.ok(filtered));
+        }
+
+        List<SysUser> filtered = scope.filterByOrgId(activeUsers, SysUser::getOrgId);
         return ResponseEntity.ok(ApiResponse.ok(filtered));
     }
 

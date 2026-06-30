@@ -10,6 +10,7 @@ import { getOrgTree } from '../api/org';
 import type { Organization } from '../types/organization';
 import { ORG_TYPE_LABELS } from '../types/organization';
 import { exportCSV } from '../lib/export';
+import { useAuthStore } from '../store/auth';
 
 const SHEET_TYPES = ['CALL', 'RECORDING', 'CRBT', 'FLASH_MSG'] as const;
 type SheetType = typeof SHEET_TYPES[number];
@@ -52,10 +53,31 @@ export default function L3SubBranchPage() {
     }
   }, [batches, selectedBatchId]);
 
-  // 二级分行列表 (type=3)
-  const subBranches = useMemo(() =>
-    orgList.filter(o => o.type === 3).sort((a, b) => a.name.localeCompare(b.name)),
-    [orgList]);
+  const { role, orgId } = useAuthStore();
+
+  // 二级分行列表 (type=3,5,6)，非管理员只显示所属支行
+  const subBranches = useMemo(() => {
+    const all = orgList.filter(o => o.type === 3 || o.type === 5 || o.type === 6).sort((a, b) => a.name.localeCompare(b.name));
+    if (!role || role === 1 || role === 4 || !orgId) return all;
+    // BRANCH: 显示本分行下所有二级分行/支行
+    // DEPARTMENT: 只显示自己所属的二级分行/支行
+    const myOrg = orgList.find(o => o.id === orgId);
+    if (myOrg) {
+      if (role === 2) {
+        // BRANCH: 过滤出parent_id为自己分行ID的子支行
+        return all.filter(sb => myOrg.path === '/' || sb.path.startsWith(myOrg.path));
+      }
+      // DEPARTMENT: 找到所属二级分行/支行，只显示它
+      const segments = myOrg.path.split('/').filter(Boolean).map(Number);
+      for (let i = segments.length - 1; i >= 0; i--) {
+        const ancestor = orgList.find(o => o.id === segments[i]);
+        if (ancestor && (ancestor.type === 3 || ancestor.type === 5 || ancestor.type === 6)) {
+          return all.filter(sb => sb.id === ancestor.id);
+        }
+      }
+    }
+    return all;
+  }, [orgList, role, orgId]);
 
   // 按一级分行分组
   const orgMap = useMemo(() => {
@@ -75,9 +97,32 @@ export default function L3SubBranchPage() {
     return Array.from(groups.values());
   }, [subBranches, orgMap]);
 
+  // 根据用户角色自动选中所属二级分行/支行
   useEffect(() => {
-    if (subBranches.length > 0 && !selectedSubBranchId) setSelectedSubBranchId(subBranches[0].id);
-  }, [subBranches, selectedSubBranchId]);
+    if (subBranches.length === 0 || selectedSubBranchId) return;
+    // 非管理员/财务：根据用户orgId查找所属二级分行/支行
+    if (role && role !== 1 && role !== 4 && orgId) {
+      const myOrg = orgList.find(o => o.id === orgId);
+      if (myOrg) {
+        // 若自身就是二级分行/支行
+        if (myOrg.type === 3 || myOrg.type === 5 || myOrg.type === 6) {
+          setSelectedSubBranchId(myOrg.id);
+          return;
+        }
+        // 从path中查找祖先二级分行/支行：path格式 /1/5/6/19/
+        const segments = myOrg.path.split('/').filter(Boolean).map(Number);
+        for (let i = segments.length - 1; i >= 0; i--) {
+          const ancestor = orgList.find(o => o.id === segments[i]);
+          if (ancestor && (ancestor.type === 3 || ancestor.type === 5 || ancestor.type === 6)) {
+            setSelectedSubBranchId(ancestor.id);
+            return;
+          }
+        }
+      }
+    }
+    // ADMIN/FINANCE 或未找到：选第一个
+    setSelectedSubBranchId(subBranches[0].id);
+  }, [subBranches, selectedSubBranchId, role, orgId, orgList]);
 
   useEffect(() => {
     if (selectedBatchId) {

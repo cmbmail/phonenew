@@ -11,6 +11,7 @@ import { getOrgTree } from '../api/org';
 import type { Organization } from '../types/organization';
 import { ORG_TYPE_LABELS } from '../types/organization';
 import { exportCSV } from '../lib/export';
+import { useAuthStore } from '../store/auth';
 
 const SHEET_TYPES = ['CALL', 'RECORDING', 'CRBT', 'FLASH_MSG'] as const;
 type SheetType = typeof SHEET_TYPES[number];
@@ -54,15 +55,52 @@ export default function L2BranchPage() {
     }
   }, [batches, selectedBatchId]);
 
-  // 一级分行列表 (type=2)
-  const branches = useMemo(() =>
-    orgList.filter(o => o.type === 2).sort((a, b) => (a.code || '').localeCompare(b.code || '')),
-    [orgList]);
+  const { role, orgId } = useAuthStore();
 
-  // 自动选第一个分行
+  // 一级分行列表 (type=2)，非管理员只显示自己所属分行
+  const branches = useMemo(() => {
+    const all = orgList.filter(o => o.type === 2).sort((a, b) => (a.code || '').localeCompare(b.code || ''));
+    if (!role || role === 1 || role === 4 || !orgId) return all;
+    // BRANCH/DEPARTMENT: 找到所属一级分行，只显示它
+    const myOrg = orgList.find(o => o.id === orgId);
+    if (myOrg) {
+      const segments = myOrg.path.split('/').filter(Boolean).map(Number);
+      for (let i = segments.length - 1; i >= 0; i--) {
+        const ancestor = orgList.find(o => o.id === segments[i]);
+        if (ancestor && ancestor.type === 2) {
+          return all.filter(b => b.id === ancestor.id);
+        }
+      }
+    }
+    return all;
+  }, [orgList, role, orgId]);
+
+  // 根据用户角色自动选中所属一级分行
   useEffect(() => {
-    if (branches.length > 0 && !selectedBranchId) setSelectedBranchId(branches[0].id);
-  }, [branches, selectedBranchId]);
+    if (branches.length === 0 || selectedBranchId) return;
+    // 非管理员/财务：根据用户orgId向上查找所属一级分行
+    if (role && role !== 1 && role !== 4 && orgId) {
+      const myOrg = orgList.find(o => o.id === orgId);
+      if (myOrg) {
+        // 若自身就是一级分行
+        if (myOrg.type === 2) {
+          setSelectedBranchId(myOrg.id);
+          return;
+        }
+        // 从path中查找祖先一级分行：path格式 /1/5/6/19/
+        const segments = myOrg.path.split('/').filter(Boolean).map(Number);
+        for (let i = segments.length - 1; i >= 0; i--) {
+          const ancestor = orgList.find(o => o.id === segments[i]);
+          if (ancestor && ancestor.type === 2) {
+            setSelectedBranchId(ancestor.id);
+            return;
+          }
+        }
+      }
+    }
+    // ADMIN/FINANCE 或未找到：选第一个
+    setSelectedBranchId(branches[0].id);
+  }, [branches, selectedBranchId, role, orgId, orgList]);
 
   useEffect(() => {
     if (selectedBatchId) {

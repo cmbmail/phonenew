@@ -67,6 +67,61 @@ public class RoleController {
             4, Set.of("dashboard_view", "allocation_view", "allocation_export", "base_view", "allocation_analysis")
     );
 
+    // 数据范围定义: 每个角色可访问的组织范围
+    private static final List<Map<String, Object>> DATA_SCOPES = List.of(
+            Map.of("role_id", 1,
+                    "scope_type", "ALL",
+                    "label", "全部组织",
+                    "description", "可访问和操作所有组织的数据",
+                    "org_levels", List.of("集团", "一级分行", "二级分行/支行", "部门"),
+                    "access_mode", "读写",
+                    "details", List.of(
+                            "可查看所有分行、支行、部门数据",
+                            "可进行全量数据导入、分摊计算、确认和导出",
+                            "可管理系统用户、模板和数据维护",
+                            "可查看系统看板全量统计"
+                    )),
+            Map.of("role_id", 2,
+                    "scope_type", "SUBTREE",
+                    "label", "所属分行及下级",
+                    "description", "可访问所属分行及其所有下属组织的数据",
+                    "org_levels", List.of("所属分行", "下属支行", "下属部门"),
+                    "access_mode", "读写",
+                    "details", List.of(
+                            "可查看本分行及下级支行、部门数据",
+                            "可导入本分行账单和基础数据",
+                            "可确认本分行的费用分摊结果",
+                            "无法查看其他分行数据",
+                            "无法计算分摊（仅集团管理员可计算）"
+                    )),
+            Map.of("role_id", 3,
+                    "scope_type", "SINGLE",
+                    "label", "仅所属部门",
+                    "description", "仅可查看所属部门的数据",
+                    "org_levels", List.of("所属部门"),
+                    "access_mode", "只读",
+                    "details", List.of(
+                            "仅可查看本部门费用分摊数据",
+                            "可查看基础数据（号码归属、通讯录）",
+                            "可使用费用分析查看本部门数据",
+                            "无数据导入和分摊操作权限",
+                            "无法查看其他部门数据"
+                    )),
+            Map.of("role_id", 4,
+                    "scope_type", "ALL",
+                    "label", "全部组织（只读）",
+                    "description", "可查看所有组织数据，用于财务报表和审计",
+                    "org_levels", List.of("集团", "一级分行", "二级分行/支行", "部门"),
+                    "access_mode", "只读",
+                    "details", List.of(
+                            "可查看所有分行、支行、部门数据",
+                            "可导出费用分摊汇总和明细报表",
+                            "可使用费用分析查看全量数据",
+                            "无数据导入和分摊操作权限",
+                            "无系统管理权限"
+                    ))
+    );
+
     @GetMapping
     public ApiResponse<List<Map<String, Object>>> list() {
         List<Map<String, Object>> result = new ArrayList<>();
@@ -78,6 +133,15 @@ public class RoleController {
                     "SELECT COUNT(*) FROM sys_user WHERE role = ? AND deleted_at IS NULL", Integer.class, roleId);
             item.put("user_count", count != null ? count : 0);
             item.put("permissions", ROLE_PERMISSIONS.getOrDefault(roleId, Set.of()));
+            // Attach data scope
+            DATA_SCOPES.stream()
+                    .filter(ds -> ((Number) ds.get("role_id")).intValue() == roleId)
+                    .findFirst()
+                    .ifPresent(ds -> {
+                        Map<String, Object> scope = new LinkedHashMap<>(ds);
+                        scope.remove("role_id");
+                        item.put("data_scope", scope);
+                    });
             result.add(item);
         }
         return ApiResponse.ok(result);
@@ -89,6 +153,7 @@ public class RoleController {
         result.put("roles", ROLES);
         result.put("modules", PERMISSIONS);
         result.put("matrix", ROLE_PERMISSIONS);
+        result.put("data_scopes", DATA_SCOPES);
         return ApiResponse.ok(result);
     }
 }

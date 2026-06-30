@@ -720,6 +720,7 @@ public class BranchBillExportService {
         for (BillDetail d : details) {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("id", d.getId());
+            row.put("org_id", d.getOrgId() != null ? d.getOrgId() : -1L);
             row.put("phone_number", d.getPhoneNumber());
             row.put("org_name", buildFullNamePath(d.getOrgId(), orgMap));
             SysOrganization org = orgMap.get(d.getOrgId());
@@ -807,6 +808,7 @@ public class BranchBillExportService {
             BigDecimal total = callSubtotal.add(sumRec).add(sumCrbt).add(sumFlash);
 
             Map<String, Object> row = new LinkedHashMap<>();
+            row.put("org_id", branch.getId());
             row.put("branch_name", branch.getName());
             row.put("cost_center", branch.getCostCenter() != null ? branch.getCostCenter() : "");
             row.put("platform_fee", fees.platformFee);
