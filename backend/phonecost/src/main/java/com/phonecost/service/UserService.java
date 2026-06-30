@@ -53,7 +53,12 @@ public class UserService {
         SysUser existing = getById(id);
         if (updates.getRealName() != null) existing.setRealName(updates.getRealName());
         if (updates.getRole() != null) existing.setRole(updates.getRole());
-        if (updates.getOrgId() != null) existing.setOrgId(updates.getOrgId());
+        if (updates.getOrgId() != null) {
+            if (!orgRepository.existsByIdAndDeletedAtIsNull(updates.getOrgId())) {
+                throw new IllegalArgumentException("组织不存在: " + updates.getOrgId());
+            }
+            existing.setOrgId(updates.getOrgId());
+        }
         if (updates.getStatus() != null) existing.setStatus(updates.getStatus());
         return userRepository.save(existing);
     }
