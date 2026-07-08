@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 费用调整服务
@@ -36,6 +37,22 @@ public class AllocationAdjustService {
     private final AllocationAdjustmentRepository adjustmentRepository;
     private final SysOrganizationRepository orgRepository;
 
+    /** Cached org map for cascade operations — built once, cleared per request */
+    private final ThreadLocal<Map<Long, SysOrganization>> orgMapCache = new ThreadLocal<>();
+
+    private Map<Long, SysOrganization> buildOrgMap() {
+        Map<Long, SysOrganization> cached = orgMapCache.get();
+        if (cached != null) return cached;
+        cached = orgRepository.findByDeletedAtIsNull().stream()
+                .collect(java.util.stream.Collectors.toMap(SysOrganization::getId, o -> o, (a, b) -> a));
+        orgMapCache.set(cached);
+        return cached;
+    }
+
+    private void clearOrgMapCache() {
+        orgMapCache.remove();
+    }
+
     /**
      * 调整指定号码的费用归属
      *
@@ -51,6 +68,7 @@ public class AllocationAdjustService {
     public AllocationAdjustment adjust(Long batchId, String phoneNumber,
                                        Long fromOrgId, Long toOrgId,
                                        String reason, Long userId) {
+        clearOrgMapCache();
         // --- 参数校验 ---
         if (phoneNumber == null || phoneNumber.isBlank()) {
             throw new IllegalArgumentException("号码不能为空");
@@ -89,10 +107,11 @@ public class AllocationAdjustService {
         }
 
         // --- 获取组织信息 ---
-        SysOrganization fromOrg = orgRepository.findById(fromOrgId)
-                .orElseThrow(() -> new IllegalArgumentException("原始组织不存在: " + fromOrgId));
-        SysOrganization toOrg = orgRepository.findById(toOrgId)
-                .orElseThrow(() -> new IllegalArgumentException("目标组织不存在: " + toOrgId));
+        Map<Long, SysOrganization> orgMap = buildOrgMap();
+        SysOrganization fromOrg = orgMap.get(fromOrgId);
+        if (fromOrg == null) throw new IllegalArgumentException("原始组织不存在: " + fromOrgId);
+        SysOrganization toOrg = orgMap.get(toOrgId);
+        if (toOrg == null) throw new IllegalArgumentException("目标组织不存在: " + toOrgId);
 
         // --- Step 1: 更新 bill_detail 的 org_id ---
         for (BillDetail d : details) {
@@ -207,7 +226,9 @@ public class AllocationAdjustService {
     }
 
     private BigDecimal safeSub(BigDecimal a, BigDecimal b) {
-        return (a != null ? a : BigDecimal.ZERO).subtract(b != null ? b : BigDecimal.ZERO);
+        BigDecimal result = (a != null ? a : BigDecimal.ZERO).subtract(b != null ? b : BigDecimal.ZERO);
+        // H-10 fix: 费用不允许为负数，取 floor(0)
+        return result.compareTo(BigDecimal.ZERO) < 0 ? BigDecimal.ZERO : result;
     }
 
     private BigDecimal safeAdd(BigDecimal a, BigDecimal b) {
@@ -215,8 +236,12 @@ public class AllocationAdjustService {
     }
 
     private int countCallPhones(List<BillDetail> details) {
+        // H-11 fix: 统计唯一号码数而非行数（一个号码可能有多条通话明细）
         return (int) details.stream()
                 .filter(d -> "CALL".equals(d.getSheetType()))
+                .map(BillDetail::getPhoneNumber)
+                .filter(p -> p != null && !p.isBlank())
+                .distinct()
                 .count();
     }
 
@@ -240,7 +265,8 @@ public class AllocationAdjustService {
         BigDecimal flashMsgFeeDelta = details.stream().map(d -> safe(d.getFlashMsgFee())).reduce(BigDecimal.ZERO, BigDecimal::add);
         int phoneCountDelta = countCallPhones(details);
 
-        // Walk up the org tree
+        // Walk up the org tree using cached orgMap (no N+1 queries)
+        Map<Long, SysOrganization> orgMap = buildOrgMap();
         Long currentParentId = leafOrg.getParentId();
         while (currentParentId != null) {
             AllocationResult parentResult = resultRepository
@@ -272,7 +298,7 @@ public class AllocationAdjustService {
                 }
             }
 
-            SysOrganization parent = orgRepository.findById(currentParentId).orElse(null);
+            SysOrganization parent = orgMap.get(currentParentId);
             currentParentId = (parent != null) ? parent.getParentId() : null;
         }
     }

@@ -64,6 +64,12 @@ public class VersionUpgradePackage {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
+    @Column(name = "frontend_backup_path", length = 500)
+    private String frontendBackupPath;
+
+    @Column(name = "backend_backup_path", length = 500)
+    private String backendBackupPath;
+
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 }

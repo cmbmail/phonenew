@@ -1,0 +1,12 @@
+# Development profile — provides safe defaults for local development only
+# NEVER use this profile in production
+
+spring:
+  datasource:
+    password: ${DB_PASSWORD:PhoneCostApp@2026}
+  data:
+    redis:
+      password: ${REDIS_PASSWORD:RedisCost@2026}
+
+jwt:
+  secret: ${JWT_SECRET:PhoneCostJwtSecret2026DevOnlyNotForProductionUse}

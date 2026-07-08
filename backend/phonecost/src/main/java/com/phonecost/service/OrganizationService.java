@@ -23,18 +23,18 @@ public class OrganizationService {
     private final SysOrganizationRepository orgRepository;
 
     public List<SysOrganization> getTree() {
-        return orgRepository.findAll();
+        return orgRepository.findByDeletedAtIsNull();
     }
 
     public SysOrganization getById(Long id) {
-        return orgRepository.findById(id)
+        return orgRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new IllegalArgumentException("组织不存在: " + id));
     }
 
     @Transactional
     public SysOrganization create(SysOrganization org) {
         if (org.getParentId() != null) {
-            orgRepository.findById(org.getParentId())
+            orgRepository.findByIdAndDeletedAtIsNull(org.getParentId())
                     .orElseThrow(() -> new IllegalArgumentException("上级组织不存在: " + org.getParentId()));
         }
         if (org.getCode() != null && !org.getCode().isEmpty()
@@ -54,7 +54,7 @@ public class OrganizationService {
         if (saved.getParentId() == null) {
             path = "/" + saved.getId() + "/";
         } else {
-            SysOrganization parent = orgRepository.findById(saved.getParentId()).orElseThrow();
+            SysOrganization parent = orgRepository.findByIdAndDeletedAtIsNull(saved.getParentId()).orElseThrow();
             path = parent.getPath() + saved.getId() + "/";
         }
         saved.setPath(path);
@@ -127,8 +127,7 @@ public class OrganizationService {
         Map<String, SysOrganization> existingCache = new HashMap<>();
         // Find the root (集团, type=1, no parent)
         Long rootId = null;
-        for (SysOrganization org : orgRepository.findAll()) {
-            if (org.getDeletedAt() != null) continue;
+        for (SysOrganization org : orgRepository.findByDeletedAtIsNull()) {
             if (org.getType() == 1 && org.getParentId() == null) {
                 rootId = org.getId();
             }
@@ -205,10 +204,9 @@ public class OrganizationService {
 
     @Transactional
     public void rebuildPaths() {
-        List<SysOrganization> all = orgRepository.findAll();
+        List<SysOrganization> all = orgRepository.findByDeletedAtIsNull();
         Map<Long, SysOrganization> orgMap = new HashMap<>();
         for (SysOrganization org : all) {
-            if (org.getDeletedAt() != null) continue;
             orgMap.put(org.getId(), org);
         }
 

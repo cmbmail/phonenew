@@ -4,14 +4,18 @@ import com.phonecost.domain.SysOrganization;
 import com.phonecost.domain.SysUser;
 import com.phonecost.dto.ApiResponse;
 import com.phonecost.repository.SysOrganizationRepository;
+import com.phonecost.repository.SysUserRepository;
 import com.phonecost.service.DataScope;
 import com.phonecost.service.DataScopeService;
 import com.phonecost.service.AuditLogService;
 import com.phonecost.service.UserService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -29,38 +33,64 @@ public class UserController {
     private final UserService userService;
     private final DataScopeService dataScopeService;
     private final SysOrganizationRepository orgRepository;
+    private final SysUserRepository userRepository;
     private final AuditLogService auditLogService;
 
     @GetMapping
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
-    public ResponseEntity<ApiResponse<List<SysUser>>> list(
+    public ResponseEntity<ApiResponse<Map<String, Object>>> list(
             @RequestAttribute("userId") Long userId,
-            @RequestParam(required = false) Long org_id) {
+            @RequestParam(required = false) Long org_id,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+        // M-04 fix: limit page size
+        size = Math.min(size, 200);
         DataScope scope = dataScopeService.getDataScope(userId);
-        List<SysUser> allUsers = userService.list();
-        List<SysUser> activeUsers = allUsers.stream().filter(u -> u.getDeletedAt() == null).toList();
 
         if (org_id != null) {
             // Must be within caller's data scope
             if (!scope.isOrgVisible(org_id)) {
-                return ResponseEntity.ok(ApiResponse.ok(List.of()));
+                return ResponseEntity.ok(ApiResponse.ok(Map.of("content", List.of(), "total", 0, "page", page, "size", size)));
             }
             // Get subtree org IDs for the requested org
-            SysOrganization targetOrg = orgRepository.findById(org_id).orElse(null);
+            SysOrganization targetOrg = orgRepository.findByIdAndDeletedAtIsNull(org_id).orElse(null);
             if (targetOrg == null) {
-                return ResponseEntity.ok(ApiResponse.ok(List.of()));
+                return ResponseEntity.ok(ApiResponse.ok(Map.of("content", List.of(), "total", 0, "page", page, "size", size)));
             }
             List<SysOrganization> descendants = orgRepository.findByPathStartingWithAndDeletedAtIsNull(targetOrg.getPath());
             Set<Long> subtreeIds = descendants.stream().map(SysOrganization::getId).collect(Collectors.toSet());
 
-            List<SysUser> filtered = activeUsers.stream()
-                    .filter(u -> u.getOrgId() != null && subtreeIds.contains(u.getOrgId()))
-                    .toList();
-            return ResponseEntity.ok(ApiResponse.ok(filtered));
+            // DB-level pagination for scoped users
+            Page<SysUser> paged = userRepository.findByOrgIdInAndDeletedAtIsNull(
+                    subtreeIds.stream().toList(), PageRequest.of(page, size));
+            return ResponseEntity.ok(ApiResponse.ok(Map.of(
+                    "content", paged.getContent(),
+                    "total", paged.getTotalElements(),
+                    "page", paged.getNumber(),
+                    "size", paged.getSize())));
         }
 
-        List<SysUser> filtered = scope.filterByOrgId(activeUsers, SysUser::getOrgId);
-        return ResponseEntity.ok(ApiResponse.ok(filtered));
+        // No org_id filter: use data scope
+        if (scope.isAllScope()) {
+            Page<SysUser> paged = userRepository.findByDeletedAtIsNull(PageRequest.of(page, size));
+            return ResponseEntity.ok(ApiResponse.ok(Map.of(
+                    "content", paged.getContent(),
+                    "total", paged.getTotalElements(),
+                    "page", paged.getNumber(),
+                    "size", paged.getSize())));
+        } else {
+            var visibleIds = scope.getVisibleOrgIds();
+            if (visibleIds != null && !visibleIds.isEmpty()) {
+                Page<SysUser> paged = userRepository.findByOrgIdInAndDeletedAtIsNull(
+                        visibleIds, PageRequest.of(page, size));
+                return ResponseEntity.ok(ApiResponse.ok(Map.of(
+                        "content", paged.getContent(),
+                        "total", paged.getTotalElements(),
+                        "page", paged.getNumber(),
+                        "size", paged.getSize())));
+            }
+            return ResponseEntity.ok(ApiResponse.ok(Map.of("content", List.of(), "total", 0, "page", page, "size", size)));
+        }
     }
 
     @GetMapping("/{id}")
@@ -99,7 +129,7 @@ public class UserController {
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<ApiResponse<SysUser>> update(
             @PathVariable Long id,
-            @RequestBody UpdateUserRequest req,
+            @Valid @RequestBody UpdateUserRequest req,
             @RequestAttribute("userId") Long userId) {
         SysUser updates = new SysUser();
         updates.setRealName(req.getRealName());
@@ -130,23 +160,22 @@ public class UserController {
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<ApiResponse<Void>> resetPassword(
             @PathVariable Long id,
-            @RequestBody Map<String, String> body,
+            @Valid @RequestBody ResetPasswordRequest req,
             @RequestAttribute("userId") Long userId) {
-        String newPassword = body.get("new_password");
-        if (newPassword == null || newPassword.isEmpty()) {
-            throw new IllegalArgumentException("新密码不能为空");
-        }
         SysUser target = userService.getById(id);
         auditLogService.log(userId, "USER_RESET_PASSWORD", "sys_user", id,
                 Map.of("target_username", target.getUsername()));
-        userService.resetPassword(id, newPassword);
+        userService.resetPassword(id, req.getNewPassword());
         return ResponseEntity.ok(ApiResponse.ok());
     }
 
     @Data
     public static class CreateUserRequest {
         @NotBlank private String username;
-        @NotBlank private String password;
+        @NotBlank
+        @Pattern(regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[!@#$%^&*()_+\\-=\\[\\]{};':\"\\\\|,.<>\\/?]).{8,}$",
+                message = "密码必须至少8位，包含大小写字母、数字和特殊字符")
+        private String password;
         private String realName;
         private Byte role;
         private Long orgId;
@@ -159,5 +188,13 @@ public class UserController {
         private Byte role;
         private Long orgId;
         private Byte status;
+    }
+
+    @Data
+    public static class ResetPasswordRequest {
+        @NotBlank
+        @Pattern(regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[!@#$%^&*()_+\\-=\\[\\]{};':\"\\\\|,.<>\\/?]).{8,}$",
+                message = "密码必须至少8位，包含大小写字母、数字和特殊字符")
+        private String newPassword;
     }
 }

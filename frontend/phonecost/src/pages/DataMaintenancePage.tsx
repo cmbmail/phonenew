@@ -1,7 +1,8 @@
 import { useState, useCallback, useEffect } from 'react';
-import { Card, Table, Button, Tag, Popconfirm, message, Row, Col, Statistic, Tooltip, Modal, Steps, Typography, Tabs, Upload, Empty, Badge } from 'antd';
-import { SafetyCertificateOutlined, DatabaseOutlined, ReloadOutlined, CloudUploadOutlined, CloudDownloadOutlined, DeleteOutlined, UndoOutlined, CheckCircleOutlined, RocketOutlined, HistoryOutlined, UploadOutlined, RollbackOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { Card, Table, Button, Tag, Popconfirm, message, Row, Col, Statistic, Tooltip, Modal, Steps, Typography, Tabs, Upload, Empty, Badge, Spin } from 'antd';
+import { SafetyCertificateOutlined, DatabaseOutlined, ReloadOutlined, CloudUploadOutlined, CloudDownloadOutlined, DeleteOutlined, UndoOutlined, CheckCircleOutlined, RocketOutlined, HistoryOutlined, UploadOutlined, RollbackOutlined, ThunderboltOutlined, FileTextOutlined, FolderOpenOutlined, SettingOutlined, FileOutlined, PaperClipOutlined } from '@ant-design/icons';
 import { apiGet, apiPost, apiDelete, apiUpload } from '../lib/request';
+import { useAuthStore } from '../store/auth';
 import { COLORS } from '../theme/morandi';
 
 const { Text } = Typography;
@@ -254,6 +255,7 @@ function BackupTab() {
           pageSize,
           total,
           showSizeChanger: true,
+          pageSizeOptions: ['20', '50', '100'],
           showTotal: t => `共 ${t} 条`,
           onChange: (p, s) => { setPage(p - 1); setPageSize(s); },
         }}
@@ -344,6 +346,12 @@ function VersionUpgradeTab() {
       message.error('请上传 ZIP 格式的升级包');
       return false;
     }
+    // H-06 fix: 限制升级包大小为500MB
+    const maxSize = 1024 * 1024 * 1024;
+    if (file.size > maxSize) {
+      message.error(`升级包大小不能超过 1GB，当前文件 ${(file.size / 1024 / 1024).toFixed(1)}MB`);
+      return false;
+    }
 
     setUploading(true);
     try {
@@ -366,8 +374,11 @@ function VersionUpgradeTab() {
     setApplyingId(pkgId);
     try {
       message.loading({ content: '正在应用升级，请勿操作...', key: 'apply', duration: 0 });
-      const result = await apiPost<{ previous_version: string; target_version: string; backup_id: number; sql_statements: number }>(`/version/packages/${pkgId}/apply`);
-      message.success({ content: `升级成功：${result.previous_version} → ${result.target_version}，执行 ${result.sql_statements} 条SQL`, key: 'apply' });
+      const result = await apiPost<{ previous_version: string; target_version: string; backup_id: number; sql_statements: number; frontend_replaced: boolean; backend_replaced: boolean }>(`/version/packages/${pkgId}/apply`, undefined, undefined, 300000);
+      const parts = [`升级成功：${result.previous_version} → ${result.target_version}，执行 ${result.sql_statements} 条SQL`];
+      if (result.frontend_replaced) parts.push('前端已更新');
+      if (result.backend_replaced) parts.push('后端已更新');
+      message.success({ content: parts.join('，'), key: 'apply' });
       fetchAll();
     } catch (e: unknown) {
       const errMsg = e instanceof Error ? e.message : '升级失败';
@@ -381,8 +392,11 @@ function VersionUpgradeTab() {
     setRollbackVersionId(versionId);
     try {
       message.loading({ content: '正在回滚，请勿操作...', key: 'rollback', duration: 0 });
-      const result = await apiPost<{ rolled_back_from: string; rolled_back_to: string; backup_id: number }>(`/version/packages/${versionId}/rollback`);
-      message.success({ content: `回滚成功：${result.rolled_back_from} → ${result.rolled_back_to}`, key: 'rollback' });
+      const result = await apiPost<{ rolled_back_from: string; rolled_back_to: string; backup_id: number; frontend_restored: boolean; backend_restored: boolean }>(`/version/packages/${versionId}/rollback`);
+      const parts = [`回滚成功：${result.rolled_back_from} → ${result.rolled_back_to}`];
+      if (result.frontend_restored) parts.push('前端已恢复');
+      if (result.backend_restored) parts.push('后端已恢复');
+      message.success({ content: parts.join('，'), key: 'rollback' });
       fetchAll();
     } catch (e: unknown) {
       const errMsg = e instanceof Error ? e.message : '回滚失败';
@@ -554,9 +568,397 @@ function VersionUpgradeTab() {
       />
 
       <div style={{ marginTop: 16, padding: 12, background: COLORS.cream, borderRadius: 8, fontSize: 12, color: COLORS.textMuted }}>
-        <p style={{ margin: '4px 0' }}><strong>升级包格式：</strong>ZIP文件，包含 manifest.json（版本号和描述）和 upgrade.sql（SQL迁移脚本）。</p>
-        <p style={{ margin: '4px 0' }}><strong>升级流程：</strong>上传 → 应用（自动备份 → 执行SQL → 更新版本号）。</p>
-        <p style={{ margin: '4px 0' }}><strong>回滚说明：</strong>回滚将恢复升级前的数据库备份，并回退版本号。</p>
+        <p style={{ margin: '4px 0' }}><strong>升级包格式：</strong>ZIP文件，包含 manifest.json（版本号和描述）、upgrade.sql（SQL迁移脚本），可选包含 frontend-dist/（前端文件）和 backend.jar（后端文件）。</p>
+        <p style={{ margin: '4px 0' }}><strong>升级流程：</strong>上传 → 应用（自动备份 → 执行SQL → 替换前端/后端文件 → 更新版本号 → 自动重启服务）。</p>
+        <p style={{ margin: '4px 0' }}><strong>回滚说明：</strong>回滚将恢复升级前的数据库备份、前端和后端文件，并回退版本号。</p>
+      </div>
+    </div>
+  );
+}
+
+// ==================== File Management Tab ====================
+interface BackupFileInfo {
+  file_name: string;
+  file_size: number;
+  modified_at: string;
+  file_path: string;
+}
+
+interface UploadedFileInfo {
+  file_name: string;
+  file_size: number;
+  modified_at: string;
+  file_path: string;
+}
+
+interface UploadResult {
+  file_name: string;
+  stored_name: string;
+  file_size: number;
+  upload_time: string;
+}
+
+interface SystemConfig {
+  database: { url: string; username: string };
+  runtime: { java_version: string; os_name: string; max_memory: string; total_memory: string; free_memory: string; used_memory: string };
+  backups: { directory: string; count: number; total_size: string };
+  uploads: { directory: string; count: number; total_size: string };
+  upgrade_packages: { count: number };
+  disk: { total_space: string; free_space: string; usable_space: string };
+}
+
+function FileManagementTab() {
+  const [uploading, setUploading] = useState(false);
+  const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFileInfo[]>([]);
+  const [filesLoading, setFilesLoading] = useState(false);
+  const [backupFiles, setBackupFiles] = useState<BackupFileInfo[]>([]);
+  const [backupsLoading, setBackupsLoading] = useState(false);
+  const [sysConfig, setSysConfig] = useState<SystemConfig | null>(null);
+  const [configLoading, setConfigLoading] = useState(false);
+  const [logs, setLogs] = useState('');
+  const [logsLoading, setLogsLoading] = useState(false);
+
+  // --- File Upload ---
+  const handleFileUpload = async (file: File) => {
+    setUploading(true);
+    setUploadResult(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      message.loading({ content: '正在上传文件...', key: 'upload', duration: 0 });
+      const res = await apiUpload<UploadResult>('/file-management/upload', formData);
+      message.success({ content: `文件上传成功：${res.file_name}`, key: 'upload' });
+      setUploadResult(res);
+      fetchUploadedFiles();
+    } catch (e: unknown) {
+      const errMsg = e instanceof Error ? e.message : '上传失败';
+      message.error({ content: errMsg, key: 'upload' });
+    } finally {
+      setUploading(false);
+    }
+    return false;
+  };
+
+  // --- Uploaded Files ---
+  const fetchUploadedFiles = useCallback(async () => {
+    setFilesLoading(true);
+    try {
+      const files = await apiGet<UploadedFileInfo[]>('/file-management/uploads');
+      setUploadedFiles(files || []);
+    } catch {
+      message.error('加载文件列表失败');
+    } finally {
+      setFilesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchUploadedFiles(); }, [fetchUploadedFiles]);
+
+  const handleDownloadUploaded = async (fileName: string) => {
+    try {
+      const token = useAuthStore.getState().token;
+      const resp = await fetch(`/api/file-management/uploads/download?name=${encodeURIComponent(fileName)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!resp.ok) throw new Error('下载失败');
+      const blob = await resp.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(a.href);
+      message.success('文件下载成功');
+    } catch {
+      message.error('文件下载失败');
+    }
+  };
+
+  const handleDeleteUploaded = async (fileName: string) => {
+    try {
+      await apiDelete(`/file-management/uploads/${encodeURIComponent(fileName)}`);
+      message.success('文件已删除');
+      fetchUploadedFiles();
+    } catch {
+      message.error('删除失败');
+    }
+  };
+
+  // --- Backup Files ---
+  const fetchBackups = useCallback(async () => {
+    setBackupsLoading(true);
+    try {
+      const files = await apiGet<BackupFileInfo[]>('/file-management/backups');
+      setBackupFiles(files || []);
+    } catch {
+      message.error('加载备份文件列表失败');
+    } finally {
+      setBackupsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchBackups(); }, [fetchBackups]);
+
+  const handleDownloadBackup = async (filePath: string) => {
+    try {
+      const token = useAuthStore.getState().token;
+      const resp = await fetch(`/api/file-management/backups/download?path=${encodeURIComponent(filePath)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!resp.ok) throw new Error('下载失败');
+      const blob = await resp.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filePath.split('/').pop() || 'download';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(a.href);
+      message.success('文件下载成功');
+    } catch {
+      message.error('文件下载失败');
+    }
+  };
+
+  // --- System Config ---
+  const fetchConfig = useCallback(async () => {
+    setConfigLoading(true);
+    try {
+      const cfg = await apiGet<SystemConfig>('/file-management/config');
+      setSysConfig(cfg);
+    } catch {
+      message.error('加载系统配置失败');
+    } finally {
+      setConfigLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchConfig(); }, [fetchConfig]);
+
+  // --- Logs ---
+  const fetchLogs = useCallback(async () => {
+    setLogsLoading(true);
+    try {
+      const logText = await apiGet<string>('/file-management/logs?lines=200');
+      setLogs(logText || '');
+    } catch {
+      message.error('加载日志失败');
+    } finally {
+      setLogsLoading(false);
+    }
+  }, []);
+
+  // FE-M-14 fix: auto-load logs on mount
+  useEffect(() => { fetchLogs(); }, [fetchLogs]);
+
+  return (
+    <div>
+      {/* 文件上传 */}
+      <Card
+        size="small"
+        title={<><CloudUploadOutlined style={{ color: COLORS.sage }} />文件上传</>}
+        style={{ marginBottom: 16 }}
+        styles={{ header: { background: COLORS.cream, borderRadius: '8px 8px 0 0' } }}
+        extra={
+          <Upload beforeUpload={handleFileUpload} showUploadList={false}
+            accept=".xlsx,.xls,.csv,.json,.xml,.txt,.pdf,.doc,.docx,.zip,.tar,.gz,.sql,.md,.png,.jpg,.jpeg,.gif">
+            <Button icon={<UploadOutlined />} loading={uploading}
+              size="small" style={{ borderColor: COLORS.sage, color: COLORS.sage }}>
+              上传文件
+            </Button>
+          </Upload>
+        }
+      >
+        <p style={{ margin: '4px 0', fontSize: 12, color: COLORS.textMuted }}>
+          支持 xlsx/xls/csv/json/xml/txt/pdf/doc/docx/zip/tar/gz/sql/md/png/jpg 等格式，单个文件最大 1GB。
+        </p>
+        {uploadResult && (
+          <div style={{ marginTop: 8, padding: 10, background: '#f6ffed', border: `1px solid ${COLORS.confirmed}`, borderRadius: 6 }}>
+            <span style={{ fontWeight: 500 }}>{uploadResult.file_name}</span> — {formatSize(uploadResult.file_size)} — 上传于 {uploadResult.upload_time}
+          </div>
+        )}
+      </Card>
+
+      {/* 已上传文件 */}
+      <Card
+        size="small"
+        title={<><PaperClipOutlined style={{ color: COLORS.sage }} />已上传文件（{uploadedFiles.length}）</>}
+        style={{ marginBottom: 16 }}
+        styles={{ header: { background: COLORS.cream, borderRadius: '8px 8px 0 0' } }}
+        extra={
+          <Button size="small" icon={<ReloadOutlined />} onClick={fetchUploadedFiles} loading={filesLoading}>
+            刷新
+          </Button>
+        }
+      >
+        <Table
+          dataSource={uploadedFiles}
+          rowKey="file_path"
+          size="small"
+          loading={filesLoading}
+          pagination={uploadedFiles.length > 10 ? { pageSize: 10, showTotal: t => `共 ${t} 条` } : false}
+          columns={[
+            { title: '文件名', dataIndex: 'file_name', width: 300,
+              render: (v: string) => (
+                <span style={{ fontFamily: 'monospace', fontSize: 12 }}>
+                  <FileOutlined style={{ marginRight: 6, color: COLORS.slate }} />{v}
+                </span>
+              ) },
+            { title: '大小', dataIndex: 'file_size', width: 100, render: formatSize },
+            { title: '上传时间', dataIndex: 'modified_at', width: 170, render: formatDate },
+            { title: '操作', width: 140,
+              render: (_: unknown, r: UploadedFileInfo) => (
+                <>
+                  <Button type="link" size="small" icon={<CloudDownloadOutlined />}
+                    onClick={() => handleDownloadUploaded(r.file_name)}
+                    style={{ padding: '0 4px', color: COLORS.sage }}>下载</Button>
+                  <Popconfirm title="确定删除该文件？" onConfirm={() => handleDeleteUploaded(r.file_name)} okText="删除" cancelText="取消">
+                    <Button type="link" size="small" danger icon={<DeleteOutlined />} style={{ padding: '0 4px' }}>删除</Button>
+                  </Popconfirm>
+                </>
+              ) },
+          ]}
+          locale={{ emptyText: <Empty description="暂无上传文件" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
+          scroll={{ x: 700 }}
+        />
+      </Card>
+
+      {/* 备份文件 */}
+      <Card
+        size="small"
+        title={<><FolderOpenOutlined style={{ color: COLORS.slate }} />备份文件</>}
+        style={{ marginBottom: 16 }}
+        styles={{ header: { background: COLORS.cream, borderRadius: '8px 8px 0 0' } }}
+        extra={
+          <Button size="small" icon={<ReloadOutlined />} onClick={fetchBackups} loading={backupsLoading}>
+            刷新
+          </Button>
+        }
+      >
+        <Table
+          dataSource={backupFiles}
+          rowKey="file_path"
+          size="small"
+          loading={backupsLoading}
+          pagination={backupFiles.length > 10 ? { pageSize: 10, showTotal: t => `共 ${t} 条` } : false}
+          columns={[
+            { title: '文件名', dataIndex: 'file_name', width: 280,
+              render: (v: string) => <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{v}</span> },
+            { title: '大小', dataIndex: 'file_size', width: 100, render: formatSize },
+            { title: '修改时间', dataIndex: 'modified_at', width: 170, render: formatDate },
+            { title: '操作', width: 100,
+              render: (_: unknown, r: BackupFileInfo) => (
+                <Button type="link" size="small" icon={<CloudDownloadOutlined />}
+                  onClick={() => handleDownloadBackup(r.file_path)}
+                  style={{ padding: '0 4px', color: COLORS.sage }}>下载</Button>
+              ) },
+          ]}
+          locale={{ emptyText: <Empty description="暂无备份文件" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
+          scroll={{ x: 650 }}
+        />
+      </Card>
+
+      {/* 系统配置 + 日志 并排 */}
+      <Row gutter={16}>
+        {/* 系统配置 */}
+        <Col span={12}>
+          <Card
+            size="small"
+            title={<><SettingOutlined style={{ color: COLORS.pending }} />系统配置</>}
+            extra={
+              <Button size="small" icon={<ReloadOutlined />} onClick={fetchConfig} loading={configLoading}>刷新</Button>
+            }
+            styles={{ header: { background: COLORS.cream, borderRadius: '8px 8px 0 0' } }}
+          >
+            {configLoading ? (
+              <div style={{ textAlign: 'center', padding: 20 }}><Spin /></div>
+            ) : sysConfig ? (
+              <div style={{ fontSize: 13 }}>
+                <div style={{ marginBottom: 12 }}>
+                  <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 4, color: COLORS.charcoal }}>数据库</Text>
+                  <div style={{ padding: '6px 10px', background: '#fafafa', borderRadius: 4, fontFamily: 'monospace', fontSize: 11, wordBreak: 'break-all' }}>
+                    {sysConfig.database.url}<br />
+                    用户：{sysConfig.database.username ? sysConfig.database.username.slice(0, 2) + '****' : '-'}
+                  </div>
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 4, color: COLORS.charcoal }}>运行环境</Text>
+                  <div style={{ padding: '6px 10px', background: '#fafafa', borderRadius: 4, fontSize: 12 }}>
+                    Java {sysConfig.runtime.java_version} / {sysConfig.runtime.os_name}<br />
+                    内存：{sysConfig.runtime.used_memory} / {sysConfig.runtime.max_memory}
+                  </div>
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 4, color: COLORS.charcoal }}>备份目录</Text>
+                  <div style={{ padding: '6px 10px', background: '#fafafa', borderRadius: 4, fontSize: 12 }}>
+                    {sysConfig.backups.directory}（{sysConfig.backups.count} 个文件，共 {sysConfig.backups.total_size}）
+                  </div>
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 4, color: COLORS.charcoal }}>上传目录</Text>
+                  <div style={{ padding: '6px 10px', background: '#fafafa', borderRadius: 4, fontSize: 12 }}>
+                    {sysConfig.uploads?.directory || '-'}（{sysConfig.uploads?.count || 0} 个文件，共 {sysConfig.uploads?.total_size || '0 B'}）
+                  </div>
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 4, color: COLORS.charcoal }}>磁盘空间</Text>
+                  <div style={{ padding: '6px 10px', background: '#fafafa', borderRadius: 4, fontSize: 12 }}>
+                    总计 {sysConfig.disk.total_space}，可用 {sysConfig.disk.usable_space}
+                  </div>
+                </div>
+                <div>
+                  <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 4, color: COLORS.charcoal }}>升级包</Text>
+                  <div style={{ padding: '6px 10px', background: '#fafafa', borderRadius: 4, fontSize: 12 }}>
+                    已上传 {sysConfig.upgrade_packages.count} 个
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </Card>
+        </Col>
+
+        {/* 后端日志 */}
+        <Col span={12}>
+          <Card
+            size="small"
+            title={<><FileTextOutlined style={{ color: COLORS.danger }} />后端日志</>}
+            extra={
+              <Button size="small" icon={<ReloadOutlined />} onClick={fetchLogs} loading={logsLoading}>刷新</Button>
+            }
+            styles={{ header: { background: COLORS.cream, borderRadius: '8px 8px 0 0' } }}
+          >
+            {logsLoading ? (
+              <div style={{ textAlign: 'center', padding: 20 }}><Spin /></div>
+            ) : logs ? (
+              <pre style={{
+                padding: 10,
+                background: '#1e1e1e',
+                color: '#d4d4d4',
+                borderRadius: 6,
+                fontSize: 11,
+                fontFamily: "'Menlo', 'Consolas', monospace",
+                maxHeight: 380,
+                overflow: 'auto',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-all',
+                lineHeight: 1.5,
+                margin: 0,
+              }}>{logs}</pre>
+            ) : (
+              <Empty description="暂无日志" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            )}
+          </Card>
+        </Col>
+      </Row>
+
+      {/* 提示信息 */}
+      <div style={{ marginTop: 16, padding: 12, background: COLORS.cream, borderRadius: 8, fontSize: 12, color: COLORS.textMuted }}>
+        <p style={{ margin: '4px 0' }}><strong>文件上传：</strong>上传文件存储在服务器 /data/apps/phonecost/uploads/ 目录，支持下载和删除操作。</p>
+        <p style={{ margin: '4px 0' }}><strong>备份文件：</strong>位于服务器 /data/apps/phonecost/backups/ 目录，包含全量备份和增量备份文件。</p>
+        <p style={{ margin: '4px 0' }}><strong>系统配置：</strong>显示当前运行时信息、数据库连接（密码已脱敏）、磁盘空间等。</p>
+        <p style={{ margin: '4px 0' }}><strong>后端日志：</strong>读取 journalctl 或日志文件的最近 200 行输出。</p>
       </div>
     </div>
   );
@@ -574,6 +976,11 @@ export default function DataMaintenancePage() {
       key: 'version',
       label: <span><RocketOutlined style={{ marginRight: 6 }} />版本更新</span>,
       children: <VersionUpgradeTab />,
+    },
+    {
+      key: 'files',
+      label: <span><FolderOpenOutlined style={{ marginRight: 6 }} />文件管理</span>,
+      children: <FileManagementTab />,
     },
   ];
 

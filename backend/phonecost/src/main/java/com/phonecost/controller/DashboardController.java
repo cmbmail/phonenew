@@ -8,10 +8,10 @@ import com.phonecost.service.DataScopeService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -19,6 +19,7 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/dashboard")
 @RequiredArgsConstructor
+@PreAuthorize("isAuthenticated()")
 public class DashboardController {
 
     private final SysOrganizationRepository orgRepository;
@@ -33,81 +34,100 @@ public class DashboardController {
             @RequestAttribute("userId") Long userId) {
         DataScope scope = dataScopeService.getDataScope(userId);
 
-        // ========== 基础统计 ==========
+        // ========== 基础统计 (M-07: 使用聚合查询替代findAll()) ==========
         long orgCount = scope.isAllScope() ? orgRepository.count()
                 : scope.getVisibleOrgIds() != null ? scope.getVisibleOrgIds().size() : 0;
 
         long userCount = scope.isAllScope() ? userRepository.count()
                 : scope.getVisibleOrgIds() != null
-                        ? userRepository.findByOrgIdInAndDeletedAtIsNull(scope.getVisibleOrgIds()).size() : 0;
+                        ? userRepository.countByOrgIdInAndDeletedAtIsNull(scope.getVisibleOrgIds()) : 0;
 
         long billBatchCount = billBatchRepository.count();
         long billDetailCount = billDetailRepository.count();
 
-        BigDecimal totalAmount = billBatchRepository.findAll().stream()
-                .filter(b -> b.getDeletedAt() == null)
-                .map(b -> b.getTotalAmount() != null ? b.getTotalAmount() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        // M-07: Use aggregate query instead of loading all BillBatch entities
+        BigDecimal totalAmount = billBatchRepository.sumTotalAmount();
 
-        // 分摊结果：按范围过滤
-        var allResults = allocationResultRepository.findAll().stream()
-                .filter(r -> r.getDeletedAt() == null)
-                .toList();
-        var scopedResults = scope.filterByOrgId(allResults, AllocationResult::getOrgId);
-        long allocationResultCount = scopedResults.size();
-        long confirmedCount = scopedResults.stream()
-                .filter(r -> r.getConfirmStatus() != null && r.getConfirmStatus() == (byte) 1).count();
-        long pendingCount = scopedResults.stream()
-                .filter(r -> r.getConfirmStatus() != null && r.getConfirmStatus() == (byte) 0).count();
+        // M-07: Use single aggregate query instead of N+1 loop over batches
+        long allocationResultCount;
+        long confirmedCount;
+        long pendingCount;
 
-        // 分行数
-        long branchCount;
         if (scope.isAllScope()) {
-            branchCount = orgRepository.findAll().stream()
-                    .filter(o -> o.getDeletedAt() == null && o.getType() != null && o.getType() == (byte) 2)
-                    .count();
+            allocationResultCount = allocationResultRepository.count();
+            List<Object[]> statusCounts = allocationResultRepository.countByConfirmStatusGlobal();
+            long tmpConfirmed = 0, tmpPending = 0;
+            for (Object[] row : statusCounts) {
+                Byte status = (Byte) row[0];
+                Long cnt = (Long) row[1];
+                if (status != null && status == 1) tmpConfirmed = cnt;
+                else if (status != null && status == 0) tmpPending = cnt;
+            }
+            confirmedCount = tmpConfirmed;
+            pendingCount = tmpPending;
         } else {
             var visibleIds = scope.getVisibleOrgIds();
-            branchCount = visibleIds != null
-                    ? orgRepository.findAllById(visibleIds).stream()
-                        .filter(o -> o.getDeletedAt() == null && o.getType() != null && o.getType() == (byte) 2)
-                        .count()
-                    : 0;
+            if (visibleIds != null && !visibleIds.isEmpty()) {
+                List<Object[]> statusCounts = allocationResultRepository.countByConfirmStatusScoped(visibleIds);
+                long tmpTotal = 0, tmpConfirmed = 0, tmpPending = 0;
+                for (Object[] row : statusCounts) {
+                    Byte status = (Byte) row[0];
+                    Long cnt = (Long) row[1];
+                    tmpTotal += cnt;
+                    if (status != null && status == 1) tmpConfirmed = cnt;
+                    else if (status != null && status == 0) tmpPending = cnt;
+                }
+                allocationResultCount = tmpTotal;
+                confirmedCount = tmpConfirmed;
+                pendingCount = tmpPending;
+            } else {
+                allocationResultCount = 0;
+                confirmedCount = 0;
+                pendingCount = 0;
+            }
         }
 
-        // ========== 月度趋势 ==========
-        List<Map<String, Object>> monthlyTrend = billBatchRepository.findAll().stream()
-                .filter(b -> b.getDeletedAt() == null && b.getBillingMonth() != null && !b.getBillingMonth().isEmpty())
-                .sorted(Comparator.comparing(BillBatch::getBillingMonth))
-                .map(b -> {
-                    Map<String, Object> m = new LinkedHashMap<>();
-                    m.put("month", b.getBillingMonth());
-                    m.put("amount", b.getTotalAmount() != null ? b.getTotalAmount() : BigDecimal.ZERO);
-                    m.put("count", b.getTotalCount() != null ? b.getTotalCount() : 0);
-                    m.put("batch_id", b.getId());
-                    return m;
-                })
-                .collect(Collectors.toList());
+        // 分行数 — M-07: Use countByType + org ID filtering without loading all entities
+        long branchCount;
+        if (scope.isAllScope()) {
+            branchCount = orgRepository.countByTypeAndDeletedAtIsNull((byte) 2);
+        } else {
+            var visibleIds = scope.getVisibleOrgIds();
+            if (visibleIds != null && !visibleIds.isEmpty()) {
+                branchCount = orgRepository.countByTypeAndIdInAndDeletedAtIsNull((byte) 2, visibleIds);
+            } else {
+                branchCount = 0;
+            }
+        }
 
-        // ========== 最新批次分行排行 ==========
+        // ========== 月度趋势 (M-07: Use projection query instead of findAll) ==========
+        List<Object[]> trendData = billBatchRepository.findMonthlyTrendData();
+        List<Map<String, Object>> monthlyTrend = new ArrayList<>();
+        for (Object[] row : trendData) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("month", row[0]);
+            m.put("amount", row[1] != null ? row[1] : BigDecimal.ZERO);
+            m.put("count", row[2] != null ? row[2] : 0);
+            m.put("batch_id", row[3]);
+            monthlyTrend.add(m);
+        }
+
+        // ========== 最新批次分行排行 (M-07: Use projection for org-type map) ==========
         List<Map<String, Object>> branchSummary = List.of();
         Map<String, Object> latestBatch = null;
         if (!monthlyTrend.isEmpty()) {
             var lastEntry = monthlyTrend.get(monthlyTrend.size() - 1);
             Long latestBatchId = (Long) lastEntry.get("batch_id");
 
-            // 获取最新批次的分摊结果
             var latestResults = allocationResultRepository.findByBatchIdAndDeletedAtIsNull(latestBatchId);
 
-            // 构建 orgId -> type 映射
+            // M-07: Use projection query for org type map instead of findAll()
             Map<Long, Byte> orgTypeMap = new HashMap<>();
-            for (SysOrganization org : orgRepository.findAll()) {
-                if (org.getDeletedAt() == null && org.getType() != null) {
-                    orgTypeMap.put(org.getId(), org.getType());
-                }
+            List<Object[]> idTypePairs = orgRepository.findIdTypePairs();
+            for (Object[] pair : idTypePairs) {
+                orgTypeMap.put((Long) pair[0], (Byte) pair[1]);
             }
 
-            // 过滤出一级行(type=2)的结果
             branchSummary = latestResults.stream()
                     .filter(r -> {
                         Byte type = orgTypeMap.get(r.getOrgId());
@@ -129,7 +149,6 @@ public class DashboardController {
                     })
                     .collect(Collectors.toList());
 
-            // 最新批次信息
             latestBatch = new LinkedHashMap<>();
             latestBatch.put("batch_id", latestBatchId);
             latestBatch.put("month", lastEntry.get("month"));
@@ -137,25 +156,17 @@ public class DashboardController {
             latestBatch.put("count", lastEntry.get("count"));
         }
 
-        // ========== 费用类型分布 (最新批次) ==========
+        // ========== 费用类型分布 (M-07: Use aggregate query) ==========
         List<Map<String, Object>> feeBreakdown = List.of();
         if (!monthlyTrend.isEmpty()) {
             Long latestBatchId = (Long) monthlyTrend.get(monthlyTrend.size() - 1).get("batch_id");
-            var latestResults = allocationResultRepository.findByBatchIdAndDeletedAtIsNull(latestBatchId);
+            Object[] sums = allocationResultRepository.sumFeeBreakdownByBatchId(latestBatchId);
 
-            BigDecimal platformFee = BigDecimal.ZERO;
-            BigDecimal callFee = BigDecimal.ZERO;
-            BigDecimal recordingFee = BigDecimal.ZERO;
-            BigDecimal crbtFee = BigDecimal.ZERO;
-            BigDecimal flashFee = BigDecimal.ZERO;
-
-            for (AllocationResult r : latestResults) {
-                platformFee = platformFee.add(r.getMonthlyRent() != null ? r.getMonthlyRent() : BigDecimal.ZERO);
-                callFee = callFee.add(r.getCallFee() != null ? r.getCallFee() : BigDecimal.ZERO);
-                recordingFee = recordingFee.add(r.getRecordingFee() != null ? r.getRecordingFee() : BigDecimal.ZERO);
-                crbtFee = crbtFee.add(r.getCrbtFee() != null ? r.getCrbtFee() : BigDecimal.ZERO);
-                flashFee = flashFee.add(r.getFlashMsgFee() != null ? r.getFlashMsgFee() : BigDecimal.ZERO);
-            }
+            BigDecimal platformFee = sums[0] != null ? (BigDecimal) sums[0] : BigDecimal.ZERO;
+            BigDecimal callFee = sums[1] != null ? (BigDecimal) sums[1] : BigDecimal.ZERO;
+            BigDecimal recordingFee = sums[2] != null ? (BigDecimal) sums[2] : BigDecimal.ZERO;
+            BigDecimal crbtFee = sums[3] != null ? (BigDecimal) sums[3] : BigDecimal.ZERO;
+            BigDecimal flashFee = sums[4] != null ? (BigDecimal) sums[4] : BigDecimal.ZERO;
 
             feeBreakdown = List.of(
                     Map.of("name", "通话费", "value", callFee, "color", "#8B9D9E"),

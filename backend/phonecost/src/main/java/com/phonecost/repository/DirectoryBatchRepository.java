@@ -9,6 +9,9 @@ import java.util.Optional;
 
 @Repository
 public interface DirectoryBatchRepository extends JpaRepository<DirectoryBatch, Long> {
+    Optional<DirectoryBatch> findByIdAndDeletedAtIsNull(Long id);
+
+    List<DirectoryBatch> findByDeletedAtIsNull();
     Optional<DirectoryBatch> findByBatchNoAndDeletedAtIsNull(String batchNo);
     Optional<DirectoryBatch> findTopByDeletedAtIsNullOrderByCreatedAtDesc();
     List<DirectoryBatch> findAllByDeletedAtIsNullOrderByCreatedAtDesc();

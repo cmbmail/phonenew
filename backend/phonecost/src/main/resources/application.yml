@@ -14,11 +14,11 @@ spring:
     resources:
       add-mappings: false
 
-  # DataSource
+  # DataSource — MUST be set via environment variables in production
   datasource:
     url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:phonecost}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=UTF-8
     username: ${DB_USER:phonecost_app}
-    password: ${DB_PASSWORD:PhoneCostApp@2026}
+    password: ${DB_PASSWORD:}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       maximum-pool-size: 20
@@ -37,6 +37,9 @@ spring:
         dialect: org.hibernate.dialect.MySQLDialect
         format_sql: true
         default_batch_fetch_size: 100
+        jdbc.batch_size: 500
+        order_inserts: true
+        order_updates: true
 
   # Jackson (SNAKE_CASE for API consistency)
   jackson:
@@ -58,7 +61,7 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:RedisCost@2026}
+      password: ${REDIS_PASSWORD:}
       timeout: 5000
       lettuce:
         pool:
@@ -75,14 +78,28 @@ spring:
   # File upload
   servlet:
     multipart:
-      max-file-size: 50MB
-      max-request-size: 50MB
+      max-file-size: 1GB
+      max-request-size: 1GB
 
-# JWT
+# JWT — MUST be set via environment variables in production
 jwt:
-  secret: ${JWT_SECRET:PhoneCostJwtSecret2026DoNotUseInProduction}
+  secret: ${JWT_SECRET:}
   access-token-expiration: 7200000   # 2 hours
   refresh-token-expiration: 604800000 # 7 days
+
+# App upgrade paths
+app:
+  upgrade:
+    frontend-dist-dir: ${APP_FRONTEND_DIR:/data/apps/phonecost/frontend}
+    package-dir: ${APP_UPGRADE_DIR:/data/apps/phonecost/upgrade_packages}
+    staging-dir: ${APP_STAGING_DIR:/data/apps/phonecost/upgrade_staging}
+    backend-jar-dir: ${APP_BACKEND_DIR:/data/apps/phonecost/backend}
+    backend-jar-direct: ${APP_BACKEND_JAR:/data/apps/phonecost/backend/phonecost.jar}
+    backend-jar-target: ${APP_BACKEND_TARGET:/data/apps/phonecost/backend/phonecost/target/phonecost-0.1.0-SNAPSHOT.jar}
+
+# CORS — MUST be set via environment variable in production
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:*}
 
 # Logging
 logging:

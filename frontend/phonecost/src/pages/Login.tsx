@@ -9,6 +9,8 @@ import type { LoginResponse } from '../types/auth';
 import { useTranslation } from 'react-i18next';
 import { COLORS } from '../theme/morandi';
 
+declare const __APP_VERSION__: string;
+
 const { Title } = Typography;
 
 const Login: React.FC = () => {
@@ -48,6 +50,9 @@ const Login: React.FC = () => {
           <Form.Item><Button type="primary" htmlType="submit" loading={loading} block style={{ height: 42, fontSize: 15 }}>{t('login.loginBtn')}</Button></Form.Item>
         </Form>
       </Card>
+      <div style={{ position: 'fixed', bottom: 16, left: 0, right: 0, textAlign: 'center', color: COLORS.textLight, fontSize: 12 }}>
+        v{__APP_VERSION__}
+      </div>
     </div>
   );
 };

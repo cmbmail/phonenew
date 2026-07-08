@@ -5,6 +5,7 @@ import { COLORS } from '../theme/morandi';
 import { apiGet } from '../lib/request';
 import { getBillBatches } from '../api/import';
 import { getOrgTree } from '../api/org';
+import { useAbortableEffect } from '../hooks/useAbortableEffect';
 import type { Organization } from '../types/organization';
 import type { BillBatch } from '../types/bill';
 
@@ -127,7 +128,7 @@ const BAR_FIELD_LABELS: Record<BarField, string> = {
 };
 
 // 补全1-12月，缺失月份填0
-function fillMonths12<T extends { billing_month: string }>(data: T[]): T[] {
+function fillMonths12<T extends { billing_month: string }>(data: T[], emptyRow: (month: string) => T): T[] {
   // Derive year from the first available data point; fallback to current year
   const year = (data.length > 0 && data[0].billing_month?.length >= 4)
     ? data[0].billing_month.slice(0, 4)
@@ -136,16 +137,35 @@ function fillMonths12<T extends { billing_month: string }>(data: T[]): T[] {
   const result: T[] = [];
   for (let m = 1; m <= 12; m++) {
     const mm = String(m).padStart(2, '0');
-    if (map.has(mm)) {
-      result.push(map.get(mm)!);
-    } else {
-      // 构造一个全0的占位行
-      const placeholder = { billing_month: `${year}-${mm}` } as unknown as T;
-      result.push(placeholder);
-    }
+    const monthKey = `${year}-${mm}`;
+    result.push(map.has(mm) ? map.get(mm)! : emptyRow(monthKey));
   }
   return result;
 }
+
+// FeeRow 空行工厂（用于 BarChart 的 fillMonths12）
+const emptyFeeRow = (billing_month: string): FeeRow => ({
+  billing_month,
+  total_fee: 0, monthly_rent: 0, call_fee: 0,
+  recording_fee: 0, crbt_fee: 0, flash_msg_fee: 0,
+  phone_count: 0, sub_org_count: 0,
+});
+
+// BarRow 空行工厂
+const emptyBarRow = (billing_month: string): BarRow => ({
+  billing_month,
+  total_fee: 0, monthly_rent: 0, call_fee: 0,
+  recording_fee: 0, crbt_fee: 0, flash_msg_fee: 0,
+});
+
+// L1MonthlyRow 空行工厂
+const emptyL1MonthlyRow = (billing_month: string): L1MonthlyRow => ({
+  billing_month,
+  total_fee: 0, monthly_rent: 0, call_fee: 0,
+  recording_fee: 0, crbt_fee: 0, flash_msg_fee: 0,
+  phone_count: 0, sub_org_count: 0,
+  last_year_fee: null, last_year_month: null, yoy_change: null,
+});
 
 // 指标选择器（共用）
 function MetricSelector({ activeField, onChange }: { activeField: BarField; onChange: (f: BarField) => void }) {
@@ -172,9 +192,9 @@ function MetricSelector({ activeField, onChange }: { activeField: BarField; onCh
 }
 
 // 单指标柱状图（总费用对比、单个号码用）
-function BarChart({ data, field, height = 190 }: { data: BarRow[]; field?: BarField; height?: number }) {
+function BarChart({ data, field, height = 190 }: { data: FeeRow[]; field?: BarField; height?: number }) {
   const [activeField, setActiveField] = useState<BarField>(field || 'total_fee');
-  const fullData = fillMonths12(data);
+  const fullData = fillMonths12(data, emptyFeeRow);
   const values = fullData.map(d => Number(d[activeField]) || 0);
   const maxVal = Math.max(...values, 1);
 
@@ -227,7 +247,7 @@ function BarChart({ data, field, height = 190 }: { data: BarRow[]; field?: BarFi
 function YoyBarChart({ data, height = 200 }: { data: L1MonthlyRow[]; height?: number }) {
   const [activeField, setActiveField] = useState<BarField>('total_fee');
 
-  const fullData = fillMonths12(data);
+  const fullData = fillMonths12(data, emptyL1MonthlyRow);
 
   const maxVal = Math.max(
     ...fullData.map(d => Number(d[activeField]) || 0),
@@ -353,22 +373,23 @@ export default function FeeAnalysisPage() {
   const [phoneListLoading, setPhoneListLoading] = useState(false);
   const [phoneSearch, setPhoneSearch] = useState('');
   const [phoneListL1OrgId, setPhoneListL1OrgId] = useState<number | null>(null);
+  const [phonePageSize, setPhonePageSize] = useState(50);
 
   const fetchBatches = useCallback(async () => {
-    try { setBatches(await getBillBatches()); } catch { /* */ }
+    try { setBatches(await getBillBatches()); } catch { message.error('加载账单批次失败'); }
   }, []);
 
   const fetchOrgs = useCallback(async () => {
-    try { setOrgList(await getOrgTree()); } catch { /* */ }
+    try { setOrgList(await getOrgTree()); } catch { message.error('加载组织列表失败'); }
   }, []);
 
   useEffect(() => { fetchBatches(); fetchOrgs(); }, [fetchBatches, fetchOrgs]);
 
   // Fetch ALL dimension monthly data
-  useEffect(() => {
+  useAbortableEffect((signal) => {
     if (dimension !== '全部') return;
     setAllMonthlyLoading(true);
-    apiGet<BarRow[]>('/allocation/analysis/monthly-comparison')
+    apiGet<BarRow[]>('/allocation/analysis/monthly-comparison', undefined, signal)
       .then(data => setAllMonthlyData(data || []))
       .catch(() => setAllMonthlyData([]))
       .finally(() => setAllMonthlyLoading(false));
@@ -382,30 +403,30 @@ export default function FeeAnalysisPage() {
   }, [batches, selectedBatchId]);
 
   // Trigger L1 fetch on org selection
-  useEffect(() => {
+  useAbortableEffect((signal) => {
     if (dimension === '一级分行' && selectedL1OrgId) {
       setL1MonthlyLoading(true);
-      apiGet<L1MonthlyResult>(`/allocation/analysis/l1-monthly?orgId=${selectedL1OrgId}`)
+      apiGet<L1MonthlyResult>(`/allocation/analysis/l1-monthly?orgId=${selectedL1OrgId}`, undefined, signal)
         .then(setL1MonthlyData).catch(() => setL1MonthlyData(null))
         .finally(() => setL1MonthlyLoading(false));
     }
   }, [dimension, selectedL1OrgId]);
 
   // L2 monthly fetch
-  useEffect(() => {
+  useAbortableEffect((signal) => {
     if (dimension === '二级分行' && selectedL2OrgId) {
       setL2MonthlyLoading(true);
-      apiGet<L1MonthlyResult>(`/allocation/analysis/l2-monthly?orgId=${selectedL2OrgId}`)
+      apiGet<L1MonthlyResult>(`/allocation/analysis/l2-monthly?orgId=${selectedL2OrgId}`, undefined, signal)
         .then(setL2MonthlyData).catch(() => setL2MonthlyData(null))
         .finally(() => setL2MonthlyLoading(false));
     }
   }, [dimension, selectedL2OrgId]);
 
   // Department monthly fetch
-  useEffect(() => {
+  useAbortableEffect((signal) => {
     if (dimension === '部门' && selectedDeptOrgId) {
       setDeptMonthlyLoading(true);
-      apiGet<L1MonthlyResult>(`/allocation/analysis/dept-monthly?orgId=${selectedDeptOrgId}`)
+      apiGet<L1MonthlyResult>(`/allocation/analysis/dept-monthly?orgId=${selectedDeptOrgId}`, undefined, signal)
         .then(setDeptMonthlyData).catch(() => setDeptMonthlyData(null))
         .finally(() => setDeptMonthlyLoading(false));
     }
@@ -422,13 +443,13 @@ export default function FeeAnalysisPage() {
   }, [selectedBatchId]);
 
   // Phone list fetch (default view when no search)
-  useEffect(() => {
+  useAbortableEffect((signal) => {
     if (dimension !== '单个号码') return;
     setPhoneListLoading(true);
     const url = phoneListL1OrgId
       ? `/allocation/analysis/phone-list?orgId=${phoneListL1OrgId}`
       : '/allocation/analysis/phone-list';
-    apiGet<{ total_count: number; rows: PhoneListRow[] }>(url)
+    apiGet<{ total_count: number; rows: PhoneListRow[] }>(url, undefined, signal)
       .then(data => setPhoneList(data.rows || []))
       .catch(() => setPhoneList([]))
       .finally(() => setPhoneListLoading(false));
@@ -609,7 +630,7 @@ export default function FeeAnalysisPage() {
           </Row>
 
           <Card size="small" title="月度费用趋势" style={{ marginBottom: 16 }}>
-            <BarChart data={phoneData.rows as unknown as BarRow[]} />
+            <BarChart data={phoneData.rows} />
           </Card>
 
           <Card size="small" title="费用清单">
@@ -651,7 +672,7 @@ export default function FeeAnalysisPage() {
               rowKey="phone_number"
               size="small"
               loading={phoneListLoading}
-              pagination={{ pageSize: 50, showSizeChanger: true, showTotal: t => `共 ${t} 条` }}
+              pagination={{ pageSize: phonePageSize, showSizeChanger: true, pageSizeOptions: ['25', '50', '100'], showTotal: t => `共 ${t} 条`, onChange: (_p, s) => setPhonePageSize(s) }}
               scroll={{ x: 1100 }}
             />
           </Card>

@@ -49,7 +49,7 @@ public class AuditLogService {
 
     private String resolveUsername(Long userId) {
         if (userId == null || userId == 0L) return "system";
-        return sysUserRepository.findById(userId)
+        return sysUserRepository.findByIdAndDeletedAtIsNull(userId)
                 .map(SysUser::getUsername)
                 .orElse("user#" + userId);
     }

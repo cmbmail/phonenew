@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Layout, Menu, Avatar, Dropdown, Typography, Popconfirm, Modal, Form, Input, message } from 'antd';
-import { DashboardOutlined, FileTextOutlined, PhoneOutlined, TeamOutlined, SettingOutlined, LogoutOutlined, ToolOutlined, BankOutlined, BranchesOutlined, DatabaseOutlined, NumberOutlined, UserSwitchOutlined, BookOutlined, UserOutlined, AuditOutlined, BarChartOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
+import { DashboardOutlined, FileTextOutlined, PhoneOutlined, TeamOutlined, SettingOutlined, LogoutOutlined, ToolOutlined, BankOutlined, BranchesOutlined, DatabaseOutlined, NumberOutlined, UserSwitchOutlined, BookOutlined, UserOutlined, AuditOutlined, BarChartOutlined, SafetyCertificateOutlined, NotificationOutlined, AudioOutlined } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
 import { getErrorMessage } from '../types/api';
@@ -40,6 +40,7 @@ const allMenuItems: MenuItemDef[] = [
       { key: '/base/phone-ownership', icon: <NumberOutlined />, label: '号码归属' },
       { key: '/base/directory', icon: <BookOutlined />, label: '通讯录' },
       { key: '/base/dept-ownership', icon: <UserSwitchOutlined />, label: '部门归属' },
+      { key: '/base/recording-data', icon: <AudioOutlined />, label: '录音数据' },
     ],
   },
   {
@@ -50,6 +51,7 @@ const allMenuItems: MenuItemDef[] = [
     children: [
       { key: '/settings/users', icon: <UserOutlined />, label: '人员管理' },
       { key: '/settings/roles', icon: <SafetyCertificateOutlined />, label: '角色管理' },
+      { key: '/settings/announcements', icon: <NotificationOutlined />, label: '通知公告' },
       { key: '/templates', icon: <ToolOutlined />, label: '模板管理' },
       { key: '/settings/audit-log', icon: <AuditOutlined />, label: '操作日志' },
       { key: '/settings/data-maintenance', icon: <SafetyCertificateOutlined />, label: '数据维护' },
@@ -148,7 +150,7 @@ const AppLayout: React.FC = () => {
         {mustChangePwd && <Typography.Paragraph type="warning" style={{ marginBottom: 16 }}>首次登录需要修改密码后才能使用系统</Typography.Paragraph>}
         <Form form={form} layout="vertical" onFinish={handleChangePwd}>
           <Form.Item name="old_password" label="原密码" rules={[{ required: true, message: '请输入原密码' }]}><Input.Password /></Form.Item>
-          <Form.Item name="new_password" label="新密码" rules={[{ required: true, message: '请输入新密码' }, { min: 6, message: '密码至少6位' }]}><Input.Password /></Form.Item>
+          <Form.Item name="new_password" label="新密码" rules={[{ required: true, message: '请输入新密码' }, { min: 8, message: '密码至少8位' }, { pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/, message: '需包含大小写字母、数字和特殊字符' }]}><Input.Password /></Form.Item>
           <Form.Item name="confirm_password" label="确认新密码" dependencies={['new_password']} rules={[{ required: true, message: '请确认新密码' }, ({ getFieldValue }) => ({ validator(_, value) { return value && value !== getFieldValue('new_password') ? Promise.reject('两次密码不一致') : Promise.resolve(); } })]}><Input.Password /></Form.Item>
           <Form.Item><button type="submit" style={{ width: '100%', padding: '8px 16px', background: COLORS.sage, color: '#fff', border: 'none', borderRadius: 8, cursor: changePwdLoading ? 'not-allowed' : 'pointer', fontSize: 14 }} disabled={changePwdLoading}>{changePwdLoading ? '提交中...' : '确定'}</button></Form.Item>
         </Form>

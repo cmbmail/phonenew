@@ -1,10 +1,15 @@
 package com.phonecost.domain;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.ColumnDefault;
+import org.hibernate.annotations.Where;
 import lombok.*;
+import org.hibernate.annotations.ColumnDefault;
 
 import java.math.BigDecimal;
+import org.hibernate.annotations.ColumnDefault;
 
+@Where(clause = "deleted_at IS NULL")
 @Entity
 @Table(name = "allocation_adjustment")
 @Getter

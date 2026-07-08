@@ -1,8 +1,12 @@
 package com.phonecost.domain;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.ColumnDefault;
+import org.hibernate.annotations.Where;
 import lombok.*;
+import org.hibernate.annotations.ColumnDefault;
 
+@Where(clause = "deleted_at IS NULL")
 @Entity
 @Table(name = "directory_entry")
 @Getter
@@ -30,6 +34,22 @@ public class DirectoryEntry extends BaseEntity {
     @Column(name = "phone_number")
     @ColumnDefault("''")
     private String phoneNumber;
+
+    @Column(name = "alloc_dept")
+    @ColumnDefault("''")
+    private String allocDept;
+
+    @Column(name = "org_code")
+    @ColumnDefault("''")
+    private String orgCode;
+
+    @Column(name = "cost_center")
+    @ColumnDefault("''")
+    private String costCenter;
+
+    @Column(name = "remark")
+    @ColumnDefault("''")
+    private String remark;
 
     @Column(name = "org_id")
     private Long orgId;

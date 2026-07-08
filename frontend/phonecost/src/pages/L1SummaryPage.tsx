@@ -3,9 +3,10 @@ import { Card, Table, Select, Button, Descriptions, Row, Col, Tabs, message, Emp
 import { DownloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import type { BillBatch } from '../types/bill';
-import type { L1SummaryRow } from '../types/allocation';
-import { getL1SummaryData, getL1DetailData, getL1SummaryUrl } from '../api/allocation';
+import type { L1SummaryRow, AllocationDetailRow } from '../types/allocation';
+import { getL1SummaryData, getL1DetailData, exportL1Summary } from '../api/allocation';
 import { getBillBatches } from '../api/import';
+import { useAbortableEffect } from '../hooks/useAbortableEffect';
 
 const SHEET_TYPES = ['CALL', 'RECORDING', 'CRBT', 'FLASH_MSG'] as const;
 type SheetType = typeof SHEET_TYPES[number];
@@ -20,7 +21,7 @@ export default function L1SummaryPage() {
   const [rowsLoading, setRowsLoading] = useState(false);
 
   // 分摊明细数据
-  const [detailData, setDetailData] = useState<Record<SheetType, Record<string, unknown>[]>>({
+  const [detailData, setDetailData] = useState<Record<SheetType, AllocationDetailRow[]>>({
     CALL: [], RECORDING: [], CRBT: [], FLASH_MSG: [],
   });
   const [detailLoading, setDetailLoading] = useState(false);
@@ -49,7 +50,7 @@ export default function L1SummaryPage() {
     }
   }, [batches, selectedBatchId]);
 
-  useEffect(() => {
+  useAbortableEffect((signal) => {
     if (selectedBatchId) {
       const wasDetailLoaded = detailLoaded;
       setRows([]); // 立即清空旧数据，让刷新可见
@@ -65,7 +66,7 @@ export default function L1SummaryPage() {
       // 如果明细已加载过，切换月份后自动重新加载
       if (wasDetailLoaded) fetchAllDetails();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在 selectedBatchId 变化时触发，其他 state 为 stable 或故意读取最新值
   }, [selectedBatchId]);
 
   // 加载全部4种明细数据
@@ -76,7 +77,7 @@ export default function L1SummaryPage() {
       const results = await Promise.all(
         SHEET_TYPES.map(st => getL1DetailData(selectedBatchId, st).then(d => [st, d] as const))
       );
-      const newData = { CALL: [], RECORDING: [], CRBT: [], FLASH_MSG: [] } as Record<SheetType, Record<string, unknown>[]>;
+      const newData = { CALL: [], RECORDING: [], CRBT: [], FLASH_MSG: [] } as Record<SheetType, AllocationDetailRow[]>;
       for (const [st, d] of results) newData[st] = d;
       setDetailData(newData);
       setDetailLoaded(true);
@@ -204,7 +205,7 @@ export default function L1SummaryPage() {
   const filteredDetailData = useMemo(() => {
     const kw = detailSearch.trim().toLowerCase();
     if (!kw) return detailData;
-    const filter = (rows: Record<string, unknown>[]) =>
+    const filter = (rows: AllocationDetailRow[]) =>
       rows.filter(r =>
         String(r.phone_number || '').toLowerCase().includes(kw) ||
         String(r.extension || '').toLowerCase().includes(kw) ||
@@ -217,12 +218,12 @@ export default function L1SummaryPage() {
       RECORDING: filter(detailData.RECORDING),
       CRBT: filter(detailData["CRBT"]),
       FLASH_MSG: filter(detailData.FLASH_MSG),
-    } as Record<SheetType, Record<string, unknown>[]>;
+    } as Record<SheetType, AllocationDetailRow[]>;
   }, [detailData, detailSearch]);
 
   // 统计卡片（基于过滤后数据）
   const detailStats = useMemo(() => {
-    const sum = (data: Record<string, unknown>[], field: string) =>
+    const sum = (data: AllocationDetailRow[], field: keyof AllocationDetailRow) =>
       data.reduce((s, r) => s + (Number(r[field]) || 0), 0);
     return {
       callCount: filteredDetailData.CALL.length,
@@ -255,7 +256,7 @@ export default function L1SummaryPage() {
         rowKey={(_, idx) => `${sheetType}-${idx}`}
         size="small"
         loading={detailLoading}
-        pagination={{ pageSize: detailPageSize, showSizeChanger: true, pageSizeOptions: ['25', '50', '100'], onShowSizeChange: (_current, size) => setDetailPageSize(size), showTotal: (total) => t('common.paginationTotal', { total }) }}
+        pagination={{ pageSize: detailPageSize, showSizeChanger: true, pageSizeOptions: ['25', '50', '100'], onChange: (_p, s) => setDetailPageSize(s), showTotal: (total) => t('common.paginationTotal', { total }) }}
         scroll={{ x: scrollX }}
       />
     );
@@ -368,7 +369,7 @@ export default function L1SummaryPage() {
           <Col>
             {selectedBatchId && (
               <Button type="primary" icon={<DownloadOutlined />}
-                onClick={() => window.open(getL1SummaryUrl(selectedBatchId), '_blank', 'noopener,noreferrer')}>
+                onClick={() => exportL1Summary(selectedBatchId).catch(() => message.error('导出失败'))}>
                 {t('l1Summary.exportL1')}
               </Button>
             )}

@@ -2,8 +2,10 @@ package com.phonecost.controller;
 
 import com.phonecost.domain.BillTemplate;
 import com.phonecost.dto.ApiResponse;
+import com.phonecost.dto.BillTemplateRequest;
 import com.phonecost.service.AuditLogService;
 import com.phonecost.service.BillTemplateService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -19,6 +21,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/templates")
 @RequiredArgsConstructor
+@PreAuthorize("isAuthenticated()")
 public class BillTemplateController {
 
     private final BillTemplateService templateService;
@@ -44,9 +47,9 @@ public class BillTemplateController {
     @PostMapping
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<ApiResponse<BillTemplate>> createTemplate(
-            @RequestBody Map<String, Object> body,
+            @Valid @RequestBody BillTemplateRequest req,
             @RequestAttribute("userId") Long userId) {
-        BillTemplate created = templateService.createTemplate(body);
+        BillTemplate created = templateService.createTemplate(req);
         auditLogService.log(userId, "TEMPLATE_CREATE", "bill_template", created.getId(),
                 Map.of("name", created.getName() != null ? created.getName() : ""));
         return ResponseEntity.ok(ApiResponse.ok(created));
@@ -55,9 +58,9 @@ public class BillTemplateController {
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<ApiResponse<BillTemplate>> updateTemplate(
-            @PathVariable Long id, @RequestBody Map<String, Object> body,
+            @PathVariable Long id, @Valid @RequestBody BillTemplateRequest req,
             @RequestAttribute("userId") Long userId) {
-        BillTemplate updated = templateService.updateTemplate(id, body);
+        BillTemplate updated = templateService.updateTemplate(id, req);
         auditLogService.log(userId, "TEMPLATE_UPDATE", "bill_template", id,
                 Map.of("name", updated.getName() != null ? updated.getName() : ""));
         return ResponseEntity.ok(ApiResponse.ok(updated));

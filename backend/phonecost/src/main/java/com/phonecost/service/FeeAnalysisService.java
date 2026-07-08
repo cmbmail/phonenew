@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -24,10 +25,28 @@ public class FeeAnalysisService {
     private final SysOrganizationRepository orgRepository;
     private final BillBatchRepository billBatchRepository;
 
+    /** Cached org map — built once per request cycle. ThreadLocal ensures request isolation. */
+    private final ThreadLocal<Map<Long, SysOrganization>> orgMapCache = new ThreadLocal<>();
+
+    /** Build or return cached org map. Call clearOrgMapCache() after each public method. */
+    private Map<Long, SysOrganization> buildOrgMap() {
+        Map<Long, SysOrganization> cached = orgMapCache.get();
+        if (cached != null) return cached;
+        cached = orgRepository.findByDeletedAtIsNull().stream()
+                .collect(Collectors.toMap(SysOrganization::getId, o -> o, (a, b) -> a));
+        orgMapCache.set(cached);
+        return cached;
+    }
+
+    private void clearOrgMapCache() {
+        orgMapCache.remove();
+    }
+
     /**
      * 全部维度：返回总体费用汇总
      */
     public Map<String, Object> analyzeAll(Long batchId, DataScope scope) {
+        clearOrgMapCache();
         List<AllocationResult> allResults = allocationResultRepository.findByBatchIdAndDeletedAtIsNull(batchId);
         // Apply DataScope filtering
         List<AllocationResult> results = scope.filterByOrgId(allResults, AllocationResult::getOrgId);
@@ -102,12 +121,11 @@ public class FeeAnalysisService {
      * 一级分行维度：按一级分行汇总
      */
     public List<Map<String, Object>> analyzeL1(Long batchId) {
+        clearOrgMapCache();
         List<AllocationResult> results = allocationResultRepository.findByBatchIdAndDeletedAtIsNull(batchId);
         List<SysOrganization> l1Orgs = orgRepository.findByTypeAndDeletedAtIsNull((byte) 2);
 
-        Map<Long, SysOrganization> orgMap = orgRepository.findAll().stream()
-                .filter(o -> o.getDeletedAt() == null)
-                .collect(Collectors.toMap(SysOrganization::getId, o -> o, (a, b) -> a));
+        Map<Long, SysOrganization> orgMap = buildOrgMap();
 
         // Find L1 org for each allocation result
         Map<Long, List<AllocationResult>> l1Groups = new LinkedHashMap<>();
@@ -155,10 +173,9 @@ public class FeeAnalysisService {
      * 二级分行维度：按指定一级分行下的二级分行汇总
      */
     public List<Map<String, Object>> analyzeL2(Long batchId, Long l1OrgId) {
+        clearOrgMapCache();
         List<AllocationResult> results = allocationResultRepository.findByBatchIdAndDeletedAtIsNull(batchId);
-        Map<Long, SysOrganization> orgMap = orgRepository.findAll().stream()
-                .filter(o -> o.getDeletedAt() == null)
-                .collect(Collectors.toMap(SysOrganization::getId, o -> o, (a, b) -> a));
+        Map<Long, SysOrganization> orgMap = buildOrgMap();
 
         // Find all L2 orgs under the given L1
         SysOrganization l1 = orgMap.get(l1OrgId);
@@ -212,10 +229,9 @@ public class FeeAnalysisService {
      * 部门维度：按指定组织下的直属部门汇总
      */
     public List<Map<String, Object>> analyzeDepartment(Long batchId, Long parentOrgId) {
+        clearOrgMapCache();
         List<AllocationResult> results = allocationResultRepository.findByBatchIdAndDeletedAtIsNull(batchId);
-        Map<Long, SysOrganization> orgMap = orgRepository.findAll().stream()
-                .filter(o -> o.getDeletedAt() == null)
-                .collect(Collectors.toMap(SysOrganization::getId, o -> o, (a, b) -> a));
+        Map<Long, SysOrganization> orgMap = buildOrgMap();
 
         // Get direct children orgs
         List<SysOrganization> children = orgRepository.findByParentIdAndDeletedAtIsNull(parentOrgId);
@@ -268,13 +284,10 @@ public class FeeAnalysisService {
      * 号码列表：返回所有号码的累计费用汇总，按总费用降序，支持按一级分行过滤
      */
     public Map<String, Object> analyzePhoneList(Long l1OrgId, DataScope scope) {
-        List<BillDetail> allDetails = billDetailRepository.findAll();
+        clearOrgMapCache();
+        Map<Long, SysOrganization> orgMap = buildOrgMap();
 
-        Map<Long, SysOrganization> orgMap = orgRepository.findAll().stream()
-                .filter(o -> o.getDeletedAt() == null)
-                .collect(Collectors.toMap(SysOrganization::getId, o -> o, (a, b) -> a));
-
-        // If l1OrgId provided, build descendant org ID set for filtering
+        // Build filter org ID set
         Set<Long> filterOrgIds = null;
         if (l1OrgId != null) {
             SysOrganization l1 = orgMap.get(l1OrgId);
@@ -302,6 +315,21 @@ public class FeeAnalysisService {
             }
         }
 
+        // Use scoped query — load details by org IDs to avoid OOM
+        List<BillDetail> allDetails;
+        if (filterOrgIds != null && !filterOrgIds.isEmpty()) {
+            allDetails = billDetailRepository.findByOrgIdInAndDeletedAtIsNull(new ArrayList<>(filterOrgIds));
+        } else {
+            // Admin with no org filter: load all batches' details (acceptable for low-volume admin scenarios)
+            // Use distinct batch IDs to limit scope
+            List<BillBatch> batches = billBatchRepository.findByDeletedAtIsNullOrderByBillingMonthAsc();
+            List<Long> batchIds = batches.stream().map(BillBatch::getId).toList();
+            allDetails = new ArrayList<>();
+            for (Long bid : batchIds) {
+                allDetails.addAll(billDetailRepository.findByBatchIdAndDeletedAtIsNull(bid));
+            }
+        }
+
         // Group by phone_number
         Map<String, List<BillDetail>> byPhone = new LinkedHashMap<>();
         for (BillDetail d : allDetails) {
@@ -313,7 +341,7 @@ public class FeeAnalysisService {
 
         // Get batch map for billing_month resolution
         Map<Long, BillBatch> batchMap = new HashMap<>();
-        for (BillBatch b : billBatchRepository.findAll()) {
+        for (BillBatch b : billBatchRepository.findByDeletedAtIsNullOrderByBillingMonthAsc()) {
             batchMap.put(b.getId(), b);
         }
 
@@ -373,10 +401,9 @@ public class FeeAnalysisService {
      * 单个号码维度：查询指定号码近一年的月度费用清单
      */
     public Map<String, Object> analyzePhone(String phoneNumber, DataScope scope) {
+        clearOrgMapCache();
         List<BillDetail> details = billDetailRepository.findByPhoneNumberAndDeletedAtIsNull(phoneNumber);
-        Map<Long, SysOrganization> orgMap = orgRepository.findAll().stream()
-                .filter(o -> o.getDeletedAt() == null)
-                .collect(Collectors.toMap(SysOrganization::getId, o -> o, (a, b) -> a));
+        Map<Long, SysOrganization> orgMap = buildOrgMap();
 
         // Apply DataScope: only include details belonging to visible orgs
         if (!scope.isAllScope()) {
@@ -412,7 +439,7 @@ public class FeeAnalysisService {
                 total = total.add(d.getTotalFee() != null ? d.getTotalFee() : BigDecimal.ZERO);
             }
 
-            BillBatch batch = billBatchRepository.findById(entry.getKey()).orElse(null);
+            BillBatch batch = billBatchRepository.findByIdAndDeletedAtIsNull(entry.getKey()).orElse(null);
             BillDetail first = batchDetails.get(0);
             SysOrganization org = first.getOrgId() != null ? orgMap.get(first.getOrgId()) : null;
 
@@ -444,7 +471,7 @@ public class FeeAnalysisService {
         for (Map<String, Object> r : rows) {
             grandTotal = grandTotal.add((BigDecimal) r.get("total_fee"));
         }
-        BigDecimal avgMonthly = rows.size() > 0 ? grandTotal.divide(new BigDecimal(rows.size()), 2, BigDecimal.ROUND_HALF_UP) : BigDecimal.ZERO;
+        BigDecimal avgMonthly = rows.size() > 0 ? grandTotal.divide(new BigDecimal(rows.size()), 2, RoundingMode.HALF_UP) : BigDecimal.ZERO;
 
         // MoM change (latest vs previous)
         String momChange = null;
@@ -452,7 +479,7 @@ public class FeeAnalysisService {
             BigDecimal prev = (BigDecimal) rows.get(rows.size() - 2).get("total_fee");
             BigDecimal cur = (BigDecimal) rows.get(rows.size() - 1).get("total_fee");
             if (prev.compareTo(BigDecimal.ZERO) > 0) {
-                momChange = cur.subtract(prev).multiply(new BigDecimal("100")).divide(prev, 1, BigDecimal.ROUND_HALF_UP).toPlainString();
+                momChange = cur.subtract(prev).multiply(new BigDecimal("100")).divide(prev, 1, RoundingMode.HALF_UP).toPlainString();
             }
         }
 
@@ -537,10 +564,9 @@ public class FeeAnalysisService {
      * 通用组织月度费用分析：指定组织在各月的费用汇总（含同比数据）
      */
     private Map<String, Object> analyzeOrgMonthly(Long orgId) {
+        clearOrgMapCache();
         List<BillBatch> allBatches = billBatchRepository.findByDeletedAtIsNullOrderByBillingMonthAsc();
-        Map<Long, SysOrganization> orgMap = orgRepository.findAll().stream()
-                .filter(o -> o.getDeletedAt() == null)
-                .collect(Collectors.toMap(SysOrganization::getId, o -> o, (a, b) -> a));
+        Map<Long, SysOrganization> orgMap = buildOrgMap();
 
         SysOrganization targetOrg = orgMap.get(orgId);
         String orgName = targetOrg != null ? targetOrg.getName() : "";
@@ -623,7 +649,7 @@ public class FeeAnalysisService {
                 BigDecimal currentFee = (BigDecimal) r.get("total_fee");
                 yoyRow.put("yoy_change", currentFee.subtract(lastYearFee)
                         .multiply(new BigDecimal("100"))
-                        .divide(lastYearFee, 1, BigDecimal.ROUND_HALF_UP)
+                        .divide(lastYearFee, 1, RoundingMode.HALF_UP)
                         .toPlainString());
             } else {
                 yoyRow.put("yoy_change", null);
@@ -636,7 +662,7 @@ public class FeeAnalysisService {
         for (Map<String, Object> r : rows) {
             grandTotal = grandTotal.add((BigDecimal) r.get("total_fee"));
         }
-        BigDecimal avgMonthly = rows.size() > 0 ? grandTotal.divide(new BigDecimal(rows.size()), 2, BigDecimal.ROUND_HALF_UP) : BigDecimal.ZERO;
+        BigDecimal avgMonthly = rows.size() > 0 ? grandTotal.divide(new BigDecimal(rows.size()), 2, RoundingMode.HALF_UP) : BigDecimal.ZERO;
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("org_id", orgId);
@@ -691,7 +717,7 @@ public class FeeAnalysisService {
         item.put("name", name);
         item.put("value", value);
         if (total.compareTo(BigDecimal.ZERO) > 0) {
-            item.put("percent", value.multiply(new BigDecimal("100")).divide(total, 1, BigDecimal.ROUND_HALF_UP) + "%");
+            item.put("percent", value.multiply(new BigDecimal("100")).divide(total, 1, RoundingMode.HALF_UP) + "%");
         } else {
             item.put("percent", "0%");
         }

@@ -1,14 +1,43 @@
-* { margin: 0; padding: 0; box-sizing: border-box; }
+/* ============ CSS Variables ============ */
+:root {
+  --color-charcoal: #3D4248;
+  --color-sage: #8B9D9E;
+  --color-taupe: #C4B5A0;
+  --color-mauve: #9B8AA4;
+  --color-slate: #7B8FA1;
+  --color-cream: #F5F2ED;
+  --color-white: #FFFFFF;
+  --color-text-dark: #2C2C2C;
+  --color-text-light: #FFFFFF;
+  --color-text-muted: #8C8C8C;
+  --color-border: #E8E5E0;
+  --color-confirmed: #7BA586;
+  --color-pending: #D4A574;
+  --color-danger: #C47B6C;
+  --color-info: #7B8FA1;
+}
+
+/* ============ Box-sizing reset (precise, not * selector) ============ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* ============ Body ============ */
 body {
+  margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: #F5F2ED;
+  background: var(--color-cream);
+  color: var(--color-text-dark);
 }
+
 #root { min-height: 100vh; }
 
 /* 表头居中 — ConfigProvider不支持text-align，需保留 */
 .ant-table-thead > tr > th { text-align: center; }
 
 /* 侧边栏折叠按钮背景色 — Sider trigger不接受ConfigProvider token */
-.ant-layout-sider-trigger { background: #3D4248; }
+.ant-layout-sider-trigger { background: var(--color-charcoal); }

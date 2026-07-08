@@ -32,7 +32,7 @@ public class DataScopeService {
      * 根据用户ID解析数据范围
      */
     public DataScope getDataScope(Long userId) {
-        SysUser user = userRepository.findById(userId)
+        SysUser user = userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new IllegalArgumentException("用户不存在: " + userId));
 
         Byte role = user.getRole();
@@ -50,7 +50,7 @@ public class DataScopeService {
             return DataScope.singleOrgScope(-999L); // 不存在的orgId，等同于无数据
         }
 
-        SysOrganization org = orgRepository.findById(orgId).orElse(null);
+        SysOrganization org = orgRepository.findByIdAndDeletedAtIsNull(orgId).orElse(null);
         if (org == null || org.getPath() == null) {
             log.warn("DataScope: userId={}, orgId={} not found or has no path", userId, orgId);
             return DataScope.singleOrgScope(-999L);
@@ -92,7 +92,7 @@ public class DataScopeService {
             return DataScope.singleOrgScope(-999L);
         }
 
-        SysOrganization org = orgRepository.findById(orgId).orElse(null);
+        SysOrganization org = orgRepository.findByIdAndDeletedAtIsNull(orgId).orElse(null);
         if (org == null || org.getPath() == null) {
             return DataScope.singleOrgScope(-999L);
         }

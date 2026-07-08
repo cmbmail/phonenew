@@ -65,3 +65,37 @@ export const CONFIRM_STATUS_MAP: Record<number, { label: string; color: string }
   1: { label: '已确认', color: COLORS.confirmed },
   2: { label: '已撤回', color: COLORS.pending },
 };
+
+/** 分摊结果分页响应 */
+export interface AllocationResultPage {
+  content: AllocationResult[];
+  total_elements: number;
+  total_pages: number;
+  page: number;
+  size: number;
+}
+
+/** 分摊明细行 — 涵盖通话/录音/彩铃/闪信四种费用类型的所有可能字段 */
+export interface AllocationDetailRow {
+  phone_number?: string;
+  extension?: string;
+  org_name?: string;
+  org_code?: string;
+  cost_center?: string;
+  platform_fee?: number;
+  monthly_rent_code?: number;
+  domestic_duration?: number;
+  transfer_duration?: number;
+  domestic_fee?: number;
+  international_duration?: number;
+  international_fee?: number;
+  call_subtotal?: number;
+  recording_dir?: string;
+  recording_fee?: number;
+  crbt_fee?: number;
+  flash_month?: string;
+  flash_count?: number;
+  flash_msg_fee?: number;
+  total_fee?: number;
+  ownership_source?: string;
+}

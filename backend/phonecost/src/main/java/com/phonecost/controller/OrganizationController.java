@@ -2,6 +2,7 @@ package com.phonecost.controller;
 
 import com.phonecost.domain.SysOrganization;
 import com.phonecost.dto.ApiResponse;
+import com.phonecost.dto.OrganizationRequest;
 import com.phonecost.service.DataScope;
 import com.phonecost.service.DataScopeService;
 import com.phonecost.service.AuditLogService;
@@ -24,6 +25,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/org")
 @RequiredArgsConstructor
+@PreAuthorize("isAuthenticated()")
 public class OrganizationController {
 
     private final OrganizationService organizationService;
@@ -55,8 +57,14 @@ public class OrganizationController {
     @PostMapping
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<ApiResponse<SysOrganization>> create(
-            @RequestBody SysOrganization org,
+            @RequestBody OrganizationRequest req,
             @RequestAttribute("userId") Long userId) {
+        SysOrganization org = new SysOrganization();
+        org.setName(req.getName());
+        org.setCode(req.getCode());
+        org.setCostCenter(req.getCostCenter());
+        org.setParentId(req.getParentId());
+        org.setType(req.getType());
         SysOrganization created = organizationService.create(org);
         auditLogService.log(userId, "ORG_CREATE", "sys_organization", created.getId(),
                 Map.of("name", created.getName() != null ? created.getName() : "", "code", created.getCode() != null ? created.getCode() : ""));
@@ -67,8 +75,14 @@ public class OrganizationController {
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<ApiResponse<SysOrganization>> update(
             @PathVariable Long id,
-            @RequestBody SysOrganization org,
+            @RequestBody OrganizationRequest req,
             @RequestAttribute("userId") Long userId) {
+        SysOrganization org = new SysOrganization();
+        org.setName(req.getName());
+        org.setCode(req.getCode());
+        org.setCostCenter(req.getCostCenter());
+        org.setParentId(req.getParentId());
+        org.setType(req.getType());
         SysOrganization updated = organizationService.update(id, org);
         auditLogService.log(userId, "ORG_UPDATE", "sys_organization", id,
                 Map.of("name", updated.getName() != null ? updated.getName() : ""));

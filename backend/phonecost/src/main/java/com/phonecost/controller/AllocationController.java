@@ -1,10 +1,14 @@
 package com.phonecost.controller;
 
 import com.phonecost.domain.*;
-import com.phonecost.dto.ApiResponse;
+import com.phonecost.dto.*;
 import com.phonecost.repository.*;
 import com.phonecost.service.*;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -25,6 +29,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/allocation")
 @RequiredArgsConstructor
+@PreAuthorize("isAuthenticated()")
 public class AllocationController {
 
     private final AllocationService allocationService;
@@ -49,17 +54,11 @@ public class AllocationController {
     @PostMapping("/calculate")
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> calculate(
-            @RequestBody Map<String, Object> body,
+            @Valid @RequestBody AllocationCalculateRequest req,
             @RequestAttribute("userId") Long userId) {
-        Long billBatchId = null;
-        if (body.get("bill_batch_id") instanceof Number n) billBatchId = n.longValue();
-        if (billBatchId == null) {
-            throw new IllegalArgumentException("bill_batch_id 不能为空");
-        }
-
-        // Resolve ownership_batch_id and directory_batch_id
-        Long ownershipBatchId = body.get("ownership_batch_id") instanceof Number n ? n.longValue() : null;
-        Long directoryBatchId = body.get("directory_batch_id") instanceof Number n ? n.longValue() : null;
+        Long billBatchId = req.getBillBatchId();
+        Long ownershipBatchId = req.getOwnershipBatchId();
+        Long directoryBatchId = req.getDirectoryBatchId();
 
         // If not explicitly provided, try to load from existing DataSnapshot
         if (ownershipBatchId == null || directoryBatchId == null) {
@@ -125,31 +124,53 @@ public class AllocationController {
             result.put("matched_count", snap.getMatchedCount());
         }
         // Available batches for selection
-        result.put("ownership_batches", ownershipBatchRepository.findAll());
-        result.put("directory_batches", directoryBatchRepository.findAll());
+        result.put("ownership_batches", ownershipBatchRepository.findByDeletedAtIsNull());
+        result.put("directory_batches", directoryBatchRepository.findByDeletedAtIsNull());
         return ResponseEntity.ok(ApiResponse.ok(result));
     }
 
     @GetMapping("/results/{batchId}")
-    public ResponseEntity<ApiResponse<List<AllocationResult>>> getResults(
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getResults(
             @PathVariable Long batchId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "200") int size,
             @RequestAttribute("userId") Long userId) {
+        // Cap page size to prevent OOM
+        if (size > 500) size = 500;
+        if (size < 1) size = 200;
+
         DataScope scope = dataScopeService.getDataScope(userId);
-        List<AllocationResult> all = resultRepository.findByBatchIdAndDeletedAtIsNull(batchId);
-        List<AllocationResult> filtered = scope.filterByOrgId(all, AllocationResult::getOrgId);
-        return ResponseEntity.ok(ApiResponse.ok(filtered));
+        Pageable pageable = PageRequest.of(page, size);
+        Page<AllocationResult> resultPage;
+
+        if (scope.isAllScope()) {
+            resultPage = resultRepository.findByBatchIdAndDeletedAtIsNull(batchId, pageable);
+        } else {
+            List<Long> visibleIds = scope.getVisibleOrgIds();
+            if (visibleIds == null || visibleIds.isEmpty()) {
+                resultPage = Page.empty(pageable);
+            } else {
+                resultPage = resultRepository.findByBatchIdAndOrgIdInAndDeletedAtIsNull(batchId, visibleIds, pageable);
+            }
+        }
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("content", resultPage.getContent());
+        response.put("total_elements", resultPage.getTotalElements());
+        response.put("total_pages", resultPage.getTotalPages());
+        response.put("page", resultPage.getNumber());
+        response.put("size", resultPage.getSize());
+        return ResponseEntity.ok(ApiResponse.ok(response));
     }
 
     @GetMapping("/batches")
     public ResponseEntity<ApiResponse<List<BillBatch>>> listBatches(
+            @RequestParam(value = "billing_month", required = false) String billingMonth,
             @RequestAttribute("userId") Long userId) {
-        // 账单批次不按组织过滤（批次是全局的），但分行管理员只能看到相关批次
-        DataScope scope = dataScopeService.getDataScope(userId);
-        if (scope.isAllScope()) {
-            return ResponseEntity.ok(ApiResponse.ok(billBatchRepository.findAll()));
+        if (billingMonth != null && !billingMonth.isBlank()) {
+            return ResponseEntity.ok(ApiResponse.ok(billBatchRepository.findByBillingMonthAndDeletedAtIsNull(billingMonth)));
         }
-        // 非管理员：返回所有批次（批次本身不归属组织，但分摊结果按组织过滤）
-        return ResponseEntity.ok(ApiResponse.ok(billBatchRepository.findAll()));
+        return ResponseEntity.ok(ApiResponse.ok(billBatchRepository.findByDeletedAtIsNullOrderByBillingMonthAsc()));
     }
 
     // ==================== 确认/撤回 ====================
@@ -157,13 +178,10 @@ public class AllocationController {
     @PostMapping("/confirm")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_BRANCH')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> confirm(
-            @RequestBody Map<String, Object> body,
+            @Valid @RequestBody AllocationConfirmRequest req,
             @RequestAttribute("userId") Long userId) {
-        Long batchId = toLong(body.get("batch_id"));
-        Long orgId = toLong(body.get("org_id"));
-        if (batchId == null || orgId == null) {
-            throw new IllegalArgumentException("batch_id 和 org_id 不能为空");
-        }
+        Long batchId = req.getBatchId();
+        Long orgId = req.getOrgId();
 
         // 校验数据范围：分行管理员只能确认自己管辖范围内的组织
         DataScope scope = dataScopeService.getDataScope(userId);
@@ -183,12 +201,9 @@ public class AllocationController {
     @PostMapping("/confirm-all")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_BRANCH')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> confirmAll(
-            @RequestBody Map<String, Long> body,
+            @Valid @RequestBody AllocationConfirmAllRequest req,
             @RequestAttribute("userId") Long userId) {
-        Long batchId = body.get("batch_id");
-        if (batchId == null) {
-            throw new IllegalArgumentException("batch_id 不能为空");
-        }
+        Long batchId = req.getBatchId();
 
         // 分行管理员只确认自己范围内的
         DataScope scope = dataScopeService.getDataScope(userId);
@@ -201,14 +216,11 @@ public class AllocationController {
     @PostMapping("/withdraw")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_BRANCH')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> withdraw(
-            @RequestBody Map<String, Object> body,
+            @Valid @RequestBody AllocationWithdrawRequest req,
             @RequestAttribute("userId") Long userId) {
-        Long batchId = toLong(body.get("batch_id"));
-        Long orgId = toLong(body.get("org_id"));
-        String reason = (String) body.get("reason");
-        if (batchId == null || orgId == null) {
-            throw new IllegalArgumentException("batch_id 和 org_id 不能为空");
-        }
+        Long batchId = req.getBatchId();
+        Long orgId = req.getOrgId();
+        String reason = req.getReason();
 
         // 校验数据范围：分行管理员只能撤回自己管辖范围内的组织
         DataScope scope = dataScopeService.getDataScope(userId);
@@ -230,17 +242,13 @@ public class AllocationController {
     @PostMapping("/adjust")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_FINANCE')")
     public ResponseEntity<ApiResponse<AllocationAdjustment>> adjust(
-            @RequestBody Map<String, Object> body,
+            @Valid @RequestBody AllocationAdjustRequest req,
             @RequestAttribute("userId") Long userId) {
-        Long batchId = toLong(body.get("batch_id"));
-        String phoneNumber = (String) body.get("phone_number");
-        Long fromOrgId = toLong(body.get("from_org_id"));
-        Long toOrgId = toLong(body.get("to_org_id"));
-        String reason = (String) body.get("reason");
-
-        if (batchId == null || phoneNumber == null || fromOrgId == null || toOrgId == null) {
-            throw new IllegalArgumentException("参数不完整：batch_id, phone_number, from_org_id, to_org_id 均为必填");
-        }
+        Long batchId = req.getBatchId();
+        String phoneNumber = req.getPhoneNumber();
+        Long fromOrgId = req.getFromOrgId();
+        Long toOrgId = req.getToOrgId();
+        String reason = req.getReason();
 
         // 校验数据范围：from/to 组织至少一个在管辖范围内
         DataScope scope = dataScopeService.getDataScope(userId);
@@ -493,7 +501,7 @@ public class AllocationController {
         byte[] data = branchBillExportService.exportLevel2BranchDetail(batchId, effectiveBranchOrgId, userId);
         auditLogService.log(userId, "EXPORT_L2_BRANCH_DETAIL", "bill_batch", batchId,
                 Map.of("branch_org_id", effectiveBranchOrgId));
-        SysOrganization org = orgRepository.findById(effectiveBranchOrgId).orElse(null);
+        SysOrganization org = orgRepository.findByIdAndDeletedAtIsNull(effectiveBranchOrgId).orElse(null);
         String name = org != null ? org.getName() : "branch";
         String filename = java.net.URLEncoder.encode(
                 name + "_分摊明细_" + batchId + ".xlsx", "UTF-8");
@@ -516,7 +524,7 @@ public class AllocationController {
         byte[] data = branchBillExportService.exportLevel3SubBranchDetail(batchId, subBranchOrgId, userId);
         auditLogService.log(userId, "EXPORT_L3_SUB_BRANCH_DETAIL", "bill_batch", batchId,
                 Map.of("sub_branch_org_id", subBranchOrgId));
-        SysOrganization org = orgRepository.findById(subBranchOrgId).orElse(null);
+        SysOrganization org = orgRepository.findByIdAndDeletedAtIsNull(subBranchOrgId).orElse(null);
         String name = org != null ? org.getName() : "sub_branch";
         String filename = java.net.URLEncoder.encode(
                 name + "_下属分摊_" + batchId + ".xlsx", "UTF-8");
@@ -529,19 +537,25 @@ public class AllocationController {
 
     /** Resolve effective branch org ID based on user's data scope
      *  Always returns a 一级分行 (type=2) org ID for L2 page usage
+     *  Optimized: uses orgMap cache instead of N+1 findById per path segment
      */
     private Long resolveEffectiveBranchOrgId(Long branchOrgId, Long userId) {
         DataScope scope = dataScopeService.getDataScope(userId);
         if (scope.isAllScope()) return branchOrgId;
+
+        // Build orgMap once for this method call
+        Map<Long, SysOrganization> orgMap = orgRepository.findByDeletedAtIsNull().stream()
+                .collect(java.util.stream.Collectors.toMap(SysOrganization::getId, o -> o, (a, b) -> a));
+
         if (scope.getSingleOrgId() != null) {
             // 单组织范围：从该组织path向上查找一级分行
-            SysOrganization org = orgRepository.findById(scope.getSingleOrgId()).orElse(null);
+            SysOrganization org = orgMap.get(scope.getSingleOrgId());
             if (org != null && org.getPath() != null) {
                 String[] segments = org.getPath().split("/");
                 for (int i = segments.length - 1; i >= 0; i--) {
                     if (segments[i].isEmpty()) continue;
                     Long segId = Long.parseLong(segments[i]);
-                    SysOrganization ancestor = orgRepository.findById(segId).orElse(null);
+                    SysOrganization ancestor = orgMap.get(segId);
                     if (ancestor != null && ancestor.getType() == 2) {
                         return ancestor.getId();
                     }
@@ -551,12 +565,11 @@ public class AllocationController {
         }
         if (scope.getPathPrefix() != null) {
             // 子树范围：pathPrefix末尾组织可能是一级分行或二级分行
-            // 需要找到一级分行
             String path = scope.getPathPrefix();
             String trimmed = path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
             int lastSlash = trimmed.lastIndexOf('/');
             Long lastOrgId = Long.parseLong(trimmed.substring(lastSlash + 1));
-            SysOrganization org = orgRepository.findById(lastOrgId).orElse(null);
+            SysOrganization org = orgMap.get(lastOrgId);
             if (org != null && org.getType() == 2) {
                 return lastOrgId; // Already a 一级分行
             }
@@ -565,7 +578,7 @@ public class AllocationController {
             for (int i = segments.length - 1; i >= 0; i--) {
                 if (segments[i].isEmpty()) continue;
                 Long segId = Long.parseLong(segments[i]);
-                SysOrganization ancestor = orgRepository.findById(segId).orElse(null);
+                SysOrganization ancestor = orgMap.get(segId);
                 if (ancestor != null && ancestor.getType() == 2) {
                     return ancestor.getId();
                 }
@@ -573,12 +586,6 @@ public class AllocationController {
             return lastOrgId;
         }
         return branchOrgId;
-    }
-
-    private Long toLong(Object val) {
-        if (val == null) return null;
-        if (val instanceof Number) return ((Number) val).longValue();
-        return Long.valueOf(val.toString());
     }
 
     // ==================== 费用分析 ====================

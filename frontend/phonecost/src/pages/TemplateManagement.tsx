@@ -114,6 +114,7 @@ export default function TemplateManagement() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailTemplate, setDetailTemplate] = useState<BillTemplate | null>(null);
   const [saving, setSaving] = useState(false);
+  const [pageSize, setPageSize] = useState(10);
   const [form] = Form.useForm();
   const [jsonText, setJsonText] = useState(DEFAULT_TEMPLATE_JSON);
 
@@ -349,7 +350,7 @@ export default function TemplateManagement() {
           dataSource={templates}
           rowKey="id"
           loading={loading}
-          pagination={{ pageSize: 10 }}
+          pagination={{ pageSize, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'], showTotal: (total) => `共 ${total} 条`, onChange: (_p, s) => setPageSize(s) }}
           size="small"
         />
       </Card>

@@ -29,11 +29,13 @@ import {
   DownloadOutlined,
   MinusCircleOutlined,
   UploadOutlined,
+  SearchOutlined,
 } from '@ant-design/icons';
 import type { DataNode } from 'antd/es/tree';
 import type { Organization } from '../types/organization';
 import { ORG_TYPE_LABELS, ORG_TYPE_OPTIONS } from '../types/organization';
 import { getOrgTree, createOrg, updateOrg, deleteOrg, importOrg, rebuildOrgPaths, downloadOrgTemplate } from '../api/org';
+import { buildOrgTree } from '../utils/orgTree';
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
 
@@ -47,35 +49,7 @@ const ORG_TYPE_COLORS: Record<number, string> = {
 };
 
 function buildTree(list: Organization[]): DataNode[] {
-  const map = new Map<number, DataNode>();
-  const roots: DataNode[] = [];
-  list.forEach((org) => {
-    map.set(org.id, {
-      key: org.id,
-      title: `${org.name}`,
-      children: [],
-    });
-  });
-  list.forEach((org) => {
-    const node = map.get(org.id)!;
-    if (org.parent_id && map.has(org.parent_id)) {
-      map.get(org.parent_id)!.children!.push(node);
-    } else {
-      roots.push(node);
-    }
-  });
-  // Mark leaf nodes
-  const markLeaf = (nodes: DataNode[]) => {
-    nodes.forEach((n) => {
-      if (!n.children || n.children.length === 0) {
-        n.isLeaf = true;
-      } else {
-        markLeaf(n.children);
-      }
-    });
-  };
-  markLeaf(roots);
-  return roots;
+  return buildOrgTree(list);
 }
 
 export default function OrganizationPage() {
@@ -90,6 +64,8 @@ export default function OrganizationPage() {
   const [addForm] = Form.useForm();
   const [, setImporting] = useState(false);
   const [rebuilding, setRebuilding] = useState(false);
+  const [searchText, setSearchText] = useState('');
+  const [matchedKeys, setMatchedKeys] = useState<React.Key[]>([]);
   const importRef = useRef<HTMLInputElement>(null);
 
   const fetchOrgTree = useCallback(async () => {
@@ -121,6 +97,42 @@ export default function OrganizationPage() {
   }, [t, editForm]);
 
   useEffect(() => { fetchOrgTree(); }, [fetchOrgTree]);
+
+  // Search logic: find matching orgs and expand their ancestor paths
+  const handleSearch = useCallback((value: string) => {
+    setSearchText(value.trim());
+    if (!value.trim()) {
+      setMatchedKeys([]);
+      // Restore default expansion (root level)
+      const rootKeys = treeData.map(n => n.key);
+      setExpandedKeys([...rootKeys]);
+      return;
+    }
+    const keyword = value.trim().toLowerCase();
+    const matched = orgList.filter(
+      (o) => o.name.toLowerCase().includes(keyword) || (o.code && o.code.toLowerCase().includes(keyword))
+    );
+    const matchedIds = new Set(matched.map((o) => o.id));
+    setMatchedKeys([...matchedIds]);
+
+    // Collect all ancestor keys to expand
+    const ancestorKeys = new Set<React.Key>();
+    const idToParent = new Map<number, number | null>();
+    orgList.forEach((o) => idToParent.set(o.id, o.parent_id));
+    matchedIds.forEach((id) => {
+      let current = idToParent.get(id as number);
+      while (current) {
+        ancestorKeys.add(current);
+        current = idToParent.get(current) ?? null;
+      }
+    });
+    setExpandedKeys([...ancestorKeys]);
+  }, [orgList, treeData]);
+
+  // Reset search when tree data changes
+  useEffect(() => {
+    if (searchText) handleSearch(searchText);
+  }, [orgList]); // eslint-disable-line react-hooks/exhaustive-deps -- 故意只在 orgList 变化时触发搜索，handleSearch 为 stable ref
 
   const handleSelect = (_unused: unknown, info: { node: { key: unknown } }) => {
     const id = info.node.key as number;
@@ -303,6 +315,25 @@ export default function OrganizationPage() {
             }
             styles={{ body: { padding: '8px 12px', maxHeight: 'calc(100vh - 180px)', overflowY: 'auto' } }}
           >
+            <Input.Search
+              placeholder={t('org.searchPlaceholder')}
+              allowClear
+              prefix={<SearchOutlined />}
+              size="small"
+              style={{ marginBottom: 8 }}
+              onSearch={handleSearch}
+              onChange={(e) => { if (!e.target.value) handleSearch(''); }}
+            />
+            {searchText && matchedKeys.length > 0 && (
+              <Typography.Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>
+                {t('org.searchResult', { count: matchedKeys.length })}
+              </Typography.Text>
+            )}
+            {searchText && matchedKeys.length === 0 && (
+              <Typography.Text type="warning" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>
+                {t('org.searchNoResult')}
+              </Typography.Text>
+            )}
             <Tree
               treeData={treeData}
               expandedKeys={expandedKeys}
@@ -313,8 +344,9 @@ export default function OrganizationPage() {
               titleRender={(node: DataNode) => {
                 const org = orgList.find((o) => o.id === (node.key as number));
                 if (!org) return <span>{node.title as string}</span>;
+                const isMatched = matchedKeys.includes(org.id);
                 return (
-                  <span className="org-tree-node">
+                  <span className="org-tree-node" style={isMatched ? { background: COLORS.sage, borderRadius: 3, padding: '0 3px' } : undefined}>
                     <span className="org-tree-title">
                       <span>{org.name}</span>
                       <Tag color={ORG_TYPE_COLORS[org.type] || 'default'} style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', marginRight: 0 }}>

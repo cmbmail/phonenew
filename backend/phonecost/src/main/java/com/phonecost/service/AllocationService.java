@@ -28,7 +28,7 @@ public class AllocationService {
 
     @Transactional
     public List<AllocationResult> calculateAllocation(Long billBatchId) {
-        BillBatch batch = billBatchRepository.findById(billBatchId)
+        BillBatch batch = billBatchRepository.findByIdAndDeletedAtIsNull(billBatchId)
                 .orElseThrow(() -> new IllegalArgumentException("账单批次不存在: " + billBatchId));
 
         // Check batch status
@@ -61,12 +61,11 @@ public class AllocationService {
 
         // Phase 2: Build org tree and cascade up
         // Load all organizations for tree building
-        List<SysOrganization> allOrgs = orgRepository.findAll();
+        List<SysOrganization> allOrgs = orgRepository.findByDeletedAtIsNull();
         Map<Long, SysOrganization> orgMap = new HashMap<>();
-        Map<Long, List<Long>> childrenMap = new HashMap<>(); // parentId -> childIds
+        Map<Long, List<Long>> childrenMap = new HashMap<>();
 
         for (SysOrganization org : allOrgs) {
-            if (org.getDeletedAt() != null) continue;
             orgMap.put(org.getId(), org);
             if (org.getParentId() != null) {
                 childrenMap.computeIfAbsent(org.getParentId(), k -> new ArrayList<>()).add(org.getId());
@@ -118,8 +117,13 @@ public class AllocationService {
 
         // Phase 3: Cascade up - for each parent org, sum direct children's fees
         Set<Long> processedOrgs = new HashSet<>(orgFees.keySet());
+        // M-15 fix: Build orgId->AllocationResult map for O(1) lookup instead of O(N) linear scan
+        Map<Long, AllocationResult> resultMap = new HashMap<>();
+        for (AllocationResult r : results) {
+            resultMap.put(r.getOrgId(), r);
+        }
         for (Long leafOrgId : orgFees.keySet()) {
-            cascadeUp(leafOrgId, orgMap, billBatchId, results, processedOrgs, childrenMap);
+            cascadeUp(leafOrgId, orgMap, billBatchId, results, processedOrgs, childrenMap, resultMap);
         }
 
         // Save all results (with defaults for nullable fields)
@@ -144,7 +148,7 @@ public class AllocationService {
      */
     private void cascadeUp(Long orgId, Map<Long, SysOrganization> orgMap,
                            Long batchId, List<AllocationResult> results, Set<Long> processedOrgs,
-                           Map<Long, List<Long>> childrenMap) {
+                           Map<Long, List<Long>> childrenMap, Map<Long, AllocationResult> resultMap) {
         SysOrganization org = orgMap.get(orgId);
         if (org == null || org.getParentId() == null) return;
 
@@ -159,10 +163,8 @@ public class AllocationService {
             // Only sum results from DIRECT children (their fees already include descendants)
             List<Long> childIds = childrenMap.getOrDefault(parentId, Collections.emptyList());
             for (Long childId : childIds) {
-                // Find the result for this child org (may not exist if no fees assigned)
-                AllocationResult childResult = results.stream()
-                        .filter(r -> r.getOrgId().equals(childId))
-                        .findFirst().orElse(null);
+                // M-15 fix: O(1) map lookup instead of O(N) stream scan
+                AllocationResult childResult = resultMap.get(childId);
                 if (childResult != null) {
                     parentFees.monthlyRent = parentFees.monthlyRent.add(childResult.getMonthlyRent());
                     parentFees.callFee = parentFees.callFee.add(childResult.getCallFee());
@@ -190,10 +192,11 @@ public class AllocationService {
                     .build();
             results.add(parentResult);
             processedOrgs.add(parentId);
+            resultMap.put(parentId, parentResult);
         }
 
         // Recurse up
-        cascadeUp(parentId, orgMap, batchId, results, processedOrgs, childrenMap);
+        cascadeUp(parentId, orgMap, batchId, results, processedOrgs, childrenMap, resultMap);
     }
 
     /**

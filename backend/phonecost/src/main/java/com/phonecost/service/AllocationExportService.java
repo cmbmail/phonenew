@@ -177,8 +177,7 @@ public class AllocationExportService {
     }
 
     private Map<Long, SysOrganization> buildOrgMap() {
-        return orgRepository.findAll().stream()
-                .filter(o -> o.getDeletedAt() == null)
+        return orgRepository.findByDeletedAtIsNull().stream()
                 .collect(Collectors.toMap(SysOrganization::getId, o -> o));
     }
 

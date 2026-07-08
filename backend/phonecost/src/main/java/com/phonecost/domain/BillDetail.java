@@ -2,9 +2,12 @@ package com.phonecost.domain;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.ColumnDefault;
+import org.hibernate.annotations.Where;
 
 import java.math.BigDecimal;
 
+@Where(clause = "deleted_at IS NULL")
 @Entity
 @Table(name = "bill_detail")
 @Getter
@@ -13,6 +16,10 @@ import java.math.BigDecimal;
 @AllArgsConstructor
 @Builder
 public class BillDetail extends BaseEntity {
+
+    /** M-38: Optimistic locking version to prevent concurrent modification */
+    @Version
+    private Long version;
 
     @Column(name = "batch_id", nullable = false)
     private Long batchId;

@@ -12,4 +12,6 @@ public interface VersionUpgradePackageRepository extends JpaRepository<VersionUp
     Page<VersionUpgradePackage> findAllByOrderByCreatedAtDesc(Pageable pageable);
 
     Optional<VersionUpgradePackage> findByTargetVersionAndDeletedAtIsNull(String targetVersion);
+
+    Optional<VersionUpgradePackage> findByTargetVersionAndStatusAndDeletedAtIsNull(String targetVersion, String status);
 }

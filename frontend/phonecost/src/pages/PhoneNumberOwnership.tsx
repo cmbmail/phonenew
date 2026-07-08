@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { COLORS } from '../theme/morandi';
-import { Card, Table, Select, Tag, Row, Col, message, Empty, Input, Statistic, Tabs } from 'antd';
-import { SearchOutlined, CameraOutlined } from '@ant-design/icons';
+import { Card, Table, Select, Tag, Row, Col, message, Empty, Input, Statistic, Tabs, Button, Dropdown, Progress } from 'antd';
+import { SearchOutlined, CameraOutlined, UploadOutlined, DownloadOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
-import type { OwnershipBatch, OwnershipEntry, DataSnapshot } from '../types/import';
-import { getOwnershipBatches, getSnapshots, getBillBatches } from '../api/import';
+import type { OwnershipBatch, OwnershipEntry, DataSnapshot, ImportProgress } from '../types/import';
+import { getOwnershipBatches, getSnapshots, getBillBatches, importOwnership, downloadOwnershipTemplate, getOwnershipProgress } from '../api/import';
+import { useImportProgress } from '../hooks/useImportProgress';
 import { apiGet } from '../lib/request';
 import { getOrgTree } from '../api/org';
 import type { Organization } from '../types/organization';
@@ -23,6 +24,24 @@ export default function PhoneNumberOwnership() {
   const [loading, setLoading] = useState(false);
   const [entriesLoading, setEntriesLoading] = useState(false);
   const [search, setSearch] = useState('');
+  const [uploading, setUploading] = useState(false);
+
+  // Async import progress
+  const { progress: importProgress, polling: importPolling, startPolling, percent: importPercent } = useImportProgress({
+    onComplete: (p: ImportProgress) => {
+      message.success(`号码归属导入完成：${p.total} 条，例外 ${p.exception_count ?? 0} 条`);
+      fetchBatches();
+      // Select the newly imported batch
+      if (p.total > 0) fetchBatches().then(() => {
+        // Auto-select latest batch after refresh
+      });
+      setUploading(false);
+    },
+    onError: (p: ImportProgress) => {
+      message.error(`导入失败：${p.message || '未知错误'}`);
+      setUploading(false);
+    },
+  });
 
   // Snapshot state
   const [snapshots, setSnapshots] = useState<DataSnapshot[]>([]);
@@ -33,11 +52,24 @@ export default function PhoneNumberOwnership() {
   const [snapshotEntries, setSnapshotEntries] = useState<OwnershipEntry[]>([]);
   const [snapshotEntriesLoading, setSnapshotEntriesLoading] = useState(false);
   const [snapshotSearch, setSnapshotSearch] = useState('');
+  const [pageSize, setPageSize] = useState(50);
 
   const fetchBatches = useCallback(async () => {
     setLoading(true);
     try { setBatches(await getOwnershipBatches()); } catch { message.error(t('phoneOwnership.fetchFailed')); } finally { setLoading(false); }
   }, [t]);
+
+  const handleUpload = async (file: File) => {
+    setUploading(true);
+    try {
+      const result = await importOwnership(file);
+      // Start async progress polling
+      startPolling(result.batch_id, getOwnershipProgress);
+    } catch (err) {
+      message.error(`导入失败：${err instanceof Error ? err.message : '未知错误'}`);
+      setUploading(false);
+    }
+  };
 
   const fetchOrgs = useCallback(async () => {
     try { setOrgList(await getOrgTree()); } catch { /* silent */ }
@@ -250,6 +282,27 @@ export default function PhoneNumberOwnership() {
             value={selectedBatchId} onChange={setSelectedBatchId}
             options={[...batches].sort((a, b) => b.id - a.id).map(b => ({ label: `${b.batch_no} (${b.total_count}条)`, value: b.id }))} />
         </Col>
+        <Col flex="auto" />
+        <Col>
+          <Dropdown menu={{ items: [
+            { key: 'import', icon: <UploadOutlined />, label: '导入号码归属', disabled: uploading },
+            { key: 'template', icon: <DownloadOutlined />, label: '下载模板' },
+          ], onClick: ({ key }) => {
+            if (key === 'import') document.getElementById('ownership-upload-input')?.click();
+            if (key === 'template') downloadOwnershipTemplate();
+          } }}>
+            <Button type="primary" icon={<UploadOutlined />} loading={uploading && !importPolling}>导入号码归属</Button>
+          </Dropdown>
+          <input type="file" accept=".xlsx,.xls" id="ownership-upload-input" style={{ display: 'none' }} onChange={(e) => { const f = e.target.files?.[0]; if (f) { handleUpload(f); e.target.value = ''; } }} />
+          {importPolling && importProgress && (
+            <Progress
+              percent={importPercent}
+              size="small"
+              style={{ width: 200, marginLeft: 12, display: 'inline-block', verticalAlign: 'middle' }}
+              format={() => importProgress.message || `${importProgress.processed}/${importProgress.total}`}
+            />
+          )}
+        </Col>
       </Row>
       {selectedBatchId && (
         <Row gutter={16} style={{ marginBottom: 16 }}>
@@ -263,7 +316,7 @@ export default function PhoneNumberOwnership() {
       )}
       {selectedBatchId && filteredEntries.length > 0 ? (
         <Table columns={columns} dataSource={filteredEntries} rowKey="id" size="small" loading={entriesLoading}
-          pagination={{ pageSize: 50, showSizeChanger: true, pageSizeOptions: ['25', '50', '100'], showTotal: (total) => t('common.paginationTotal', { total }) }}
+          pagination={{ pageSize, showSizeChanger: true, pageSizeOptions: ['25', '50', '100'], showTotal: (total) => t('common.paginationTotal', { total }), onChange: (_p, s) => setPageSize(s) }}
           scroll={{ x: 1000 }} />
       ) : (!entriesLoading && <Empty description={t('phoneOwnership.noData')} />)}
     </>
@@ -298,7 +351,7 @@ export default function PhoneNumberOwnership() {
       )}
       {selectedSnapshotMonth && filteredSnapshotEntries.length > 0 ? (
         <Table columns={columns} dataSource={filteredSnapshotEntries} rowKey="id" size="small" loading={snapshotEntriesLoading}
-          pagination={{ pageSize: 50, showSizeChanger: true, pageSizeOptions: ['25', '50', '100'], showTotal: (total) => t('common.paginationTotal', { total }) }}
+          pagination={{ pageSize, showSizeChanger: true, pageSizeOptions: ['25', '50', '100'], showTotal: (total) => t('common.paginationTotal', { total }), onChange: (_p, s) => setPageSize(s) }}
           scroll={{ x: 1000 }} />
       ) : (!snapshotEntriesLoading && selectedSnapshotMonth && <Empty description={t('phoneOwnership.noData')} />)}
     </>

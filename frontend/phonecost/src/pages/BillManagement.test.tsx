@@ -28,12 +28,15 @@ vi.mock('../api/allocation', () => ({
     status: 2,
     created_at: '2026-03-15T10:30:00',
   }]),
-  getAllocationResults: vi.fn().mockResolvedValue([{
-    id: 1, batch_id: 1, org_id: 6, org_name: '北京分行',
-    phone_count: 150, monthly_rent: 4500, call_fee: 12000,
-    recording_fee: 3000, crbt_fee: 1500, flash_msg_fee: 0, total_fee: 21000,
-    confirm_status: 0,
-  }]),
+  getAllocationResults: vi.fn().mockResolvedValue({
+    content: [{
+      id: 1, batch_id: 1, org_id: 6, org_name: '北京分行',
+      phone_count: 150, monthly_rent: 4500, call_fee: 12000,
+      recording_fee: 3000, crbt_fee: 1500, flash_msg_fee: 0, total_fee: 21000,
+      confirm_status: 0,
+    }],
+    total_elements: 1, total_pages: 1, page: 0, size: 200,
+  }),
   calculateAllocation: vi.fn().mockResolvedValue({ org_count: 30 }),
   confirmAllocation: vi.fn().mockResolvedValue(null),
   confirmAllAllocation: vi.fn().mockResolvedValue({ confirmed_count: 28 }),

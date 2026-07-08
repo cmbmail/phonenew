@@ -1,39 +1,97 @@
 import { useState, useEffect, useCallback } from 'react';
 import { COLORS } from '../theme/morandi';
-import { Card, Table, Tag, Button, Space, Modal, Input, message, Descriptions, Select } from 'antd';
-import { CheckOutlined, UndoOutlined, DownloadOutlined, CalculatorOutlined, LinkOutlined } from '@ant-design/icons';
-import type { BillBatch } from '../types/bill';
-import type { AllocationResult } from '../types/allocation';
-import type { OwnershipBatch, DirectoryBatch } from '../types/import';
-import { BILL_STATUS_LABELS, BILL_STATUS_COLORS } from '../types/bill';
-import { CONFIRM_STATUS_MAP } from '../types/allocation';
+import { Card, Table, Tag, Button, Space, Modal, message, Select, Dropdown, Row, Col, Progress, Popconfirm, DatePicker, Tabs, Input } from 'antd';
+import { UploadOutlined, DeleteOutlined, DownloadOutlined, SearchOutlined } from '@ant-design/icons';
+import { useAuthStore } from '../store/auth';
+import type { BillBatch, BillDetail, SheetTypeCode } from '../types/bill';
+import { SHEET_TYPE_LABELS, SHEET_TYPES } from '../types/bill';
+import type { ImportProgress } from '../types/import';
 import {
-  getAllocationResults,
+  getBillBatches,
+  importBill,
+  downloadBillTemplate,
+  getBillProgress,
+  deleteBillBatch,
+  getBillMonths,
+  getBillDetails,
+  updateBillBatchMonth,
+} from '../api/import';
+import {
   calculateAllocation,
   confirmAllocation,
   confirmAllAllocation,
   withdrawAllocation,
-  getExportSummaryUrl,
-  getExportDetailUrl,
+  exportSummary,
+  exportDetail,
   getAllocationSnapshot,
+  getAllocationResults,
 } from '../api/allocation';
-import { getBillBatches } from '../api/import';
+import { CONFIRM_STATUS_MAP } from '../types/allocation';
+import type { AllocationResult, OwnershipBatch, DirectoryBatch } from '../types/allocation';
+import { useImportProgress } from '../hooks/useImportProgress';
 import { useTranslation } from 'react-i18next';
 import { getErrorMessage } from '../types/api';
 import dayjs from 'dayjs';
 
 export default function BillManagement() {
   const { t } = useTranslation();
+  const isAdmin = useAuthStore((s) => s.role === 1);
+
+  // ==================== Batch list state ====================
   const [batches, setBatches] = useState<BillBatch[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedBatch, setSelectedBatch] = useState<BillBatch | null>(null);
+  const [batchPageSize, setBatchPageSize] = useState(6);
+
+  // Month filter
+  const [availableMonths, setAvailableMonths] = useState<string[]>([]);
+  const [selectedMonth, setSelectedMonth] = useState<string | undefined>(undefined);
+
+  // Import
+  const [uploading, setUploading] = useState(false);
+  const [importMonthModal, setImportMonthModal] = useState<{ open: boolean; file: File | null }>({ open: false, file: null });
+  const [importBillingMonth, setImportBillingMonth] = useState<string>(dayjs().format('YYYY-MM'));
+
+  // Async import progress
+  const { progress: importProgress, polling: importPolling, startPolling, percent: importPercent } = useImportProgress({
+    onComplete: (p: ImportProgress) => {
+      message.success(t('bill.importComplete', { count: p.total }));
+      fetchBatches();
+      fetchMonths();
+      setUploading(false);
+    },
+    onError: (p: ImportProgress) => {
+      message.error(t('bill.importFailedMsg', { error: p.message || t('common.unknown') }));
+      setUploading(false);
+    },
+  });
+
+  // Edit month
+  const [editingMonthId, setEditingMonthId] = useState<number | null>(null);
+  const [editingMonthValue, setEditingMonthValue] = useState<string>('');
+
+  // ==================== Bill details state ====================
+  const [activeSheetType, setActiveSheetType] = useState<SheetTypeCode>('CALL');
+  const [details, setDetails] = useState<BillDetail[]>([]);
+  const [detailsTotal, setDetailsTotal] = useState(0);
+  const [detailsPage, setDetailsPage] = useState(0);
+  const [detailsPageSize, setDetailsPageSize] = useState(20);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+
+  // ==================== Allocation state (preserved for calculate/confirm/withdraw) ====================
   const [results, setResults] = useState<AllocationResult[]>([]);
   const [resultsLoading, setResultsLoading] = useState(false);
   const [calculatingId, setCalculatingId] = useState<number | null>(null);
   const [withdrawModal, setWithdrawModal] = useState<{ open: boolean; result?: AllocationResult }>({ open: false });
   const [withdrawReason, setWithdrawReason] = useState('');
 
-  // Calculate with snapshot modal state
+  // Fee summary search
+  const [feeSearch, setFeeSearch] = useState('');
+
+  // Bill detail search
+  const [detailSearch, setDetailSearch] = useState('');
+
+  // Calculate snapshot modal
   const [calcModal, setCalcModal] = useState<{ open: boolean; batchId: number | null }>({ open: false, batchId: null });
   const [ownershipBatches, setOwnershipBatches] = useState<OwnershipBatch[]>([]);
   const [directoryBatches, setDirectoryBatches] = useState<DirectoryBatch[]>([]);
@@ -41,25 +99,56 @@ export default function BillManagement() {
   const [selectedDirectoryBatchId, setSelectedDirectoryBatchId] = useState<number | null>(null);
   const [snapshotLoading, setSnapshotLoading] = useState(false);
 
+  // ==================== Data fetching ====================
+
   const fetchBatches = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await getBillBatches();
+      const data = await getBillBatches(selectedMonth);
       setBatches(data);
+      // Auto-select the most recent batch if none selected
+      if (!selectedBatch && data.length > 0) {
+        setSelectedBatch(data[data.length - 1]);
+      }
     } catch {
       message.error(t('bill.fetchBatchesFailed'));
     } finally {
       setLoading(false);
     }
-  }, [t]);
+  }, [t, selectedMonth]);
+
+  const fetchMonths = useCallback(async () => {
+    try {
+      const months = await getBillMonths();
+      setAvailableMonths(months);
+    } catch { /* silent */ }
+  }, []);
 
   useEffect(() => { fetchBatches(); }, [fetchBatches]);
+  useEffect(() => { fetchMonths(); }, [fetchMonths]);
 
+  // Fetch bill details for the selected batch + sheet type
+  const fetchDetails = useCallback(async (batchId: number, sheetType: SheetTypeCode, page = 0, size = 20) => {
+    setDetailsLoading(true);
+    try {
+      const data = await getBillDetails(batchId, sheetType, page, size);
+      setDetails(data.entries);
+      setDetailsTotal(data.total);
+      setDetailsPage(data.page);
+      setDetailsPageSize(data.size);
+    } catch {
+      message.error(t('bill.fetchDetailsFailed'));
+    } finally {
+      setDetailsLoading(false);
+    }
+  }, [t]);
+
+  // Fetch allocation results
   const fetchResults = useCallback(async (batchId: number) => {
     setResultsLoading(true);
     try {
       const data = await getAllocationResults(batchId);
-      setResults(data);
+      setResults(data.content);
     } catch {
       message.error(t('bill.fetchResultsFailed'));
     } finally {
@@ -67,8 +156,71 @@ export default function BillManagement() {
     }
   }, [t]);
 
+  // When a batch is selected, load bill details & allocation results
+  useEffect(() => {
+    if (selectedBatch) {
+      fetchDetails(selectedBatch.id, activeSheetType);
+      fetchResults(selectedBatch.id);
+    } else {
+      setDetails([]);
+      setDetailsTotal(0);
+      setResults([]);
+    }
+  }, [selectedBatch, activeSheetType, fetchDetails, fetchResults]);
+
+  // ==================== Handlers ====================
+
+  const handleBillFileSelected = (file: File) => {
+    setImportMonthModal({ open: true, file });
+  };
+
+  const handleConfirmImport = async () => {
+    if (!importMonthModal.file || !importBillingMonth) {
+      message.warning(t('bill.monthSelectRequired'));
+      return;
+    }
+    const file = importMonthModal.file;
+    const month = importBillingMonth;
+    setImportMonthModal({ open: false, file: null });
+    setUploading(true);
+    try {
+      const result = await importBill(file, month);
+      startPolling(result.batch_id, getBillProgress);
+    } catch (err) {
+      message.error(t('bill.importFailedMsg', { error: err instanceof Error ? err.message : t('common.unknown') }));
+      setUploading(false);
+    }
+  };
+
+  const handleDeleteBatch = async (batchId: number) => {
+    try {
+      await deleteBillBatch(batchId);
+      message.success(t('bill.deleteSuccess'));
+      if (selectedBatch?.id === batchId) {
+        setSelectedBatch(null);
+        setDetails([]);
+        setResults([]);
+      }
+      fetchBatches();
+      fetchMonths();
+    } catch (err) {
+      message.error(t('bill.deleteFailed', { error: err instanceof Error ? err.message : '' }));
+    }
+  };
+
+  const handleUpdateMonth = async (batchId: number, newMonth: string) => {
+    try {
+      await updateBillBatchMonth(batchId, newMonth);
+      message.success(t('bill.monthUpdateSuccess'));
+      setEditingMonthId(null);
+      fetchBatches();
+      fetchMonths();
+    } catch (err) {
+      message.error(getErrorMessage(err, t('bill.monthUpdateFailed')));
+    }
+  };
+
   const handleCalculate = async (batchId: number) => {
-    // Open snapshot selection modal
     setCalcModal({ open: true, batchId });
     setSnapshotLoading(true);
     setSelectedOwnershipBatchId(null);
@@ -77,7 +229,6 @@ export default function BillManagement() {
       const snap = await getAllocationSnapshot(batchId);
       setOwnershipBatches(snap.ownership_batches || []);
       setDirectoryBatches(snap.directory_batches || []);
-      // Pre-select from existing snapshot
       if (snap.ownership_batch_id) setSelectedOwnershipBatchId(snap.ownership_batch_id);
       else if (snap.ownership_batches?.length > 0) {
         const latest = [...snap.ownership_batches].sort((a, b) => b.id - a.id)[0];
@@ -85,14 +236,13 @@ export default function BillManagement() {
       }
       if (snap.directory_batch_id) setSelectedDirectoryBatchId(snap.directory_batch_id);
       else if (snap.directory_batches?.length > 0) {
-        // Prefer directory batch with billing_month (snapshot)
         const withMonth = snap.directory_batches.filter(b => b.billing_month);
         const source = withMonth.length > 0 ? withMonth : snap.directory_batches;
         const latest = [...source].sort((a, b) => b.id - a.id)[0];
         setSelectedDirectoryBatchId(latest.id);
       }
     } catch {
-      message.error('获取归属快照信息失败');
+      message.error(t('bill.snapshotFetchFailed'));
     } finally {
       setSnapshotLoading(false);
     }
@@ -103,15 +253,15 @@ export default function BillManagement() {
     setCalculatingId(calcModal.batchId);
     try {
       const res = await calculateAllocation(calcModal.batchId, selectedOwnershipBatchId, selectedDirectoryBatchId);
-      message.success(`分摊计算完成：${res.org_count} 个组织，匹配 ${res.matched_count} 个号码`);
-      const updatedBatches = await getBillBatches();
+      message.success(t('bill.calcResultMsg', { orgCount: res.org_count, matchedCount: res.matched_count }));
+      const updatedBatches = await getBillBatches(selectedMonth);
       setBatches(updatedBatches);
       const updated = updatedBatches.find(b => b.id === calcModal.batchId);
       if (updated) setSelectedBatch(updated);
       fetchResults(calcModal.batchId);
       setCalcModal({ open: false, batchId: null });
     } catch (err) {
-      message.error(getErrorMessage(err, '分摊计算失败'));
+      message.error(getErrorMessage(err, t('bill.calcFailedMsg')));
     } finally {
       setCalculatingId(null);
     }
@@ -153,50 +303,142 @@ export default function BillManagement() {
     }
   };
 
-  const handleExport = (url: string) => {
-    window.open(url, '_blank', 'noopener,noreferrer');
+  const handleExportSummary = () => {
+    if (!selectedBatch) return;
+    exportSummary(selectedBatch.id).catch(() => message.error(t('bill.exportFailed')));
+  };
+  const handleExportDetail = () => {
+    if (!selectedBatch) return;
+    exportDetail(selectedBatch.id).catch(() => message.error(t('bill.exportFailed')));
   };
 
+  // ==================== Batch list columns (4 columns only) ====================
+
   const batchColumns = [
-    { title: t('bill.batchNo'), dataIndex: 'batch_no', key: 'batch_no', width: 200 },
-    { title: t('bill.month'), dataIndex: 'billing_month', key: 'billing_month', width: 90 },
-    { title: t('bill.fileName'), dataIndex: 'file_name', key: 'file_name', ellipsis: true },
-    { title: t('bill.count'), dataIndex: 'total_count', key: 'total_count', width: 70 },
     {
-      title: t('bill.totalAmountCol'), dataIndex: 'total_amount', key: 'total_amount', width: 110,
-      render: (v: unknown) => v != null ? `¥${Number(v).toFixed(2)}` : '-',
+      title: t('bill.month'), dataIndex: 'billing_month', key: 'billing_month', width: 140,
+      render: (month: string, record: BillBatch) => {
+        if (editingMonthId === record.id) {
+          return (
+            <Space size={4}>
+              <DatePicker
+                picker="month"
+                size="small"
+                value={dayjs(editingMonthValue, 'YYYY-MM')}
+                onChange={(_, dateString) => setEditingMonthValue(dateString as string)}
+                onPressEnter={() => editingMonthValue && handleUpdateMonth(record.id, editingMonthValue)}
+                allowClear={false}
+                style={{ width: 110 }}
+              />
+              <Button size="small" type="link" onClick={() => editingMonthValue && handleUpdateMonth(record.id, editingMonthValue)}>{t('common.confirm')}</Button>
+              <Button size="small" type="link" onClick={() => setEditingMonthId(null)}>{t('common.cancel')}</Button>
+            </Space>
+          );
+        }
+        return (
+          <span style={{ fontWeight: selectedBatch?.id === record.id ? 600 : 400 }}>
+            {month === 'unknown' ? t('bill.monthNotSet') : month}
+          </span>
+        );
+      },
     },
     {
-      title: t('bill.status'), dataIndex: 'status', key: 'status', width: 90,
-      render: (s: number) => <Tag color={BILL_STATUS_COLORS[s] || 'default'}>{BILL_STATUS_LABELS[s] || t('bill.unknown')}</Tag>,
+      title: t('bill.totalAmountCol'), dataIndex: 'total_amount', key: 'total_amount', width: 130,
+      render: (v: unknown, record: BillBatch) => (
+        <span style={{ fontWeight: 500 }}>
+          {v != null ? `¥${Number(v).toFixed(2)}` : '-'}
+          <span style={{ color: COLORS.textMuted, fontSize: 12, marginLeft: 6 }}>
+            ({record.total_count}{t('bill.countUnit')})
+          </span>
+        </span>
+      ),
     },
     {
-      title: t('bill.importTime'), dataIndex: 'created_at', key: 'created_at', width: 150,
+      title: t('bill.importTime'), dataIndex: 'created_at', key: 'created_at', width: 130,
       render: (v: string) => dayjs(v).format('MM-DD HH:mm'),
     },
     {
-      title: t('bill.actions'), key: 'actions', width: 200,
-      render: (_unused: unknown, record: BillBatch) => (
-        <Space size="small">
-          <Button size="small" onClick={(e) => { e.stopPropagation(); setSelectedBatch(record); fetchResults(record.id); }}>
-            {t('bill.viewAllocation')}
-          </Button>
-          {record.status === 0 && (
-            <Button size="small" type="primary" icon={<CalculatorOutlined />}
-              onClick={(e) => { e.stopPropagation(); handleCalculate(record.id); }} loading={calculatingId === record.id}>
-              {t('bill.calculateAllocation')}
-            </Button>
-          )}
-          {record.status >= 1 && (
-            <Button size="small" icon={<LinkOutlined />}
-              onClick={(e) => { e.stopPropagation(); handleCalculate(record.id); }}>
-              重新计算
-            </Button>
-          )}
-        </Space>
-      ),
+      title: t('common.delete'), key: 'delete', width: 70,
+      render: (_unused: unknown, record: BillBatch) => isAdmin ? (
+        <Popconfirm
+          title={t('bill.deleteConfirm')}
+          description={t('bill.deleteConfirmDesc', { month: record.billing_month })}
+          onConfirm={(e) => { e?.stopPropagation(); handleDeleteBatch(record.id); }}
+          onCancel={(e) => e?.stopPropagation()}
+          okText={t('common.confirm')}
+          cancelText={t('common.cancel')}
+          okButtonProps={{ danger: true }}
+        >
+          <Button size="small" danger type="text" icon={<DeleteOutlined />}
+            onClick={(e) => e.stopPropagation()} />
+        </Popconfirm>
+      ) : null,
     },
   ];
+
+  // ==================== Detail table columns per sheet type (raw/original bill data) ====================
+
+  /** Parse rawData JSON from BillDetail, fallback to empty object */
+  const parseRaw = (raw: string | null): Record<string, unknown> => {
+    if (!raw) return {};
+    try { return JSON.parse(raw); } catch { return {}; }
+  };
+
+  /** Format a fee value from rawData */
+  const fmtFee = (v: unknown) => {
+    if (v == null || v === '' || v === 0) return '-';
+    const n = Number(v);
+    return isNaN(n) ? '-' : `¥${n.toFixed(2)}`;
+  };
+
+  /** Format a duration value from rawData (domestic/transfer/international) */
+  const fmtDur = (v: unknown) => {
+    if (v == null || v === '' || v === 0) return '-';
+    const n = Number(v);
+    return isNaN(n) ? '-' : n.toString();
+  };
+
+  const callColumns = [
+    { title: t('bill.raw.phoneNumber'), key: 'phoneNumber', width: 130, render: (_: unknown, r: BillDetail) => parseRaw(r.raw_data).phoneNumber ?? r.phone_number },
+    { title: t('bill.raw.platformFee'), key: 'platformFee', width: 100, render: (_: unknown, r: BillDetail) => fmtFee(parseRaw(r.raw_data).platformFee) },
+    { title: t('bill.raw.monthlyRentCode'), key: 'monthlyRentCode', width: 110, render: (_: unknown, r: BillDetail) => fmtFee(parseRaw(r.raw_data).monthlyRentCode) },
+    { title: t('bill.raw.domesticDuration'), key: 'domesticDuration', width: 120, render: (_: unknown, r: BillDetail) => fmtDur(parseRaw(r.raw_data).domesticDuration) },
+    { title: t('bill.raw.transferDuration'), key: 'transferDuration', width: 120, render: (_: unknown, r: BillDetail) => fmtDur(parseRaw(r.raw_data).transferDuration) },
+    { title: t('bill.raw.domesticFee'), key: 'domesticFee', width: 100, render: (_: unknown, r: BillDetail) => fmtFee(parseRaw(r.raw_data).domesticFee) },
+    { title: t('bill.raw.internationalDuration'), key: 'internationalDuration', width: 100, render: (_: unknown, r: BillDetail) => fmtDur(parseRaw(r.raw_data).internationalDuration) },
+    { title: t('bill.raw.internationalFee'), key: 'internationalFee', width: 100, render: (_: unknown, r: BillDetail) => fmtFee(parseRaw(r.raw_data).internationalFee) },
+    { title: t('bill.raw.totalFee'), key: 'totalFee', width: 110, render: (_: unknown, r: BillDetail) => <strong>{fmtFee(parseRaw(r.raw_data).totalFee)}</strong> },
+    { title: t('bill.raw.remark'), key: 'remark', width: 120, render: (_: unknown, r: BillDetail) => (parseRaw(r.raw_data).remark as string) || '-' },
+  ];
+
+  const recordingColumns = [
+    { title: t('bill.raw.extension'), key: 'extension', width: 100, render: (_: unknown, r: BillDetail) => parseRaw(r.raw_data).extension ?? r.extension },
+    { title: t('bill.raw.phoneNumber'), key: 'phoneNumber', width: 130, render: (_: unknown, r: BillDetail) => parseRaw(r.raw_data).phoneNumber ?? r.phone_number },
+    { title: t('bill.raw.recordingDir'), key: 'recordingDir', width: 120, render: (_: unknown, r: BillDetail) => (parseRaw(r.raw_data).recordingDir as string) || '-' },
+    { title: t('bill.raw.recordingFee'), key: 'recordingFee', width: 110, render: (_: unknown, r: BillDetail) => <strong>{fmtFee(parseRaw(r.raw_data).recordingFee)}</strong> },
+  ];
+
+  const crbtColumns = [
+    { title: t('bill.raw.extension'), key: 'extension', width: 100, render: (_: unknown, r: BillDetail) => parseRaw(r.raw_data).extension ?? r.extension },
+    { title: t('bill.raw.phoneNumber'), key: 'phoneNumber', width: 130, render: (_: unknown, r: BillDetail) => parseRaw(r.raw_data).phoneNumber ?? r.phone_number },
+    { title: t('bill.raw.crbtFee'), key: 'crbtFee', width: 110, render: (_: unknown, r: BillDetail) => <strong>{fmtFee(parseRaw(r.raw_data).crbtFee)}</strong> },
+  ];
+
+  const flashColumns = [
+    { title: t('bill.raw.phoneNumber'), key: 'phoneNumber', width: 130, render: (_: unknown, r: BillDetail) => parseRaw(r.raw_data).phoneNumber ?? r.phone_number },
+    { title: t('bill.raw.flashMonth'), key: 'flashMonth', width: 100, render: (_: unknown, r: BillDetail) => parseRaw(r.raw_data).flashMonth ?? r.flash_month },
+    { title: t('bill.raw.flashCount'), key: 'flashCount', width: 100, render: (_: unknown, r: BillDetail) => fmtDur(parseRaw(r.raw_data).flashCount) },
+    { title: t('bill.raw.flashMsgFee'), key: 'flashMsgFee', width: 110, render: (_: unknown, r: BillDetail) => <strong>{fmtFee(parseRaw(r.raw_data).flashMsgFee)}</strong> },
+  ];
+
+  const detailColumnMap: Record<SheetTypeCode, ReturnType<typeof Object>> = {
+    CALL: callColumns,
+    RECORDING: recordingColumns,
+    CRBT: crbtColumns,
+    FLASH_MSG: flashColumns,
+  };
+
+  // ==================== Allocation columns (for the allocation tab) ====================
 
   const resultColumns = [
     {
@@ -211,18 +453,6 @@ export default function BillManagement() {
     },
     {
       title: t('bill.callFee'), dataIndex: 'call_fee', key: 'call_fee', width: 90,
-      render: (v: number) => v != null && v !== 0 ? `¥${v.toFixed(2)}` : '-',
-    },
-    {
-      title: t('bill.recordingFee'), dataIndex: 'recording_fee', key: 'recording_fee', width: 90,
-      render: (v: number) => v != null && v !== 0 ? `¥${v.toFixed(2)}` : '-',
-    },
-    {
-      title: t('bill.crbtFee'), dataIndex: 'crbt_fee', key: 'crbt_fee', width: 90,
-      render: (v: number) => v != null && v !== 0 ? `¥${v.toFixed(2)}` : '-',
-    },
-    {
-      title: t('bill.flashMsgFee'), dataIndex: 'flash_msg_fee', key: 'flash_msg_fee', width: 90,
       render: (v: number) => v != null && v !== 0 ? `¥${v.toFixed(2)}` : '-',
     },
     {
@@ -241,14 +471,12 @@ export default function BillManagement() {
       render: (_unused: unknown, record: AllocationResult) => (
         <Space size="small">
           {record.confirm_status === 0 && (
-            <Button size="small" type="primary" icon={<CheckOutlined />}
-              onClick={() => handleConfirm(record.batch_id, record.org_id)}>
+            <Button size="small" type="primary" onClick={() => handleConfirm(record.batch_id, record.org_id)}>
               {t('bill.confirmBtn')}
             </Button>
           )}
           {record.confirm_status === 1 && (
-            <Button size="small" danger icon={<UndoOutlined />}
-              onClick={() => setWithdrawModal({ open: true, result: record })}>
+            <Button size="small" danger onClick={() => setWithdrawModal({ open: true, result: record })}>
               {t('bill.withdrawBtn')}
             </Button>
           )}
@@ -257,12 +485,54 @@ export default function BillManagement() {
     },
   ];
 
+  // ==================== Render ====================
+
   const totalFee = results.reduce((sum, r) => sum + (r.total_fee || 0), 0);
-  const totalPhones = results.reduce((sum, r) => sum + (r.phone_count || 0), 0);
   const confirmedCount = results.filter(r => r.confirm_status === 1).length;
 
   return (
     <div>
+      {/* Top toolbar: month filter + import button */}
+      <Row gutter={16} align="middle" style={{ marginBottom: 16 }}>
+        <Col>
+          <Select
+            style={{ width: 150 }}
+            placeholder={t('bill.filterByMonth')}
+            allowClear
+            value={selectedMonth}
+            onChange={(v) => setSelectedMonth(v)}
+            options={availableMonths.map(m => ({ label: m, value: m }))}
+          />
+        </Col>
+        <Col flex="auto" />
+        <Col>
+          <Dropdown menu={{ items: [
+            { key: 'import', icon: <UploadOutlined />, label: t('import.billTab'), disabled: uploading },
+            { key: 'template', icon: <DownloadOutlined />, label: t('import.downloadTemplate') },
+          ], onClick: ({ key }) => {
+            if (key === 'import') document.getElementById('bill-upload-input')?.click();
+            if (key === 'template') downloadBillTemplate();
+          } }}>
+            <Button type="primary" icon={<UploadOutlined />} loading={uploading && !importPolling}>
+              {t('import.billTab')}
+            </Button>
+          </Dropdown>
+          <input type="file" accept=".xlsx,.xls" id="bill-upload-input" style={{ display: 'none' }}
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) { handleBillFileSelected(f); e.target.value = ''; } }} />
+          {importPolling && importProgress && (
+            <Progress
+              percent={importPercent}
+              size="small"
+              style={{ width: 200, marginLeft: 12, display: 'inline-block', verticalAlign: 'middle' }}
+              format={() => importProgress.sheet_info
+                ? `${importProgress.sheet_info} ${importProgress.processed}/${importProgress.total}`
+                : `${importProgress.processed}/${importProgress.total}`}
+            />
+          )}
+        </Col>
+      </Row>
+
+      {/* Batch list card — 4 columns */}
       <Card>
         <Table
           columns={batchColumns}
@@ -270,64 +540,130 @@ export default function BillManagement() {
           rowKey="id"
           size="small"
           loading={loading}
-          pagination={{ pageSize: 10 }}
+          pagination={{
+            pageSize: batchPageSize,
+            showSizeChanger: true,
+            pageSizeOptions: ['6', '10', '20'],
+            showTotal: (total) => t('common.paginationTotal', { total }),
+            onChange: (_p, s) => setBatchPageSize(s),
+          }}
           onRow={(record) => ({
-            onClick: () => { setSelectedBatch(record); fetchResults(record.id); },
-            style: { cursor: 'pointer' },
+            onClick: () => {
+              setSelectedBatch(record);
+              setActiveSheetType('CALL');
+            },
+            style: {
+              cursor: 'pointer',
+              background: selectedBatch?.id === record.id ? 'rgba(139, 157, 158, 0.08)' : undefined,
+            },
           })}
         />
       </Card>
 
+      {/* Bill details + Allocation below selected batch */}
       {selectedBatch && (
         <Card
-          title={t('bill.allocationResultTitle', { batchNo: selectedBatch.batch_no, month: selectedBatch.billing_month })}
           style={{ marginTop: 16 }}
+          title={selectedBatch.billing_month === 'unknown'
+            ? t('bill.un_MONTH_results')
+            : t('bill.monthResults', { month: selectedBatch.billing_month })}
           extra={
             <Space>
-              <Button icon={<CalculatorOutlined />} onClick={() => handleCalculate(selectedBatch.id)}>
-                {selectedBatch.status === 0 ? '计算分摊' : '重新计算'}
+              <Button size="small" icon={undefined}
+                onClick={() => handleCalculate(selectedBatch.id)}
+                loading={calculatingId === selectedBatch.id}>
+                {selectedBatch.status === 0 ? t('bill.calcAllocation') : t('bill.recalculate')}
               </Button>
               {results.length > 0 && (
                 <>
-                  <Button onClick={() => handleConfirmAll(selectedBatch.id)} icon={<CheckOutlined />}>
+                  <Button size="small" onClick={() => handleConfirmAll(selectedBatch.id)}>
                     {t('bill.confirmAll')}
                   </Button>
-                  {selectedBatch.status >= 1 && (
-                    <>
-                      <Button icon={<DownloadOutlined />}
-                        onClick={() => handleExport(getExportSummaryUrl(selectedBatch.id))}>
-                        {t('bill.exportSummaryTooltip')}
-                      </Button>
-                      <Button icon={<DownloadOutlined />}
-                        onClick={() => handleExport(getExportDetailUrl(selectedBatch.id))}>
-                        {t('bill.exportDetailTooltip')}
-                      </Button>
-                    </>
-                  )}
+                  <Button size="small" icon={<DownloadOutlined />} onClick={handleExportSummary}>
+                    {t('bill.exportSummaryTooltip')}
+                  </Button>
+                  <Button size="small" icon={<DownloadOutlined />} onClick={handleExportDetail}>
+                    {t('bill.exportDetailTooltip')}
+                  </Button>
                 </>
               )}
-              <Button onClick={() => fetchResults(selectedBatch.id)}>{t('bill.refresh')}</Button>
             </Space>
           }
         >
-          <Descriptions size="small" column={4} style={{ marginBottom: 16 }}>
-            <Descriptions.Item label={t('bill.statsOrgs')}>{results.length}</Descriptions.Item>
-            <Descriptions.Item label={t('bill.statsPhones')}>{totalPhones}</Descriptions.Item>
-            <Descriptions.Item label={t('bill.statsTotalFee')}>¥{totalFee.toFixed(2)}</Descriptions.Item>
-            <Descriptions.Item label={t('bill.statsConfirmed')}>{confirmedCount}/{results.length}</Descriptions.Item>
-          </Descriptions>
-
-          <Table
-            columns={resultColumns}
-            dataSource={results}
-            rowKey="id"
-            size="small"
-            loading={resultsLoading}
-            pagination={{ pageSize: 20 }}
+          <Tabs
+            tabBarExtraContent={
+              <Input
+                prefix={<SearchOutlined />}
+                placeholder={t('bill.searchDetailPlaceholder')}
+                allowClear
+                size="small"
+                style={{ width: 200 }}
+                value={detailSearch}
+                onChange={(e) => setDetailSearch(e.target.value)}
+              />
+            }
+            activeKey={activeSheetType}
+            onChange={(key) => setActiveSheetType(key as SheetTypeCode)}
+            items={[
+              ...SHEET_TYPES.map(st => ({
+                key: st,
+                label: t(`bill.sheetType_${st}`),
+                children: (
+                  <Table
+                    columns={detailColumnMap[st] as any}
+                    dataSource={detailSearch.trim()
+                      ? details.filter(d => {
+                          const s = detailSearch.trim();
+                          return (d.phone_number || '').includes(s) || (d.extension || '').includes(s) || (d.raw_data || '').includes(s);
+                        })
+                      : details}
+                    rowKey="id"
+                    size="small"
+                    loading={detailsLoading}
+                    pagination={{
+                      current: detailsPage + 1,
+                      pageSize: detailsPageSize,
+                      total: detailsTotal,
+                      showSizeChanger: true,
+                      pageSizeOptions: ['20', '50', '100'],
+                      showTotal: (total) => t('common.paginationTotal', { total }),
+                      onChange: (p, s) => {
+                        fetchDetails(selectedBatch.id, st, p - 1, s);
+                      },
+                    }}
+                  />
+                ),
+              })),
+            ]}
           />
         </Card>
       )}
 
+      {/* Import month picker modal */}
+      <Modal
+        title={t('bill.selectBillingMonth')}
+        open={importMonthModal.open}
+        onOk={handleConfirmImport}
+        onCancel={() => setImportMonthModal({ open: false, file: null })}
+        okText={t('bill.confirmImport')}
+        okButtonProps={{ disabled: !importBillingMonth }}
+      >
+        <p style={{ marginBottom: 12 }}>{t('bill.selectMonthHint')}</p>
+        <DatePicker
+          picker="month"
+          style={{ width: '100%' }}
+          value={dayjs(importBillingMonth, 'YYYY-MM')}
+          onChange={(_, dateString) => setImportBillingMonth(dateString as string)}
+          allowClear={false}
+        />
+        {importMonthModal.file && (
+          <p style={{ marginTop: 8, color: COLORS.textMuted, fontSize: 12 }}>
+            {t('bill.importFile')}：{importMonthModal.file.name}
+          </p>
+        )}
+      </Modal>
+
+      {/* Withdraw modal */}
       <Modal
         title={t('bill.confirmWithdraw')}
         open={withdrawModal.open}
@@ -337,7 +673,9 @@ export default function BillManagement() {
         okButtonProps={{ danger: true }}
       >
         <p>{t('bill.withdrawDesc')}</p>
-        <Input.TextArea
+        <input
+          className="ant-input"
+          style={{ width: '100%', padding: '4px 11px' }}
           rows={3}
           placeholder={t('bill.withdrawReasonPlaceholder')}
           value={withdrawReason}
@@ -345,41 +683,42 @@ export default function BillManagement() {
         />
       </Modal>
 
+      {/* Calculate snapshot modal */}
       <Modal
-        title="选择归属快照数据"
+        title={t('bill.selectSnapshotTitle')}
         open={calcModal.open}
         onOk={handleConfirmCalc}
         onCancel={() => setCalcModal({ open: false, batchId: null })}
-        okText="开始计算"
+        okText={t('bill.startCalc')}
         confirmLoading={calculatingId !== null}
         width={520}
       >
         <div style={{ marginBottom: 16 }}>
-          <p style={{ color: COLORS.textMuted, marginBottom: 12 }}>选择用于归属匹配的号码归属和通讯录批次，系统将先执行归属匹配再计算分摊。</p>
+          <p style={{ color: COLORS.textMuted, marginBottom: 12 }}>{t('bill.snapshotHint')}</p>
           <div style={{ marginBottom: 12 }}>
-            <div style={{ marginBottom: 4, fontWeight: 500 }}>号码归属批次</div>
+            <div style={{ marginBottom: 4, fontWeight: 500 }}>{t('bill.ownershipBatchLabel')}</div>
             <Select
               style={{ width: '100%' }}
-              placeholder="选择号码归属批次"
+              placeholder={t('bill.ownershipBatchPlaceholder')}
               loading={snapshotLoading}
               value={selectedOwnershipBatchId}
               onChange={setSelectedOwnershipBatchId}
               options={ownershipBatches.sort((a, b) => b.id - a.id).map(b => ({
-                label: `${b.batch_no} (${b.total_count}条${b.exception_count ? `, 例外${b.exception_count}` : ''})`,
+                label: `${b.batch_no} (${b.total_count}${t('import.recordCountSuffix', { count: '' })}${b.exception_count ? `, ${t('import.exceptionCount')}${b.exception_count}` : ''})`,
                 value: b.id,
               }))}
             />
           </div>
           <div>
-            <div style={{ marginBottom: 4, fontWeight: 500 }}>通讯录批次</div>
+            <div style={{ marginBottom: 4, fontWeight: 500 }}>{t('bill.directoryBatchLabel')}</div>
             <Select
               style={{ width: '100%' }}
-              placeholder="选择通讯录批次"
+              placeholder={t('bill.directoryBatchPlaceholder')}
               loading={snapshotLoading}
               value={selectedDirectoryBatchId}
               onChange={setSelectedDirectoryBatchId}
               options={directoryBatches.sort((a, b) => b.id - a.id).map(b => ({
-                label: `${b.batch_no}${b.billing_month ? ` [${b.billing_month}]` : ''} (${b.total_count}条${b.seconded_count ? `, 例外${b.seconded_count}` : ''})`,
+                label: `${b.batch_no}${b.billing_month ? ` [${b.billing_month}]` : ''} (${b.total_count}${t('import.recordCountSuffix', { count: '' })}${b.seconded_count ? `, ${t('import.secondedCount')}${b.seconded_count}` : ''})`,
                 value: b.id,
               }))}
             />

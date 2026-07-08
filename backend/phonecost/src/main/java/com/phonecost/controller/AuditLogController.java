@@ -28,6 +28,8 @@ public class AuditLogController {
             @RequestParam(required = false) String username,
             @RequestParam(required = false) String startDate,
             @RequestParam(required = false) String endDate) {
+        // M-11 fix: cap page size at 200
+        size = Math.min(size, 200);
         LocalDateTime startDt = null;
         LocalDateTime endDt = null;
         if (startDate != null && !startDate.isEmpty()) {

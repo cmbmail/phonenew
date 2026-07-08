@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Card, Table, Select, Tag, Row, Col, message, Empty, Input, Statistic, Upload, Button, Space, Tabs, DatePicker, Modal, Tooltip, Popconfirm, Dropdown } from 'antd';
-import { SearchOutlined, UploadOutlined, ReloadOutlined, CameraOutlined, CheckCircleOutlined, SyncOutlined, ExclamationCircleOutlined, EditOutlined } from '@ant-design/icons';
-import type { DirectoryBatch, DirectoryEntry } from '../types/import';
-import { importDirectory, getDirectoryBatches, setDirectoryMonth, getDirectorySnapshots, clearDirectoryException, syncDirectoryFromMatch, batchClearDirectoryException, updateDirectoryExceptionReason } from '../api/import';
+import { Card, Table, Select, Tag, Row, Col, message, Empty, Input, Statistic, Upload, Button, Space, Tabs, DatePicker, Modal, Tooltip, Popconfirm, Dropdown, Progress } from 'antd';
+import { SearchOutlined, UploadOutlined, DownloadOutlined, ReloadOutlined, CameraOutlined, CheckCircleOutlined, SyncOutlined, ExclamationCircleOutlined, EditOutlined } from '@ant-design/icons';
+import type { DirectoryBatch, DirectoryEntry, ImportProgress } from '../types/import';
+import { importDirectory, getDirectoryBatches, setDirectoryMonth, getDirectorySnapshots, clearDirectoryException, syncDirectoryFromMatch, batchClearDirectoryException, updateDirectoryExceptionReason, downloadDirectoryTemplate, getDirectoryProgress } from '../api/import';
+import { useImportProgress } from '../hooks/useImportProgress';
 import { COLORS } from '../theme/morandi';
 import { apiGet } from '../lib/request';
 import dayjs from 'dayjs';
@@ -28,13 +29,13 @@ function buildCurrentMap(entries: DirectoryEntry[]): Map<string, DirectoryEntry>
 
 interface FieldDiff {
   level0: boolean; level1: boolean; level2: boolean; level3: boolean; level4: boolean;
-  username: boolean; extension: boolean; phone_number: boolean;
+  phone_number: boolean;
   hasDiff: boolean;
   matched: boolean;
 }
 
 function compareFields(ex: DirectoryEntry, current: DirectoryEntry | undefined): FieldDiff {
-  if (!current) return { level0: false, level1: false, level2: false, level3: false, level4: false, username: false, extension: false, phone_number: false, hasDiff: false, matched: false };
+  if (!current) return { level0: false, level1: false, level2: false, level3: false, level4: false, phone_number: false, hasDiff: false, matched: false };
   const eLevels = splitDeptPath(ex.dept_path);
   const cLevels = splitDeptPath(current.dept_path);
   const diffs = {
@@ -43,8 +44,6 @@ function compareFields(ex: DirectoryEntry, current: DirectoryEntry | undefined):
     level2: eLevels[2] !== cLevels[2],
     level3: eLevels[3] !== cLevels[3],
     level4: eLevels[4] !== cLevels[4],
-    username: (ex.username || '') !== (current.username || ''),
-    extension: (ex.extension || '') !== (current.extension || ''),
     phone_number: false, // phone_number is the matching key, always same
   };
   const hasDiff = Object.values(diffs).some(v => v);
@@ -61,6 +60,19 @@ const DirectoryPage: React.FC = () => {
   const [uploading, setUploading] = useState(false);
   const [processingIds, setProcessingIds] = useState<Set<number>>(new Set());
 
+  // Async import progress
+  const { progress: importProgress, polling: importPolling, startPolling, percent: importPercent } = useImportProgress({
+    onComplete: (p: ImportProgress) => {
+      message.success(`通讯录导入完成：${p.total} 条，借调 ${p.seconded_count ?? 0} 条`);
+      fetchBatches();
+      setUploading(false);
+    },
+    onError: (p: ImportProgress) => {
+      message.error(`导入失败：${p.message || '未知错误'}`);
+      setUploading(false);
+    },
+  });
+
   // Snapshot state
   const [snapshots, setSnapshots] = useState<DirectoryBatch[]>([]);
   const [snapshotsLoading, setSnapshotsLoading] = useState(false);
@@ -69,6 +81,7 @@ const DirectoryPage: React.FC = () => {
   const [snapshotEntriesLoading, setSnapshotEntriesLoading] = useState(false);
   const [snapshotSearch, setSnapshotSearch] = useState('');
   const [exceptionSearch, setExceptionSearch] = useState('');
+  const [pageSize, setPageSize] = useState(50);
   const [codeToNameMap, setCodeToNameMap] = useState<Record<string, string>>({});
 
   // Resolve a dept_path segment: if it's a code found in map, return the Chinese name; otherwise return as-is
@@ -151,12 +164,10 @@ const DirectoryPage: React.FC = () => {
     setUploading(true);
     try {
       const result = await importDirectory(file);
-      message.success(`通讯录导入成功：${result.total_count} 条，例外 ${result.seconded_count ?? 0} 条`);
-      fetchBatches();
-      if (result.batch_id) setSelectedBatchId(result.batch_id);
+      // Start async progress polling
+      startPolling(result.batch_id, getDirectoryProgress);
     } catch (err) {
       message.error(`导入失败：${err instanceof Error ? err.message : '未知错误'}`);
-    } finally {
       setUploading(false);
     }
     return false;
@@ -226,12 +237,12 @@ const DirectoryPage: React.FC = () => {
   // Derived data
   const exceptionCount = entries.filter(e => e.is_seconded === 1).length;
   const filteredEntries = search
-    ? entries.filter(e => e.phone_number.includes(search) || e.username.includes(search) || e.extension.includes(search) || e.dept_path.includes(search))
+    ? entries.filter(e => e.phone_number.includes(search) || e.dept_path.includes(search))
     : entries;
 
   const exceptionEntries = entries.filter(e => e.is_seconded === 1);
   const filteredExceptionEntries = exceptionSearch
-    ? exceptionEntries.filter(e => e.phone_number.includes(exceptionSearch) || e.username.includes(exceptionSearch) || e.extension.includes(exceptionSearch) || e.dept_path.includes(exceptionSearch))
+    ? exceptionEntries.filter(e => e.phone_number.includes(exceptionSearch) || e.dept_path.includes(exceptionSearch))
     : exceptionEntries;
 
   const currentMap = useMemo(() => buildCurrentMap(entries), [entries]);
@@ -245,7 +256,7 @@ const DirectoryPage: React.FC = () => {
   }, [exceptionEntries, currentMap]);
 
   const filteredSnapshotEntries = snapshotSearch
-    ? snapshotEntries.filter(e => e.phone_number.includes(snapshotSearch) || e.username.includes(snapshotSearch) || e.extension.includes(snapshotSearch) || e.dept_path.includes(snapshotSearch))
+    ? snapshotEntries.filter(e => e.phone_number.includes(snapshotSearch) || e.dept_path.includes(snapshotSearch))
     : snapshotEntries;
 
   const snapshotMonthOptions = [...new Set(snapshots.map(s => s.billing_month!))].sort().reverse().map(m => ({ label: m, value: m }));
@@ -265,8 +276,6 @@ const DirectoryPage: React.FC = () => {
       render: (_: unknown, r: DirectoryEntry) => resolveOrgCode(splitDeptPath(r.dept_path)[3]) },
     { title: LEVEL_LABELS[4], key: 'level4', width: 120,
       render: (_: unknown, r: DirectoryEntry) => resolveOrgCode(splitDeptPath(r.dept_path)[4]) },
-    { title: '用户名称(员工ID)', dataIndex: 'username', key: 'username', width: 130 },
-    { title: '分机号码', dataIndex: 'extension', key: 'extension', width: 100 },
     { title: '号码', dataIndex: 'phone_number', key: 'phone_number', width: 130 },
   ];
 
@@ -307,16 +316,6 @@ const DirectoryPage: React.FC = () => {
         const diff = diffsMap.get(r.id);
         const val = resolveOrgCode(splitDeptPath(r.dept_path)[4]);
         return <span style={diff?.level4 ? { background: DIFF_BG, borderRadius: 3, padding: '0 4px' } : undefined}>{val}</span>;
-      }},
-    { title: '用户名称(员工ID)', dataIndex: 'username', key: 'username', width: 130,
-      render: (v: string, r: DirectoryEntry) => {
-        const diff = diffsMap.get(r.id);
-        return <span style={diff?.username ? { background: DIFF_BG, borderRadius: 3, padding: '0 4px' } : undefined}>{v || '-'}</span>;
-      }},
-    { title: '分机号码', dataIndex: 'extension', key: 'extension', width: 100,
-      render: (v: string, r: DirectoryEntry) => {
-        const diff = diffsMap.get(r.id);
-        return <span style={diff?.extension ? { background: DIFF_BG, borderRadius: 3, padding: '0 4px' } : undefined}>{v || '-'}</span>;
       }},
     { title: '号码', dataIndex: 'phone_number', key: 'phone_number', width: 130 },
     { title: '说明', dataIndex: 'seconded_keyword', key: 'seconded_keyword', width: 100,
@@ -372,9 +371,24 @@ const DirectoryPage: React.FC = () => {
         <Col>
           <Space>
             <Button icon={<CameraOutlined />} onClick={() => setSnapshotModalOpen(true)} disabled={!selectedBatchId}>制作快照</Button>
-            <Upload accept=".xlsx,.xls" showUploadList={false} beforeUpload={handleUpload} disabled={uploading}>
-              <Button type="primary" icon={<UploadOutlined />} loading={uploading}>导入通讯录</Button>
-            </Upload>
+            <Dropdown menu={{ items: [
+              { key: 'import', icon: <UploadOutlined />, label: '导入通讯录', disabled: uploading },
+              { key: 'template', icon: <DownloadOutlined />, label: '下载模板' },
+            ], onClick: ({ key }) => {
+              if (key === 'import') document.getElementById('directory-upload-input')?.click();
+              if (key === 'template') downloadDirectoryTemplate();
+            } }}>
+              <Button type="primary" icon={<UploadOutlined />} loading={uploading && !importPolling}>导入通讯录</Button>
+            </Dropdown>
+            <input type="file" accept=".xlsx,.xls" id="directory-upload-input" style={{ display: 'none' }} onChange={(e) => { const f = e.target.files?.[0]; if (f) { handleUpload(f); e.target.value = ''; } }} />
+            {importPolling && importProgress && (
+              <Progress
+                percent={importPercent}
+                size="small"
+                style={{ width: 200, display: 'inline-block', verticalAlign: 'middle' }}
+                format={() => importProgress.message || `${importProgress.processed}/${importProgress.total}`}
+              />
+            )}
           </Space>
         </Col>
       </Row>
@@ -384,10 +398,10 @@ const DirectoryPage: React.FC = () => {
           <Col span={4}><Statistic title="例外数" value={exceptionCount} valueStyle={{ color: exceptionCount > 0 ? COLORS.danger : undefined }} /></Col>
         </Row>
       )}
-      {selectedBatchId && <Input prefix={<SearchOutlined />} placeholder="搜索号码/员工ID/分机/部门" allowClear value={search} onChange={e => setSearch(e.target.value)} style={{ width: 400, marginBottom: 12 }} />}
+      {selectedBatchId && <Input prefix={<SearchOutlined />} placeholder="搜索号码/部门" allowClear value={search} onChange={e => setSearch(e.target.value)} style={{ width: 400, marginBottom: 12 }} />}
       {selectedBatchId && filteredEntries.length > 0 ? (
         <Table columns={columns} dataSource={filteredEntries} rowKey="id" size="small" loading={entriesLoading}
-          pagination={{ pageSize: 50, showSizeChanger: true, pageSizeOptions: ['25', '50', '100'], showTotal: (total) => `共 ${total} 条` }} scroll={{ x: 1200 }} />
+          pagination={{ pageSize, showSizeChanger: true, pageSizeOptions: ['25', '50', '100'], showTotal: (total) => `共 ${total} 条`, onChange: (_p, s) => setPageSize(s) }} scroll={{ x: 1200 }} />
       ) : (!entriesLoading && <Empty description={selectedBatchId ? '无匹配数据' : '请选择批次或导入通讯录'} />)}
     </>
   );
@@ -406,7 +420,7 @@ const DirectoryPage: React.FC = () => {
       </Row>
       <Row gutter={16} align="middle" style={{ marginBottom: 12 }}>
         <Col>
-          <Input prefix={<SearchOutlined />} placeholder="搜索号码/员工ID/分机/部门" allowClear value={exceptionSearch} onChange={e => setExceptionSearch(e.target.value)} style={{ width: 400 }} />
+          <Input prefix={<SearchOutlined />} placeholder="搜索号码/部门" allowClear value={exceptionSearch} onChange={e => setExceptionSearch(e.target.value)} style={{ width: 400 }} />
         </Col>
         <Col flex="auto" />
         <Col>
@@ -416,7 +430,7 @@ const DirectoryPage: React.FC = () => {
         </Col>
       </Row>
       <Table columns={exceptionColumns} dataSource={filteredExceptionEntries} rowKey="id" size="small" loading={entriesLoading}
-        pagination={{ pageSize: 50, showSizeChanger: true, pageSizeOptions: ['25', '50', '100'], showTotal: (total) => `共 ${total} 条` }} scroll={{ x: 1500 }} />
+        pagination={{ pageSize, showSizeChanger: true, pageSizeOptions: ['25', '50', '100'], showTotal: (total) => `共 ${total} 条`, onChange: (_p, s) => setPageSize(s) }} scroll={{ x: 1500 }} />
       <div style={{ marginTop: 8, color: COLORS.textMuted, fontSize: 12 }}>
         <ExclamationCircleOutlined style={{ marginRight: 4 }} />
         高亮字段表示例外记录与当前数据（按号码匹配）不一致，可选择「同步数据」将当前数据覆盖到例外记录，或「解除例外」取消例外标记。
@@ -440,10 +454,10 @@ const DirectoryPage: React.FC = () => {
           <Col span={4}><Statistic title="例外数" value={snapshotEntries.filter(e => e.is_seconded === 1).length} valueStyle={{ color: snapshotEntries.some(e => e.is_seconded === 1) ? COLORS.danger : undefined }} /></Col>
         </Row>
       )}
-      {selectedSnapshotMonth && <Input prefix={<SearchOutlined />} placeholder="搜索号码/员工ID/分机/部门" allowClear value={snapshotSearch} onChange={e => setSnapshotSearch(e.target.value)} style={{ width: 400, marginBottom: 12 }} />}
+      {selectedSnapshotMonth && <Input prefix={<SearchOutlined />} placeholder="搜索号码/部门" allowClear value={snapshotSearch} onChange={e => setSnapshotSearch(e.target.value)} style={{ width: 400, marginBottom: 12 }} />}
       {selectedSnapshotMonth && filteredSnapshotEntries.length > 0 ? (
         <Table columns={columns} dataSource={filteredSnapshotEntries} rowKey="id" size="small" loading={snapshotEntriesLoading}
-          pagination={{ pageSize: 50, showSizeChanger: true, pageSizeOptions: ['25', '50', '100'], showTotal: (total) => `共 ${total} 条` }} scroll={{ x: 1200 }} />
+          pagination={{ pageSize, showSizeChanger: true, pageSizeOptions: ['25', '50', '100'], showTotal: (total) => `共 ${total} 条`, onChange: (_p, s) => setPageSize(s) }} scroll={{ x: 1200 }} />
       ) : (!snapshotEntriesLoading && <Empty description={selectedSnapshotMonth ? '该月份无数据' : '请选择月份'} />)}
     </>
   );
@@ -463,7 +477,7 @@ const DirectoryPage: React.FC = () => {
         {editingEntry && (
           <div>
             <div style={{ marginBottom: 8, color: COLORS.textMuted }}>
-              号码：{editingEntry.phone_number} / 员工：{editingEntry.username}
+              号码：{editingEntry.phone_number}
             </div>
             <Input.TextArea rows={3} placeholder="输入例外原因" value={editReason} onChange={e => setEditReason(e.target.value)} maxLength={200} showCount />
           </div>

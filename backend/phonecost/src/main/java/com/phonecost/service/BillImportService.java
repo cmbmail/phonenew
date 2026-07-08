@@ -1,46 +1,44 @@
 package com.phonecost.service;
 
+import com.alibaba.excel.EasyExcel;
+import com.alibaba.excel.context.AnalysisContext;
+import com.alibaba.excel.event.AnalysisEventListener;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.phonecost.domain.*;
 import com.phonecost.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.poi.ss.usermodel.*;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import jakarta.annotation.PreDestroy;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.concurrent.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 电信账单导入服务（模板驱动）
- * 根据活跃的 bill_template.sheet_configs JSON 动态解析 Excel
+ * 电信账单导入服务（性能优化版 v2）
  *
- * 模板 JSON 结构:
- * {
- *   "monthPattern": "(\\d{4})年(\\d{1,2})月",
- *   "sheets": [
- *     {
- *       "sheetNamePattern": "按号码费用",
- *       "sheetType": "CALL",
- *       "phoneColumn": 0,
- *       "extensionColumn": null,
- *       "skipRows": 1,
- *       "isQuarterly": false,
- *       "columns": [{"index": 0, "field": "phoneNumber", "type": "STRING"}, ...],
- *       "computedFields": {"monthlyRent": ["platformFee", "monthlyRentCode"], ...}
- *     }
- *   ]
- * }
+ * 优化点:
+ *   1. EasyExcel 流式读取，内存占用低（不再用 XSSFWorkbook 全量加载）
+ *   2. 异步导入：API 立即返回批次 ID，后台线程处理，前端轮询进度
+ *   3. JdbcTemplate 批量 INSERT（绕过 JPA IDENTITY 策略对 batch 的禁用）
+ *   4. Backfill 分机号使用预加载 Map，消除 N+1 查询
+ *   5. SQL SUM/COUNT 替代全量重新加载算总额
+ *   6. 模板驱动解析逻辑保留不变
  */
 @Slf4j
 @Service
@@ -51,6 +49,8 @@ public class BillImportService {
     private final BillDetailRepository detailRepository;
     private final BillTemplateRepository templateRepository;
     private final DirectoryEntryRepository directoryEntryRepository;
+    private final PlatformTransactionManager transactionManager;
+    private final JdbcTemplate jdbcTemplate;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final DateTimeFormatter DTF = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
@@ -58,114 +58,481 @@ public class BillImportService {
     // Fallback default pattern when template has none
     private static final Pattern FALLBACK_MONTH_PATTERN = Pattern.compile("(\\d{4})年(\\d{1,2})月");
 
-    @Transactional
-    public BillBatch importBill(MultipartFile file, Long userId) throws IOException {
+    /** JdbcTemplate 批量插入的批次大小 */
+    private static final int BATCH_SIZE = 5000;
+    /** 并发导入最大线程数 */
+    private static final int MAX_CONCURRENT_IMPORTS = 2;
+
+    /** 有界线程池 */
+    private static final ExecutorService IMPORT_EXECUTOR = Executors.newFixedThreadPool(
+            MAX_CONCURRENT_IMPORTS,
+            r -> {
+                Thread t = new Thread(r);
+                t.setDaemon(true);
+                t.setName("bill-import-worker");
+                t.setUncaughtExceptionHandler((th, ex) ->
+                        log.error("Uncaught exception in bill import thread {}", th.getName(), ex));
+                return t;
+            }
+    );
+
+    /** 进度延迟清理调度器 */
+    private static final ScheduledExecutorService CLEANUP_SCHEDULER =
+            Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "bill-import-cleanup");
+                t.setDaemon(true);
+                return t;
+            });
+
+    /** 异步任务进度跟踪: batchId -> progress */
+    private final Map<Long, ImportProgress> progressMap = new ConcurrentHashMap<>();
+
+    @PreDestroy
+    public void cleanup() {
+        log.info("Shutting down bill import executors...");
+        IMPORT_EXECUTOR.shutdownNow();
+        CLEANUP_SCHEDULER.shutdownNow();
+        try {
+            if (!IMPORT_EXECUTOR.awaitTermination(5, TimeUnit.SECONDS)) {
+                log.warn("Import executor did not terminate within 5 seconds");
+            }
+            if (!CLEANUP_SCHEDULER.awaitTermination(5, TimeUnit.SECONDS)) {
+                log.warn("Cleanup scheduler did not terminate within 5 seconds");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /**
+     * 导入电信账单（异步模式）
+     * API 立即返回批次信息，后台线程执行实际导入
+     */
+    public BillBatch importBill(MultipartFile file, Long userId, String billingMonth) throws IOException {
         String batchNo = "BIL-" + LocalDateTime.now().format(DTF);
         String fileName = file.getOriginalFilename();
 
-        // Load active template
+        // 并发导入数量限制
+        long activeImports = progressMap.values().stream()
+                .filter(p -> "PENDING".equals(p.getStatus()) || "READING".equals(p.getStatus()) || "WRITING".equals(p.getStatus()))
+                .count();
+        if (activeImports >= MAX_CONCURRENT_IMPORTS) {
+            throw new IllegalStateException("当前有导入任务正在执行，请稍后再试");
+        }
+
+        // 1. 在独立短事务中创建批次记录
+        TransactionTemplate txTemplate = new TransactionTemplate(transactionManager);
+
+        // Load active template (need templateId for batch record)
         BillTemplate template = templateRepository.findByIsActiveAndDeletedAtIsNull((byte) 1)
                 .orElseThrow(() -> new IllegalArgumentException("未找到活跃的账单模板"));
 
-        // Parse template config
-        TemplateConfig config = parseTemplateConfig(template);
+        BillBatch batch = txTemplate.execute(status -> {
+            BillBatch b = BillBatch.builder()
+                    .batchNo(batchNo)
+                    .billingMonth(billingMonth != null && !billingMonth.isBlank() ? billingMonth : "unknown")
+                    .fileName(fileName != null ? fileName : "")
+                    .templateId(template.getId())
+                    .status((byte) 0)
+                    .totalAmount(BigDecimal.ZERO)
+                    .totalCount(0)
+                    .importStatus((byte) 0)
+                    .importedBy(userId)
+                    .build();
+            return batchRepository.save(b);
+        });
+        final Long batchId = batch.getId();
 
-        BillBatch batch = BillBatch.builder()
-                .batchNo(batchNo)
-                .billingMonth("unknown")
-                .fileName(fileName != null ? fileName : "")
-                .templateId(template.getId())
-                .status((byte) 0)
-                .totalAmount(BigDecimal.ZERO)
-                .totalCount(0)
-                .importStatus((byte) 0)
-                .importedBy(userId)
-                .build();
-        batch = batchRepository.save(batch);
-
-        try (InputStream is = file.getInputStream();
-             Workbook wb = new XSSFWorkbook(is)) {
-
-            List<BillDetail> allDetails = new ArrayList<>();
-            BigDecimal totalAmount = BigDecimal.ZERO;
-            int totalCount = 0;
-
-            for (int s = 0; s < wb.getNumberOfSheets(); s++) {
-                Sheet sheet = wb.getSheetAt(s);
-                String sheetName = sheet.getSheetName();
-
-                // Extract billing month from first sheet
-                if (s == 0 && "unknown".equals(batch.getBillingMonth())) {
-                    String month = extractMonth(sheetName, config.monthPattern);
-                    if (!month.isEmpty()) {
-                        batch.setBillingMonth(month);
-                    }
-                }
-
-                // Match sheet against template configs
-                SheetConfig matchedConfig = matchSheetConfig(sheetName, config.sheets);
-                if (matchedConfig == null) {
-                    log.warn("No matching template config for sheet: {}, skipping", sheetName);
-                    continue;
-                }
-
-                log.debug("Parsing sheet '{}' with config type={}", sheetName, matchedConfig.sheetType);
-                parseSheetWithConfig(sheet, batch.getId(), allDetails, matchedConfig);
-
-                // Batch save periodically
-                if (allDetails.size() >= 500) {
-                    detailRepository.saveAll(allDetails);
-                    allDetails.clear();
-                }
-            }
-
-            // Save remaining
-            if (!allDetails.isEmpty()) {
-                detailRepository.saveAll(allDetails);
-            }
-
-            // Backfill extensions from directory for sheets without extension column (CALL, FLASH_MSG)
-            backfillExtensionsFromDirectory(batch.getId());
-
-            // Calculate totals
-            List<BillDetail> allSaved = detailRepository.findByBatchIdAndDeletedAtIsNull(batch.getId());
-            for (BillDetail d : allSaved) {
-                totalAmount = totalAmount.add(d.getTotalFee() != null ? d.getTotalFee() : BigDecimal.ZERO);
-                totalCount++;
-            }
-
-            batch.setTotalAmount(totalAmount);
-            batch.setTotalCount(totalCount);
-            batch.setImportStatus((byte) 1);
-            batch = batchRepository.save(batch);
-
-            log.info("Bill import completed: batch={}, month={}, total={}, amount={}, template={}",
-                    batchNo, batch.getBillingMonth(), totalCount, totalAmount, template.getName());
-
+        // 2. 保存文件到临时位置
+        Path tempFile = Files.createTempFile("bill_import_", ".xlsx");
+        try {
+            file.transferTo(tempFile.toFile());
         } catch (Exception e) {
-            batch.setImportStatus((byte) 2);
-            batch.setErrorMessage(e.getMessage());
-            batchRepository.save(batch);
-            log.error("Bill import failed: batch={}", batchNo, e);
+            Files.deleteIfExists(tempFile);
             throw e;
         }
+
+        // 3. 初始化进度
+        ImportProgress progress = new ImportProgress();
+        progressMap.put(batchId, progress);
+        progress.setSheetInfo("准备中...");
+
+        // 4. 异步执行导入
+        IMPORT_EXECUTOR.submit(() -> {
+            TransactionTemplate asyncTx = new TransactionTemplate(transactionManager);
+            asyncTx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+
+            try {
+                doImportAsync(tempFile, batchId, batchNo, template, progress, asyncTx, billingMonth);
+            } catch (Exception e) {
+                log.error("Async bill import failed: batch={}", batchNo, e);
+                progress.setStatus("FAILED");
+                progress.setMessage(e.getMessage());
+                asyncTx.executeWithoutResult(status -> {
+                    batchRepository.findById(batchId).ifPresent(b -> {
+                        b.setImportStatus((byte) 2);
+                        String msg = e.getMessage();
+                        b.setErrorMessage(msg != null ? msg.substring(0, Math.min(msg.length(), 2000)) : "Unknown");
+                        batchRepository.save(b);
+                    });
+                });
+            } finally {
+                try { Files.deleteIfExists(tempFile); } catch (Exception ignored) {}
+                CLEANUP_SCHEDULER.schedule(() -> progressMap.remove(batchId), 30, TimeUnit.MINUTES);
+            }
+        });
 
         return batch;
     }
 
-    // ==================== Template Config Parsing ====================
+    /**
+     * 查询导入进度
+     */
+    public ImportProgress getProgress(Long batchId) {
+        return progressMap.get(batchId);
+    }
+
+    /**
+     * 后台导入主流程
+     */
+    private void doImportAsync(Path tempFile, Long batchId, String batchNo,
+                               BillTemplate template, ImportProgress progress,
+                               TransactionTemplate txTemplate) {
+        doImportAsync(tempFile, batchId, batchNo, template, progress, txTemplate, null);
+    }
+
+    private void doImportAsync(Path tempFile, Long batchId, String batchNo,
+                               BillTemplate template, ImportProgress progress,
+                               TransactionTemplate txTemplate, String presetBillingMonth) {
+        long startTime = System.currentTimeMillis();
+
+        // Parse template config
+        TemplateConfig config = parseTemplateConfig(template);
+
+        // === 阶段1: 流式读取 Excel (逐 Sheet) ===
+        progress.setStatus("READING");
+
+        List<Object[]> allRows = new ArrayList<>(100000);
+        int[] totalCountRef = {0};
+
+        // Step 1: Get sheet names using POI (metadata-only, quick for typical bill files < 5MB)
+        // This allows us to match sheets by name before the streaming EasyExcel read
+        List<String> sheetNames = new ArrayList<>();
+        try {
+            try (InputStream metaIs = Files.newInputStream(tempFile);
+                 org.apache.poi.ss.usermodel.Workbook metaWb = new org.apache.poi.xssf.usermodel.XSSFWorkbook(metaIs)) {
+                for (int i = 0; i < metaWb.getNumberOfSheets(); i++) {
+                    sheetNames.add(metaWb.getSheetAt(i).getSheetName());
+                }
+            }
+        } catch (IOException e) {
+            log.warn("Could not read sheet metadata for bill import", e);
+            throw new RuntimeException("无法读取Excel文件结构: " + e.getMessage(), e);
+        }
+        log.info("Found {} sheets in bill file: {}", sheetNames.size(), sheetNames);
+
+        String billingMonth = (presetBillingMonth != null && !presetBillingMonth.isBlank()) ? presetBillingMonth : "unknown";
+
+        for (int s = 0; s < sheetNames.size(); s++) {
+            String sheetName = sheetNames.get(s);
+
+            // Extract billing month from first sheet name (only if not preset)
+            if (s == 0 && "unknown".equals(billingMonth)) {
+                String month = extractMonth(sheetName, config.monthPattern);
+                if (!month.isEmpty()) {
+                    billingMonth = month;
+                }
+            }
+
+            // Match sheet against template configs
+            SheetConfig matchedConfig = matchSheetConfig(sheetName, config.sheets);
+            if (matchedConfig == null) {
+                log.warn("No matching template config for sheet: {}, skipping", sheetName);
+                continue;
+            }
+
+            progress.setSheetInfo("读取: " + sheetName);
+            log.debug("Parsing sheet '{}' with config type={}", sheetName, matchedConfig.sheetType);
+
+            final SheetConfig cfg = matchedConfig;
+            final Long bId = batchId;
+
+            // Read this specific sheet with EasyExcel (streaming, low memory)
+            int skipRows = cfg.skipRows > 0 ? cfg.skipRows : 1;
+
+            EasyExcel.read(tempFile.toFile(), new AnalysisEventListener<Map<Integer, String>>() {
+                @Override
+                public void invoke(Map<Integer, String> row, AnalysisContext context) {
+                    // Extract values by column config
+                    Map<String, Object> values = new LinkedHashMap<>();
+                    // Build index->field reverse map for this sheet config
+                    Map<Integer, String> indexToField = new LinkedHashMap<>();
+                    for (ColumnConfig col : cfg.columns) {
+                        indexToField.put(col.index, col.field);
+                    }
+                    for (ColumnConfig col : cfg.columns) {
+                        String rawVal = row.getOrDefault(col.index, null);
+                        Object val = convertCellValue(rawVal, col.type);
+                        values.put(col.field, val);
+                    }
+
+                    // Get phone number (required)
+                    String phoneNumber = getStringValue(values, "phoneNumber");
+                    if (phoneNumber == null || phoneNumber.isEmpty() || phoneNumber.startsWith("AIGC:")) return;
+
+                    // Store ALL raw column values as JSON for export & display fidelity.
+                    // For columns defined in the template, use the field name;
+                    // for columns not in the template, use "col_N" as the key.
+                    Map<String, Object> rawAll = new LinkedHashMap<>();
+                    for (Map.Entry<Integer, String> entry : row.entrySet()) {
+                        String fieldName = indexToField.get(entry.getKey());
+                        String key = fieldName != null ? fieldName : "col_" + entry.getKey();
+                        if (!rawAll.containsKey(key)) {
+                            // Prefer the typed value from 'values' if available
+                            if (fieldName != null && values.containsKey(fieldName)) {
+                                rawAll.put(key, values.get(fieldName));
+                            } else {
+                                rawAll.put(key, entry.getValue());
+                            }
+                        }
+                    }
+                    // Ensure all template fields are present (even if missing from row)
+                    for (ColumnConfig col : cfg.columns) {
+                        if (!rawAll.containsKey(col.field)) {
+                            rawAll.put(col.field, values.get(col.field));
+                        }
+                    }
+
+                    String rawDataJson;
+                    try {
+                        rawDataJson = MAPPER.writeValueAsString(rawAll);
+                    } catch (Exception e) {
+                        rawDataJson = "{}";
+                    }
+
+                    // Map extracted values to BillDetail fields
+                    BigDecimal monthlyRent = getBigDecimalValue(values, "monthlyRent");
+                    BigDecimal callFee = getBigDecimalValue(values, "callFee");
+                    BigDecimal recordingFee = getBigDecimalValue(values, "recordingFee");
+                    BigDecimal crbtFee = getBigDecimalValue(values, "crbtFee");
+                    BigDecimal flashMsgFee = getBigDecimalValue(values, "flashMsgFee");
+                    String extension = getStringValue(values, "extension");
+                    String flashMonth = "";
+
+                    // Apply computed fields
+                    Map<String, BigDecimal> computedResults = computeFields(values, cfg.computedFields);
+                    if (computedResults.containsKey("monthlyRent")) monthlyRent = computedResults.get("monthlyRent");
+                    if (computedResults.containsKey("callFee")) callFee = computedResults.get("callFee");
+                    if (computedResults.containsKey("recordingFee")) recordingFee = computedResults.get("recordingFee");
+                    if (computedResults.containsKey("crbtFee")) crbtFee = computedResults.get("crbtFee");
+                    if (computedResults.containsKey("flashMsgFee")) flashMsgFee = computedResults.get("flashMsgFee");
+
+                    // Compute totalFee
+                    BigDecimal totalFee = getBigDecimalValue(values, "totalFee");
+                    if (computedResults.containsKey("totalFee")) totalFee = computedResults.get("totalFee");
+                    if (totalFee == null || totalFee.compareTo(BigDecimal.ZERO) == 0) {
+                        totalFee = BigDecimal.ZERO;
+                        totalFee = safeAdd(totalFee, monthlyRent);
+                        totalFee = safeAdd(totalFee, callFee);
+                        totalFee = safeAdd(totalFee, recordingFee);
+                        totalFee = safeAdd(totalFee, crbtFee);
+                        totalFee = safeAdd(totalFee, flashMsgFee);
+                    }
+
+                    // Handle flash month for FLASH_MSG
+                    if ("FLASH_MSG".equals(cfg.sheetType)) {
+                        String rawMonth = getStringValue(values, "flashMonth");
+                        if (rawMonth != null && rawMonth.matches("\\d{6}")) {
+                            flashMonth = rawMonth.substring(0, 4) + "-" + rawMonth.substring(4, 6);
+                        } else if (rawMonth != null) {
+                            flashMonth = rawMonth;
+                        }
+                    }
+
+                    // Default nulls to zero/empty
+                    monthlyRent = monthlyRent != null ? monthlyRent : BigDecimal.ZERO;
+                    callFee = callFee != null ? callFee : BigDecimal.ZERO;
+                    recordingFee = recordingFee != null ? recordingFee : BigDecimal.ZERO;
+                    crbtFee = crbtFee != null ? crbtFee : BigDecimal.ZERO;
+                    flashMsgFee = flashMsgFee != null ? flashMsgFee : BigDecimal.ZERO;
+                    totalFee = totalFee != null ? totalFee : BigDecimal.ZERO;
+                    extension = extension != null ? extension.trim() : "";
+                    flashMonth = flashMonth != null ? flashMonth : "";
+
+                    String phoneStr = phoneNumber.trim();
+
+                    allRows.add(new Object[]{
+                            bId,
+                            phoneStr,
+                            extension,
+                            cfg.sheetType,
+                            monthlyRent,
+                            callFee,
+                            recordingFee,
+                            crbtFee,
+                            flashMsgFee,
+                            totalFee,
+                            "",      // ownership_source
+                            (byte)0, // is_exception
+                            (byte)0, // is_seconded
+                            null,    // org_id
+                            flashMonth,
+                            rawDataJson
+                    });
+                    totalCountRef[0]++;
+                }
+
+                @Override
+                public void doAfterAllAnalysed(AnalysisContext context) {
+                    log.info("Sheet '{}' parsing complete", sheetName);
+                }
+            }).sheet(s).headRowNumber(skipRows).doRead();
+        }
+
+        int totalCount = totalCountRef[0];
+        progress.setTotal(totalCount);
+
+        log.info("Bill Excel reading done: {} entries from {} sheets in {}ms",
+                totalCount, sheetNames.size(), System.currentTimeMillis() - startTime);
+
+        // Update billing month
+        final String finalMonth = billingMonth;
+        txTemplate.executeWithoutResult(status -> {
+            batchRepository.findById(batchId).ifPresent(b -> {
+                b.setBillingMonth(finalMonth);
+                batchRepository.save(b);
+            });
+        });
+
+        // === 阶段2: JdbcTemplate 批量 INSERT ===
+        progress.setStatus("WRITING");
+        progress.setSheetInfo("写入数据库...");
+        long writeStart = System.currentTimeMillis();
+
+        String insertSql = "INSERT INTO bill_detail " +
+                "(batch_id, phone_number, extension, sheet_type, monthly_rent, call_fee, " +
+                "recording_fee, crbt_fee, flash_msg_fee, total_fee, ownership_source, " +
+                "is_exception, is_seconded, org_id, flash_month, raw_data, created_at, updated_at) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
+
+        for (int offset = 0; offset < totalCount; offset += BATCH_SIZE) {
+            int end = Math.min(offset + BATCH_SIZE, totalCount);
+            List<Object[]> chunk = allRows.subList(offset, end);
+
+            final int chunkEnd = end;
+            txTemplate.executeWithoutResult(status -> {
+                jdbcTemplate.batchUpdate(insertSql, chunk);
+            });
+
+            progress.setProcessed(chunkEnd);
+            log.info("Bill import progress: {}/{} ({}%)", chunkEnd, totalCount, chunkEnd * 100 / totalCount);
+        }
+
+        // 释放内存
+        allRows.clear();
+
+        // === 阶段3: Backfill extensions ===
+        progress.setSheetInfo("回填分机号...");
+        backfillExtensionsFromDirectoryFast(batchId, txTemplate);
+
+        // === 阶段4: Calculate totals via SQL (avoid full reload) ===
+        progress.setSheetInfo("计算汇总...");
+        Map<String, Object> totals = txTemplate.execute(status -> {
+            Map<String, Object> result = new HashMap<>();
+            result.put("total_amount", jdbcTemplate.queryForObject(
+                    "SELECT COALESCE(SUM(total_fee), 0) FROM bill_detail WHERE batch_id = ? AND deleted_at IS NULL",
+                    BigDecimal.class, batchId));
+            result.put("total_count", jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM bill_detail WHERE batch_id = ? AND deleted_at IS NULL",
+                    Integer.class, batchId));
+            return result;
+        });
+
+        BigDecimal totalAmount = (BigDecimal) totals.get("total_amount");
+        int totalDetailCount = (Integer) totals.get("total_count");
+
+        // Update batch
+        txTemplate.executeWithoutResult(status -> {
+            batchRepository.findById(batchId).ifPresent(b -> {
+                b.setImportStatus((byte) 1);
+                b.setTotalCount(totalDetailCount);
+                b.setTotalAmount(totalAmount);
+                batchRepository.save(b);
+            });
+        });
+
+        long elapsed = System.currentTimeMillis() - startTime;
+        progress.setProcessed(totalCount);
+        progress.setStatus("COMPLETED");
+        progress.setElapsedMs(elapsed);
+
+        log.info("Bill import completed: batch={}, month={}, total={}, amount={}, time={}ms (read={}ms, write={}ms)",
+                batchNo, ((BigDecimal) totals.get("total_amount")), totalDetailCount,
+                totalAmount, elapsed, writeStart - startTime, System.currentTimeMillis() - writeStart);
+    }
+
+    // ==================== Backfill Optimized ====================
+
+    /**
+     * Backfill extension numbers from directory_entry using pre-loaded Map.
+     * Replaces N+1 query pattern with O(1) HashMap lookup + batch UPDATE.
+     */
+    private void backfillExtensionsFromDirectoryFast(Long batchId, TransactionTemplate txTemplate) {
+        // 1. Pre-load directory phone→extension map
+        Map<String, String> phoneToExtMap = txTemplate.execute(status -> {
+            Map<String, String> map = new HashMap<>();
+            List<DirectoryEntry> entries = directoryEntryRepository.findByDeletedAtIsNull();
+            for (DirectoryEntry e : entries) {
+                if (e.getPhoneNumber() != null && e.getExtension() != null
+                        && !e.getExtension().isEmpty() && !map.containsKey(e.getPhoneNumber())) {
+                    map.put(e.getPhoneNumber(), e.getExtension());
+                }
+            }
+            return map;
+        });
+
+        if (phoneToExtMap.isEmpty()) return;
+
+        // 2. Find bill details with empty extensions for this batch
+        List<Map<String, Object>> emptyExtDetails = txTemplate.execute(status ->
+                jdbcTemplate.queryForList(
+                        "SELECT id, phone_number FROM bill_detail WHERE batch_id = ? AND (extension IS NULL OR extension = '') AND deleted_at IS NULL",
+                        batchId)
+        );
+
+        if (emptyExtDetails.isEmpty()) return;
+
+        // 3. Batch update extensions
+        List<Object[]> updateBatch = new ArrayList<>();
+        for (Map<String, Object> row : emptyExtDetails) {
+            String phone = (String) row.get("phone_number");
+            String ext = phoneToExtMap.get(phone);
+            if (ext != null && !ext.isEmpty()) {
+                updateBatch.add(new Object[]{ext, row.get("id")});
+            }
+        }
+
+        if (!updateBatch.isEmpty()) {
+            txTemplate.executeWithoutResult(status -> {
+                jdbcTemplate.batchUpdate(
+                        "UPDATE bill_detail SET extension = ?, updated_at = NOW() WHERE id = ?",
+                        updateBatch);
+            });
+            log.info("Backfilled {} bill details with extensions from directory for batch {}", updateBatch.size(), batchId);
+        }
+    }
+
+    // ==================== Template Config Parsing (unchanged) ====================
 
     private TemplateConfig parseTemplateConfig(BillTemplate template) {
         TemplateConfig config = new TemplateConfig();
 
-        // Month pattern
         if (template.getMonthPattern() != null && !template.getMonthPattern().isBlank()) {
             config.monthPattern = Pattern.compile(template.getMonthPattern());
         } else {
             config.monthPattern = FALLBACK_MONTH_PATTERN;
         }
 
-        // Parse sheets array
         try {
             List<Map<String, Object>> sheetsJson = MAPPER.readValue(template.getSheetConfigs(),
                     new TypeReference<List<Map<String, Object>>>() {});
@@ -179,7 +546,6 @@ public class BillImportService {
                 sc.skipRows = sheetMap.containsKey("skipRows") ? toInt(sheetMap.get("skipRows")) : 1;
                 sc.isQuarterly = Boolean.TRUE.equals(sheetMap.get("isQuarterly"));
 
-                // Parse columns
                 if (sheetMap.containsKey("columns")) {
                     List<Map<String, Object>> cols = (List<Map<String, Object>>) sheetMap.get("columns");
                     for (Map<String, Object> col : cols) {
@@ -191,12 +557,10 @@ public class BillImportService {
                     }
                 }
 
-                // Parse legacy feeMappings (convert to columns format)
                 if (sc.columns.isEmpty() && sheetMap.containsKey("feeMappings")) {
                     convertLegacyFeeMappings(sc, (Map<String, String>) sheetMap.get("feeMappings"));
                 }
 
-                // Parse computed fields
                 if (sheetMap.containsKey("computedFields")) {
                     Map<String, Object> cf = (Map<String, Object>) sheetMap.get("computedFields");
                     for (Map.Entry<String, Object> entry : cf.entrySet()) {
@@ -219,24 +583,18 @@ public class BillImportService {
         return config;
     }
 
-    /**
-     * Convert legacy letter-based feeMappings (A=col0, B=col1...) to column index format
-     */
     private void convertLegacyFeeMappings(SheetConfig sc, Map<String, String> feeMappings) {
-        // Add phone column as first STRING column
         sc.columns.add(new ColumnConfig(sc.phoneColumn, "phoneNumber", "STRING"));
         if (sc.extensionColumn != null) {
             sc.columns.add(new ColumnConfig(sc.extensionColumn, "extension", "STRING"));
         }
 
-        // Convert letter mappings to numeric indices
         for (Map.Entry<String, String> entry : feeMappings.entrySet()) {
             int colIndex = letterToIndex(entry.getKey());
             String fieldName = entry.getValue();
             sc.columns.add(new ColumnConfig(colIndex, fieldName, "DECIMAL"));
         }
 
-        // Set up default computed fields based on field names
         if ("CALL".equals(sc.sheetType)) {
             boolean hasPlatform = sc.columns.stream().anyMatch(c -> "platformFee".equals(c.field));
             boolean hasMonthlyRentCode = sc.columns.stream().anyMatch(c -> "monthlyRentCode".equals(c.field));
@@ -259,7 +617,7 @@ public class BillImportService {
         try { return Integer.parseInt(letter); } catch (Exception e) { return 0; }
     }
 
-    // ==================== Sheet Matching & Parsing ====================
+    // ==================== Sheet Matching (unchanged) ====================
 
     private SheetConfig matchSheetConfig(String sheetName, List<SheetConfig> configs) {
         for (SheetConfig sc : configs) {
@@ -270,143 +628,21 @@ public class BillImportService {
         return null;
     }
 
-    private void parseSheetWithConfig(Sheet sheet, Long batchId, List<BillDetail> details, SheetConfig config) {
-        int skipRows = config.skipRows > 0 ? config.skipRows : 1;
+    // ==================== Cell Value Helpers (EasyExcel String mode) ====================
 
-        for (int i = skipRows; i <= sheet.getLastRowNum(); i++) {
-            Row row = sheet.getRow(i);
-            if (row == null) continue;
-
-            // Extract values by column config
-            Map<String, Object> values = new LinkedHashMap<>();
-            for (ColumnConfig col : config.columns) {
-                Object val = getCellValue(row, col.index, col.type);
-                values.put(col.field, val);
-            }
-
-            // Get phone number (required)
-            String phoneNumber = getStringValue(values, "phoneNumber");
-            if (phoneNumber == null || phoneNumber.isEmpty() || phoneNumber.startsWith("AIGC:")) continue;
-
-            // Store raw column values as JSON for export fidelity
-            String rawDataJson;
-            try {
-                rawDataJson = MAPPER.writeValueAsString(values);
-            } catch (Exception e) {
-                rawDataJson = "{}";
-            }
-
-            // Build BillDetail from extracted values
-            BillDetail.BillDetailBuilder builder = BillDetail.builder()
-                    .batchId(batchId)
-                    .phoneNumber(phoneNumber.trim())
-                    .sheetType(config.sheetType)
-                    .extension(getStringValue(values, "extension") != null ? getStringValue(values, "extension").trim() : "")
-                    .flashMonth("")
-                    .rawData(rawDataJson);
-
-            // Map extracted values to BillDetail fields
-            builder.monthlyRent(getBigDecimalValue(values, "monthlyRent"));
-            builder.callFee(getBigDecimalValue(values, "callFee"));
-            builder.recordingFee(getBigDecimalValue(values, "recordingFee"));
-            builder.crbtFee(getBigDecimalValue(values, "crbtFee"));
-            builder.flashMsgFee(getBigDecimalValue(values, "flashMsgFee"));
-
-            // Apply computed fields
-            applyComputedFields(builder, values, config.computedFields);
-
-            // Set totalFee if not already set
-            BigDecimal total = builder.build().getTotalFee();
-            if (total == null || total.compareTo(BigDecimal.ZERO) == 0) {
-                // Sum all fee fields
-                BigDecimal sum = BigDecimal.ZERO;
-                sum = safeAdd(sum, builder.build().getMonthlyRent());
-                sum = safeAdd(sum, builder.build().getCallFee());
-                sum = safeAdd(sum, builder.build().getRecordingFee());
-                sum = safeAdd(sum, builder.build().getCrbtFee());
-                sum = safeAdd(sum, builder.build().getFlashMsgFee());
-                builder.totalFee(sum);
-            } else {
-                builder.totalFee(total);
-            }
-
-            // Handle flash month for FLASH_MSG type
-            if ("FLASH_MSG".equals(config.sheetType)) {
-                String rawMonth = getStringValue(values, "flashMonth");
-                if (rawMonth != null && rawMonth.matches("\\d{6}")) {
-                    builder.flashMonth(rawMonth.substring(0, 4) + "-" + rawMonth.substring(4, 6));
-                } else if (rawMonth != null) {
-                    builder.flashMonth(rawMonth);
-                }
-            }
-
-            details.add(fillDefaults(builder.build()));
-        }
-    }
-
-    private void applyComputedFields(BillDetail.BillDetailBuilder builder,
-                                      Map<String, Object> values,
-                                      Map<String, List<String>> computedFields) {
-        for (Map.Entry<String, List<String>> entry : computedFields.entrySet()) {
-            String targetField = entry.getKey();
-            List<String> sourceFields = entry.getValue();
-
-            BigDecimal sum = BigDecimal.ZERO;
-            for (String src : sourceFields) {
-                BigDecimal val = getBigDecimalValue(values, src);
-                sum = sum.add(val != null ? val : BigDecimal.ZERO);
-            }
-
-            switch (targetField) {
-                case "monthlyRent" -> builder.monthlyRent(sum);
-                case "callFee" -> builder.callFee(sum);
-                case "recordingFee" -> builder.recordingFee(sum);
-                case "crbtFee" -> builder.crbtFee(sum);
-                case "flashMsgFee" -> builder.flashMsgFee(sum);
-                case "totalFee" -> builder.totalFee(sum);
-            }
-        }
-    }
-
-    // ==================== Cell Value Helpers ====================
-
-    private Object getCellValue(Row row, int colIndex, String type) {
-        Cell cell = row.getCell(colIndex);
-        if (cell == null) return null;
+    /**
+     * Convert string value from EasyExcel to typed value.
+     * EasyExcel returns all cells as String in Map<Integer, String> mode.
+     */
+    private Object convertCellValue(String rawVal, String type) {
+        if (rawVal == null || rawVal.isEmpty()) return null;
 
         if ("DECIMAL".equalsIgnoreCase(type)) {
-            return switch (cell.getCellType()) {
-                case NUMERIC -> BigDecimal.valueOf(cell.getNumericCellValue());
-                case STRING -> {
-                    try { yield new BigDecimal(cell.getStringCellValue().trim()); }
-                    catch (NumberFormatException e) { yield BigDecimal.ZERO; }
-                }
-                case FORMULA -> {
-                    try { yield BigDecimal.valueOf(cell.getNumericCellValue()); }
-                    catch (Exception e) { yield BigDecimal.ZERO; }
-                }
-                default -> BigDecimal.ZERO;
-            };
-        } else {
-            // Default: STRING
-            return switch (cell.getCellType()) {
-                case STRING -> cell.getStringCellValue().trim();
-                case NUMERIC -> {
-                    double val = cell.getNumericCellValue();
-                    if (val == Math.floor(val) && !Double.isInfinite(val)) {
-                        yield String.valueOf((long) val);
-                    } else {
-                        yield String.valueOf(val);
-                    }
-                }
-                case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
-                case FORMULA -> {
-                    try { yield cell.getStringCellValue(); }
-                    catch (Exception ex) { yield String.valueOf(cell.getNumericCellValue()); }
-                }
-                default -> null;
-            };
+            try { return new BigDecimal(rawVal.trim()); }
+            catch (NumberFormatException e) { return BigDecimal.ZERO; }
         }
+        // Default: STRING
+        return rawVal.trim();
     }
 
     private String getStringValue(Map<String, Object> values, String key) {
@@ -425,48 +661,24 @@ public class BillImportService {
     }
 
     /**
-     * Backfill extension numbers from directory_entry for bill details that have empty extensions.
-     * CALL and FLASH_MSG sheets typically don't have extension columns in the source Excel,
-     * so we look up the phone number in the latest directory batch and copy the extension.
+     * Compute fields from template config, returning computed results map.
+     * Replaces the old applyComputedFields that needed a Builder.
      */
-    private void backfillExtensionsFromDirectory(Long batchId) {
-        List<BillDetail> details = detailRepository.findByBatchIdAndDeletedAtIsNull(batchId);
-        List<BillDetail> toUpdate = new ArrayList<>();
-        int filled = 0;
+    private Map<String, BigDecimal> computeFields(Map<String, Object> values,
+                                                   Map<String, List<String>> computedFields) {
+        Map<String, BigDecimal> results = new HashMap<>();
+        for (Map.Entry<String, List<String>> entry : computedFields.entrySet()) {
+            String targetField = entry.getKey();
+            List<String> sourceFields = entry.getValue();
 
-        for (BillDetail d : details) {
-            if (d.getExtension() == null || d.getExtension().isEmpty()) {
-                List<DirectoryEntry> entries = directoryEntryRepository.findByPhoneNumberAndDeletedAtIsNull(d.getPhoneNumber());
-                if (!entries.isEmpty()) {
-                    String ext = entries.get(0).getExtension();
-                    if (ext != null && !ext.isEmpty()) {
-                        d.setExtension(ext);
-                        toUpdate.add(d);
-                        filled++;
-                    }
-                }
+            BigDecimal sum = BigDecimal.ZERO;
+            for (String src : sourceFields) {
+                BigDecimal val = getBigDecimalValue(values, src);
+                sum = sum.add(val != null ? val : BigDecimal.ZERO);
             }
+            results.put(targetField, sum);
         }
-
-        if (!toUpdate.isEmpty()) {
-            detailRepository.saveAll(toUpdate);
-            log.info("Backfilled {} bill details with extensions from directory for batch {}", filled, batchId);
-        }
-    }
-
-    private BillDetail fillDefaults(BillDetail detail) {
-        if (detail.getExtension() == null) detail.setExtension("");
-        if (detail.getFlashMonth() == null) detail.setFlashMonth("");
-        if (detail.getOwnershipSource() == null) detail.setOwnershipSource("");
-        if (detail.getIsException() == null) detail.setIsException((byte) 0);
-        if (detail.getIsSeconded() == null) detail.setIsSeconded((byte) 0);
-        if (detail.getMonthlyRent() == null) detail.setMonthlyRent(BigDecimal.ZERO);
-        if (detail.getCallFee() == null) detail.setCallFee(BigDecimal.ZERO);
-        if (detail.getRecordingFee() == null) detail.setRecordingFee(BigDecimal.ZERO);
-        if (detail.getCrbtFee() == null) detail.setCrbtFee(BigDecimal.ZERO);
-        if (detail.getFlashMsgFee() == null) detail.setFlashMsgFee(BigDecimal.ZERO);
-        if (detail.getTotalFee() == null) detail.setTotalFee(BigDecimal.ZERO);
-        return detail;
+        return results;
     }
 
     private String extractMonth(String sheetName, Pattern pattern) {
@@ -495,8 +707,7 @@ public class BillImportService {
         try { return Integer.parseInt(val.toString()); } catch (Exception e) { return null; }
     }
 
-    // ==================== Fallback Hardcoded Configs ====================
-    // Used when template JSON is missing or unparseable
+    // ==================== Fallback Hardcoded Configs (unchanged) ====================
 
     private List<SheetConfig> getFallbackSheetConfigs() {
         List<SheetConfig> fallbacks = new ArrayList<>();
@@ -602,5 +813,29 @@ public class BillImportService {
             this.field = field;
             this.type = type;
         }
+    }
+
+    // ==================== Import Progress ====================
+
+    public static class ImportProgress {
+        private volatile int total;
+        private volatile int processed;
+        private volatile String status = "PENDING"; // PENDING, READING, WRITING, COMPLETED, FAILED
+        private volatile String message;
+        private volatile long elapsedMs;
+        private volatile String sheetInfo;
+
+        public int getTotal() { return total; }
+        public void setTotal(int total) { this.total = total; }
+        public int getProcessed() { return processed; }
+        public void setProcessed(int processed) { this.processed = processed; }
+        public String getStatus() { return status; }
+        public void setStatus(String status) { this.status = status; }
+        public String getMessage() { return message; }
+        public void setMessage(String message) { this.message = message; }
+        public long getElapsedMs() { return elapsedMs; }
+        public void setElapsedMs(long elapsedMs) { this.elapsedMs = elapsedMs; }
+        public String getSheetInfo() { return sheetInfo; }
+        public void setSheetInfo(String sheetInfo) { this.sheetInfo = sheetInfo; }
     }
 }

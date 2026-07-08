@@ -1,6 +1,6 @@
 import { apiGet, apiPost } from '../lib/request';
 import { useAuthStore } from '../store/auth';
-import type { AllocationResult, L1SummaryRow } from '../types/allocation';
+import type { AllocationResult, L1SummaryRow, AllocationDetailRow, AllocationResultPage } from '../types/allocation';
 import type { OwnershipBatch, DirectoryBatch } from '../types/import';
 
 // ==================== Snapshot ====================
@@ -25,8 +25,8 @@ export const calculateAllocation = (billBatchId: number, ownershipBatchId?: numb
     ...(directoryBatchId != null ? { directory_batch_id: directoryBatchId } : {}),
   });
 
-export const getAllocationResults = (batchId: number) =>
-  apiGet<AllocationResult[]>(`/allocation/results/${batchId}`);
+export const getAllocationResults = (batchId: number, page = 0, size = 200, signal?: AbortSignal) =>
+  apiGet<AllocationResultPage>(`/allocation/results/${batchId}?page=${page}&size=${size}`, undefined, signal);
 
 export const confirmAllocation = (batchId: number, orgId: number) =>
   apiPost<{ org_id: number; confirm_status: number }>('/allocation/confirm', { batch_id: batchId, org_id: orgId });
@@ -41,37 +41,55 @@ export const getL1SummaryData = (batchId: number) =>
   apiGet<L1SummaryRow[]>(`/allocation/l1-summary-data?batchId=${batchId}`);
 
 export const getL1DetailData = (batchId: number, sheetType: string) =>
-  apiGet<Record<string, unknown>[]>(`/allocation/l1-detail?batchId=${batchId}&sheetType=${sheetType}`);
+  apiGet<AllocationDetailRow[]>(`/allocation/l1-detail?batchId=${batchId}&sheetType=${sheetType}`);
 
 export const getL2DetailData = (batchId: number, branchOrgId: number, sheetType: string) =>
-  apiGet<Record<string, unknown>[]>(`/allocation/l2-detail?batchId=${batchId}&branchOrgId=${branchOrgId}&sheetType=${sheetType}`);
+  apiGet<AllocationDetailRow[]>(`/allocation/l2-detail?batchId=${batchId}&branchOrgId=${branchOrgId}&sheetType=${sheetType}`);
 
 export const getL3DetailData = (batchId: number, subBranchOrgId: number, sheetType: string) =>
-  apiGet<Record<string, unknown>[]>(`/allocation/l3-detail?batchId=${batchId}&subBranchOrgId=${subBranchOrgId}&sheetType=${sheetType}`);
+  apiGet<AllocationDetailRow[]>(`/allocation/l3-detail?batchId=${batchId}&subBranchOrgId=${subBranchOrgId}&sheetType=${sheetType}`);
 
-// ==================== Export URLs ====================
+// ==================== Export (secure fetch-based) ====================
 
 /**
- * Build export URL with JWT token as query parameter
- * The backend export endpoints now require authentication,
- * so we pass the token as a query param since window.open() can't set headers.
+ * Secure file download using fetch + Blob (avoids JWT in URL query params)
+ * The backend export endpoints require Authorization header;
+ * we use fetch() to set the header and then trigger a browser download via Blob URL.
  */
-export const getExportSummaryUrl = (batchId: number, branchOrgId?: number) => {
+const downloadExport = async (url: string, filename: string) => {
   const token = useAuthStore.getState().token;
-  let url = `/api/allocation/export/summary?batchId=${batchId}&token=${token}`;
-  if (branchOrgId) url += `&branchOrgId=${branchOrgId}`;
-  return url;
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) throw new Error(`Export failed: ${response.status}`);
+  const blob = await response.blob();
+  const blobUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = blobUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(blobUrl);
 };
 
-export const getExportDetailUrl = (batchId: number, branchOrgId?: number) => {
-  const token = useAuthStore.getState().token;
-  let url = `/api/allocation/export/detail?batchId=${batchId}&token=${token}`;
+export const exportSummary = (batchId: number, branchOrgId?: number) => {
+  let url = `/api/allocation/export/summary?batchId=${batchId}`;
   if (branchOrgId) url += `&branchOrgId=${branchOrgId}`;
-  return url;
+  const ts = new Date().toISOString().slice(0, 10);
+  return downloadExport(url, `费用分摊汇总_${ts}.xlsx`);
 };
 
-export const getL1SummaryUrl = (batchId: number) => {
-  const token = useAuthStore.getState().token;
-  return `/api/allocation/export/l1-summary?batchId=${batchId}&token=${token}`;
+export const exportDetail = (batchId: number, branchOrgId?: number) => {
+  let url = `/api/allocation/export/detail?batchId=${batchId}`;
+  if (branchOrgId) url += `&branchOrgId=${branchOrgId}`;
+  const ts = new Date().toISOString().slice(0, 10);
+  return downloadExport(url, `费用分摊明细_${ts}.xlsx`);
+};
+
+export const exportL1Summary = (batchId: number) => {
+  const url = `/api/allocation/export/l1-summary?batchId=${batchId}`;
+  const ts = new Date().toISOString().slice(0, 10);
+  return downloadExport(url, `一级分行汇总_${ts}.xlsx`);
 };
 

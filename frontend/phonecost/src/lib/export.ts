@@ -8,11 +8,12 @@ interface ExportColumn {
 
 /**
  * Export data as CSV file with BOM (for Excel Chinese compatibility)
+ * Accepts both typed arrays and plain Record arrays
  */
-export function exportCSV(
+export function exportCSV<T extends Record<string, unknown> = Record<string, unknown>>(
   filename: string,
   columns: ExportColumn[],
-  data: Record<string, unknown>[],
+  data: T[],
 ) {
   // Header row
   const header = columns.map(c => `"${c.title}"`).join(',');

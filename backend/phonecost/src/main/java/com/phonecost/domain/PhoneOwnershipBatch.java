@@ -1,8 +1,12 @@
 package com.phonecost.domain;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.ColumnDefault;
+import org.hibernate.annotations.Where;
 import lombok.*;
+import org.hibernate.annotations.ColumnDefault;
 
+@Where(clause = "deleted_at IS NULL")
 @Entity
 @Table(name = "phone_ownership_batch")
 @Getter

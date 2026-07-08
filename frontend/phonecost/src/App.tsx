@@ -1,7 +1,7 @@
 import React, { Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ConfigProvider, Spin } from 'antd';
+import { ConfigProvider, Spin, Result, Button } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import enUS from 'antd/locale/en_US';
 import { useTranslation } from 'react-i18next';
@@ -13,7 +13,6 @@ import Login from './pages/Login';
 
 // 路由级懒加载
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
-const DataImport = React.lazy(() => import('./pages/DataImport'));
 const BillManagement = React.lazy(() => import('./pages/BillManagement'));
 const L1SummaryPage = React.lazy(() => import('./pages/L1SummaryPage'));
 const L2BranchPage = React.lazy(() => import('./pages/L2BranchPage'));
@@ -22,12 +21,14 @@ const FeeAnalysisPage = React.lazy(() => import('./pages/FeeAnalysisPage'));
 const Organization = React.lazy(() => import('./pages/Organization'));
 const PhoneNumberOwnership = React.lazy(() => import('./pages/PhoneNumberOwnership'));
 const DepartmentOwnership = React.lazy(() => import('./pages/DepartmentOwnership'));
+const RecordingDataPage = React.lazy(() => import('./pages/RecordingDataPage'));
 const DirectoryPage = React.lazy(() => import('./pages/DirectoryPage'));
 const UserManagement = React.lazy(() => import('./pages/UserManagement'));
 const TemplateManagement = React.lazy(() => import('./pages/TemplateManagement'));
 const RoleManagement = React.lazy(() => import('./pages/RoleManagement'));
 const AuditLogPage = React.lazy(() => import('./pages/AuditLogPage'));
 const DataMaintenancePage = React.lazy(() => import('./pages/DataMaintenancePage'));
+const AnnouncementPage = React.lazy(() => import('./pages/AnnouncementPage'));
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30000 } } });
 
@@ -37,9 +38,42 @@ const PageLoading = () => (
   </div>
 );
 
-const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+// ============ 路由级 ErrorBoundary + Suspense 统一包裹 ============
+const LazyRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <ErrorBoundary>
+    <Suspense fallback={<PageLoading />}>
+      {children}
+    </Suspense>
+  </ErrorBoundary>
+);
+
+// ============ PrivateRoute: 支持 RBAC 角色守卫 ============
+// role: 1=管理员 2=运维 3=财务 4=领导
+const ROLE_NAMES: Record<number, string> = { 1: '管理员', 2: '运维', 3: '财务', 4: '领导' };
+
+const PrivateRoute: React.FC<{
+  children: React.ReactNode;
+  allowedRoles?: number[];
+}> = ({ children, allowedRoles }) => {
   const token = useAuthStore((s) => s.token);
-  return token ? <>{children}</> : <Navigate to="/login" replace />;
+  const role = useAuthStore((s) => s.role);
+
+  if (!token) return <Navigate to="/login" replace />;
+
+  if (allowedRoles && role && !allowedRoles.includes(role)) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
+        <Result
+          status="403"
+          title="无访问权限"
+          subTitle={`当前角色「${ROLE_NAMES[role] || '未知'}」无权访问此页面`}
+          extra={<Button type="primary" onClick={() => { window.location.href = '/'; }}>返回首页</Button>}
+        />
+      </div>
+    );
+  }
+
+  return <>{children}</>;
 };
 
 const AntdLocaleWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -52,34 +86,34 @@ const App: React.FC = () => (
   <AntdLocaleWrapper>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <ErrorBoundary>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/" element={<PrivateRoute><AppLayout /></PrivateRoute>}>
-              <Route index element={<Suspense fallback={<PageLoading />}><Dashboard /></Suspense>} />
-              <Route path="import" element={<Suspense fallback={<PageLoading />}><DataImport /></Suspense>} />
-              <Route path="bill" element={<Suspense fallback={<PageLoading />}><BillManagement /></Suspense>} />
-              <Route path="allocation" element={<Suspense fallback={<PageLoading />}><L1SummaryPage /></Suspense>} />
-              <Route path="allocation/branch" element={<Suspense fallback={<PageLoading />}><L2BranchPage /></Suspense>} />
-              <Route path="allocation/sub-branch" element={<Suspense fallback={<PageLoading />}><L3SubBranchPage /></Suspense>} />
-              <Route path="allocation/analysis" element={<Suspense fallback={<PageLoading />}><FeeAnalysisPage /></Suspense>} />
-              <Route path="org" element={<Suspense fallback={<PageLoading />}><Organization /></Suspense>} />
-              <Route path="base/phone-ownership" element={<Suspense fallback={<PageLoading />}><PhoneNumberOwnership /></Suspense>} />
-              <Route path="base/dept-ownership" element={<Suspense fallback={<PageLoading />}><DepartmentOwnership /></Suspense>} />
-              <Route path="base/directory" element={<Suspense fallback={<PageLoading />}><DirectoryPage /></Suspense>} />
-              <Route path="settings/users" element={<Suspense fallback={<PageLoading />}><UserManagement /></Suspense>} />
-              <Route path="settings/roles" element={<Suspense fallback={<PageLoading />}><RoleManagement /></Suspense>} />
-              <Route path="settings/audit-log" element={<Suspense fallback={<PageLoading />}><AuditLogPage /></Suspense>} />
-              <Route path="settings/data-maintenance" element={<Suspense fallback={<PageLoading />}><DataMaintenancePage /></Suspense>} />
-              <Route path="templates" element={<Suspense fallback={<PageLoading />}><TemplateManagement /></Suspense>} />
-              {/* Redirect old paths */}
-              <Route path="settings" element={<Navigate to="/settings/users" replace />} />
-              <Route path="audit-log" element={<Navigate to="/settings/audit-log" replace />} />
-              {/* 404 catch-all */}
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Route>
-          </Routes>
-        </ErrorBoundary>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/" element={<PrivateRoute><AppLayout /></PrivateRoute>}>
+            <Route index element={<LazyRoute><Dashboard /></LazyRoute>} />
+            <Route path="bill" element={<LazyRoute><BillManagement /></LazyRoute>} />
+            <Route path="allocation" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2, 3, 4]}><L1SummaryPage /></PrivateRoute></LazyRoute>} />
+            <Route path="allocation/branch" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2, 3, 4]}><L2BranchPage /></PrivateRoute></LazyRoute>} />
+            <Route path="allocation/sub-branch" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2, 3, 4]}><L3SubBranchPage /></PrivateRoute></LazyRoute>} />
+            <Route path="allocation/analysis" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2, 3]}><FeeAnalysisPage /></PrivateRoute></LazyRoute>} />
+            <Route path="org" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><Organization /></PrivateRoute></LazyRoute>} />
+            <Route path="base/phone-ownership" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><PhoneNumberOwnership /></PrivateRoute></LazyRoute>} />
+            <Route path="base/dept-ownership" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><DepartmentOwnership /></PrivateRoute></LazyRoute>} />
+            <Route path="base/recording-data" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><RecordingDataPage /></PrivateRoute></LazyRoute>} />
+            <Route path="base/directory" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><DirectoryPage /></PrivateRoute></LazyRoute>} />
+            {/* 系统管理页面：仅管理员(1)和运维(2)可访问 */}
+            <Route path="settings/users" element={<LazyRoute><PrivateRoute allowedRoles={[1]}><UserManagement /></PrivateRoute></LazyRoute>} />
+            <Route path="settings/roles" element={<LazyRoute><PrivateRoute allowedRoles={[1]}><RoleManagement /></PrivateRoute></LazyRoute>} />
+            <Route path="settings/announcements" element={<LazyRoute><PrivateRoute allowedRoles={[1]}><AnnouncementPage /></PrivateRoute></LazyRoute>} />
+            <Route path="settings/audit-log" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><AuditLogPage /></PrivateRoute></LazyRoute>} />
+            <Route path="settings/data-maintenance" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><DataMaintenancePage /></PrivateRoute></LazyRoute>} />
+            <Route path="templates" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><TemplateManagement /></PrivateRoute></LazyRoute>} />
+            {/* Redirect old paths */}
+            <Route path="settings" element={<Navigate to="/settings/users" replace />} />
+            <Route path="audit-log" element={<Navigate to="/settings/audit-log" replace />} />
+            {/* 404 catch-all */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Route>
+        </Routes>
       </BrowserRouter>
     </QueryClientProvider>
   </AntdLocaleWrapper>

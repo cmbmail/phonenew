@@ -305,7 +305,8 @@ const AuditLogPage: React.FC = () => {
       setData(result.content);
       setTotal(result.totalElements);
     } catch {
-      // silent
+      // FE-M-07 fix: show error instead of silent swallow
+      message.error('加载操作日志失败');
     } finally {
       setLoading(false);
     }

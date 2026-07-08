@@ -6,8 +6,8 @@ Requires=mysqld.service redis.service
 [Service]
 Type=simple
 User=admin
-WorkingDirectory=/data/apps/phonecost/backend/phonecost
-ExecStart=/usr/bin/java -jar target/phonecost-0.1.0-SNAPSHOT.jar --spring.profiles.active=prod
+WorkingDirectory=/data/apps/phonecost/backend
+ExecStart=/usr/bin/java -jar phonecost.jar --spring.profiles.active=prod
 Restart=always
 RestartSec=10
 # 以下环境变量必填，安装时由脚本自动替换或手动填写
@@ -20,6 +20,7 @@ Environment=REDIS_HOST=localhost
 Environment=REDIS_PORT=6379
 Environment=REDIS_PASSWORD=PLACEHOLDER_REDIS_PASSWORD
 Environment=JWT_SECRET=PLACEHOLDER_JWT_SECRET
+Environment=CORS_ALLOWED_ORIGINS=PLACEHOLDER_CORS_ORIGINS
 
 [Install]
 WantedBy=multi-user.target

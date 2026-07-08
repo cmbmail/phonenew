@@ -1,9 +1,14 @@
 package com.phonecost.domain;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import org.hibernate.annotations.ColumnDefault;
+import org.hibernate.annotations.Where;
 import jakarta.persistence.*;
+import org.hibernate.annotations.ColumnDefault;
 import lombok.*;
+import org.hibernate.annotations.ColumnDefault;
 
+@Where(clause = "deleted_at IS NULL")
 @Entity
 @Table(name = "sys_user")
 @Getter

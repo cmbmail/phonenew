@@ -320,7 +320,7 @@ export default function Dashboard() {
         </StatCard>
 
         <StatCard
-          title="组织规模"
+          title={t('dashboard.orgScale')}
           value={`${formatNumber(stats.org_count)}`}
           subtitle={`${t('dashboard.branchCount')}：${stats.branch_count} · ${t('dashboard.userCount')}：${stats.user_count}`}
           bgColor={COLORS.taupe}
@@ -329,11 +329,11 @@ export default function Dashboard() {
           <div style={{ display: 'flex', gap: 16 }}>
             <div>
               <div style={{ fontSize: 20, fontWeight: 600 }}>{formatNumber(stats.branch_count)}</div>
-              <div style={{ fontSize: 11, opacity: 0.7 }}>一级分行</div>
+              <div style={{ fontSize: 11, opacity: 0.7 }}>{t('dashboard.l1Branch')}</div>
             </div>
             <div>
               <div style={{ fontSize: 20, fontWeight: 600 }}>{formatNumber(stats.user_count)}</div>
-              <div style={{ fontSize: 11, opacity: 0.7 }}>系统用户</div>
+              <div style={{ fontSize: 11, opacity: 0.7 }}>{t('dashboard.systemUsers')}</div>
             </div>
           </div>
         </StatCard>

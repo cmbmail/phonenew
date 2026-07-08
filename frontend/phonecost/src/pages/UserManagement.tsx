@@ -34,6 +34,7 @@ import type { UserItem } from '../api/user';
 import { getOrgTree } from '../api/org';
 import type { Organization } from '../types/organization';
 import { ORG_TYPE_LABELS, ROLE_LABELS, ROLE_OPTIONS } from '../types/organization';
+import { buildOrgTree, buildOrgTreeSelectData } from '../utils/orgTree';
 import dayjs from 'dayjs';
 
 const ORG_TYPE_COLORS: Record<number, string> = {
@@ -44,59 +45,6 @@ const ORG_TYPE_COLORS: Record<number, string> = {
   5: COLORS.mauve,
   6: COLORS.sage,
 };
-
-function buildTree(list: Organization[]): DataNode[] {
-  const map = new Map<number, DataNode>();
-  const roots: DataNode[] = [];
-  list.forEach((org) => {
-    map.set(org.id, { key: org.id, title: org.name, children: [] });
-  });
-  list.forEach((org) => {
-    const node = map.get(org.id)!;
-    if (org.parent_id && map.has(org.parent_id)) {
-      map.get(org.parent_id)!.children!.push(node);
-    } else {
-      roots.push(node);
-    }
-  });
-  const markLeaf = (nodes: DataNode[]) => {
-    nodes.forEach((n) => {
-      if (!n.children || n.children.length === 0) n.isLeaf = true;
-      else markLeaf(n.children);
-    });
-  };
-  markLeaf(roots);
-  return roots;
-}
-
-function buildTreeSelectData(list: Organization[]): DataNode[] {
-  const map = new Map<number, DataNode>();
-  const roots: DataNode[] = [];
-  list.forEach((org) => {
-    map.set(org.id, {
-      key: org.id,
-      value: org.id,
-      title: org.name,
-      children: [],
-    });
-  });
-  list.forEach((org) => {
-    const node = map.get(org.id)!;
-    if (org.parent_id && map.has(org.parent_id)) {
-      map.get(org.parent_id)!.children!.push(node);
-    } else {
-      roots.push(node);
-    }
-  });
-  const markLeaf = (nodes: DataNode[]) => {
-    nodes.forEach((n) => {
-      if (!n.children || n.children.length === 0) n.isLeaf = true;
-      else markLeaf(n.children);
-    });
-  };
-  markLeaf(roots);
-  return roots;
-}
 
 export default function UserManagement() {
   const { t } = useTranslation();
@@ -112,6 +60,7 @@ export default function UserManagement() {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [resetModalOpen, setResetModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserItem | null>(null);
+  const [pageSize, setPageSize] = useState(20);
   const [addForm] = Form.useForm();
   const [editForm] = Form.useForm();
   const [resetForm] = Form.useForm();
@@ -119,8 +68,8 @@ export default function UserManagement() {
   const fetchUsers = useCallback(async (orgId?: number) => {
     setLoading(true);
     try {
-      const data = await getUsers(orgId);
-      setUsers(data);
+      const result = await getUsers(orgId);
+      setUsers(result.content);
     } catch {
       message.error(t('user.fetchFailed'));
     } finally {
@@ -132,9 +81,9 @@ export default function UserManagement() {
     try {
       const data = await getOrgTree();
       setOrgList(data);
-      const tree = buildTree(data);
+      const tree = buildOrgTree(data);
       setTreeData(tree);
-      setTreeSelectData(buildTreeSelectData(data));
+      setTreeSelectData(buildOrgTreeSelectData(data));
       // Default expand root level
       const rootKeys = tree.map(n => n.key);
       setExpandedKeys([...rootKeys]);
@@ -239,36 +188,41 @@ export default function UserManagement() {
     setResetModalOpen(true);
   };
 
+  const statusOptions = [
+    { value: 1, label: t('user.enabled') },
+    { value: 0, label: t('user.disabled') },
+  ];
+
   const columns = [
-    { title: '用户名', dataIndex: 'username', key: 'username', width: 120 },
-    { title: '姓名', dataIndex: 'real_name', key: 'real_name', width: 100 },
+    { title: t('user.colUsername'), dataIndex: 'username', key: 'username', width: 120 },
+    { title: t('user.colRealName'), dataIndex: 'real_name', key: 'real_name', width: 100 },
     {
-      title: '角色', dataIndex: 'role', key: 'role', width: 110,
-      render: (r: number) => <Tag color={r === 1 ? COLORS.sage : r === 2 ? COLORS.slate : r === 3 ? COLORS.taupe : COLORS.mauve}>{ROLE_LABELS[r] || '未知'}</Tag>,
+      title: t('user.colRole'), dataIndex: 'role', key: 'role', width: 110,
+      render: (r: number) => <Tag color={r === 1 ? COLORS.sage : r === 2 ? COLORS.slate : r === 3 ? COLORS.taupe : COLORS.mauve}>{ROLE_LABELS[r] || t('common.unknown')}</Tag>,
     },
     {
-      title: '所属组织', dataIndex: 'org_id', key: 'org_id', width: 180,
+      title: t('user.colOrg'), dataIndex: 'org_id', key: 'org_id', width: 180,
       render: (orgId: number | null) => orgId ? (orgNameMap.get(orgId) || '-') : '-',
     },
     {
-      title: '状态', dataIndex: 'status', key: 'status', width: 70, align: 'center' as const,
-      render: (s: number) => s === 1 ? <Badge status="success" text="启用" /> : <Badge status="error" text="停用" />,
+      title: t('user.colStatus'), dataIndex: 'status', key: 'status', width: 70, align: 'center' as const,
+      render: (s: number) => s === 1 ? <Badge status="success" text={t('user.enabled')} /> : <Badge status="error" text={t('user.disabled')} />,
     },
     {
-      title: '改密', dataIndex: 'must_change_pwd', key: 'must_change_pwd', width: 60, align: 'center' as const,
-      render: (v: number) => v === 1 ? <Tag color={COLORS.pending} style={{ fontSize: 11 }}>是</Tag> : <span style={{ color: '#ddd' }}>-</span>,
+      title: t('user.colMustChangePwd'), dataIndex: 'must_change_pwd', key: 'must_change_pwd', width: 60, align: 'center' as const,
+      render: (v: number) => v === 1 ? <Tag color={COLORS.pending} style={{ fontSize: 11 }}>{t('user.yes')}</Tag> : <span style={{ color: '#ddd' }}>-</span>,
     },
     {
-      title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 140,
+      title: t('user.colCreatedAt'), dataIndex: 'created_at', key: 'created_at', width: 140,
       render: (v: string) => dayjs(v).format('YYYY-MM-DD HH:mm'),
     },
     {
-      title: '操作', key: 'actions', width: 180,
+      title: t('user.colActions'), key: 'actions', width: 180,
       render: (_unused: unknown, record: UserItem) => (
         <Space size="small">
-          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)}>编辑</Button>
-          <Button size="small" icon={<KeyOutlined />} onClick={() => openReset(record)}>重置密码</Button>
-          <Popconfirm title="确认删除该用户？" onConfirm={() => handleDelete(record.id)}>
+          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)}>{t('user.editBtn')}</Button>
+          <Button size="small" icon={<KeyOutlined />} onClick={() => openReset(record)}>{t('user.resetPwdBtn')}</Button>
+          <Popconfirm title={t('user.deleteConfirm')} onConfirm={() => handleDelete(record.id)}>
             <Button size="small" danger icon={<DeleteOutlined />} />
           </Popconfirm>
         </Space>
@@ -290,7 +244,7 @@ export default function UserManagement() {
             title={
               <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <ApartmentOutlined style={{ fontSize: 16 }} />
-                <span>组织架构</span>
+                <span>{t('org.treeTitle')}</span>
                 <Typography.Text type="secondary" style={{ fontSize: 12, fontWeight: 'normal' }}>
                   ({orgList.length})
                 </Typography.Text>
@@ -299,7 +253,7 @@ export default function UserManagement() {
             size="small"
             extra={
               <Button size="small" type={selectedOrgId == null ? 'primary' : 'default'} onClick={handleShowAll}>
-                全部
+                {t('user.allBtn')}
               </Button>
             }
             styles={{ body: { padding: '8px 12px', maxHeight: 'calc(100vh - 180px)', overflowY: 'auto' } }}
@@ -321,7 +275,7 @@ export default function UserManagement() {
                     <Tag color={ORG_TYPE_COLORS[org.type] || 'default'} style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', marginRight: 0 }}>
                       {ORG_TYPE_LABELS[org.type] || '?'}
                     </Tag>
-                    {count > 0 && <span className="user-org-tree-count">{count}人</span>}
+                    {count > 0 && <span className="user-org-tree-count">{t('user.userCount', { count })}</span>}
                   </span>
                 );
               }}
@@ -334,20 +288,20 @@ export default function UserManagement() {
           <Card
             title={
               <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span>人员管理</span>
+                <span>{t('user.title')}</span>
                 {selectedOrg && (
                   <Tag color={ORG_TYPE_COLORS[selectedOrg.type] || 'default'}>
                     {selectedOrg.name}
                   </Tag>
                 )}
                 <Typography.Text type="secondary" style={{ fontSize: 12, fontWeight: 'normal' }}>
-                  共 {users.length} 人
+                  {t('user.totalUsers', { count: users.length })}
                 </Typography.Text>
               </span>
             }
             extra={
               <Button type="primary" icon={<PlusOutlined />} onClick={() => setAddModalOpen(true)}>
-                新增用户
+                {t('user.addUser')}
               </Button>
             }
           >
@@ -357,7 +311,7 @@ export default function UserManagement() {
               rowKey="id"
               size="small"
               loading={loading}
-              pagination={{ pageSize: 20 }}
+              pagination={{ pageSize, showSizeChanger: true, pageSizeOptions: ['20', '50', '100'], showTotal: (total) => `共 ${total} 条`, onChange: (_p, s) => setPageSize(s) }}
             />
           </Card>
         </Col>
@@ -365,29 +319,29 @@ export default function UserManagement() {
 
       {/* Add Modal */}
       <Modal
-        title="新增用户"
+        title={t('user.addModalTitle')}
         open={addModalOpen}
         onOk={handleAdd}
         onCancel={() => { setAddModalOpen(false); addForm.resetFields(); }}
-        okText="创建"
+        okText={t('user.createBtn')}
       >
         <Form form={addForm} layout="vertical">
-          <Form.Item name="username" label="用户名" rules={[{ required: true, message: '请输入用户名' }]}>
+          <Form.Item name="username" label={t('user.formUsername')} rules={[{ required: true, message: t('user.formUsernameRequired') }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="password" label="密码" rules={[{ required: true, message: '请输入密码' }, { min: 6, message: '密码至少6位' }]}>
+          <Form.Item name="password" label={t('user.formPassword')} rules={[{ required: true, message: t('user.formPasswordRequired') }, { min: 8, message: t('user.pwdMin8') }, { pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/, message: t('user.pwdComplexity') }]}>
             <Input.Password />
           </Form.Item>
-          <Form.Item name="real_name" label="姓名" rules={[{ required: true, message: '请输入姓名' }]}>
+          <Form.Item name="real_name" label={t('user.formRealName')} rules={[{ required: true, message: t('user.formRealNameRequired') }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="role" label="角色" rules={[{ required: true, message: '请选择角色' }]}>
-            <Select options={ROLE_OPTIONS} placeholder="请选择角色" />
+          <Form.Item name="role" label={t('user.formRole')} rules={[{ required: true, message: t('user.formRoleRequired') }]}>
+            <Select options={ROLE_OPTIONS} placeholder={t('user.formRoleRequired')} />
           </Form.Item>
-          <Form.Item name="org_id" label="所属组织">
+          <Form.Item name="org_id" label={t('user.formOrgId')}>
             <TreeSelect
               allowClear
-              placeholder="请选择所属组织"
+              placeholder={t('user.formOrgIdPlaceholder')}
               treeData={treeSelectData}
               showSearch
               treeNodeFilterProp="title"
@@ -395,31 +349,31 @@ export default function UserManagement() {
               style={{ width: '100%' }}
             />
           </Form.Item>
-          <Form.Item name="status" label="状态" initialValue={1}>
-            <Select options={[{ value: 1, label: '启用' }, { value: 0, label: '停用' }]} />
+          <Form.Item name="status" label={t('user.formStatus')} initialValue={1}>
+            <Select options={statusOptions} />
           </Form.Item>
         </Form>
       </Modal>
 
       {/* Edit Modal */}
       <Modal
-        title="编辑用户"
+        title={t('user.editModalTitle')}
         open={editModalOpen}
         onOk={handleEdit}
         onCancel={() => { setEditModalOpen(false); setEditingUser(null); editForm.resetFields(); }}
-        okText="保存"
+        okText={t('user.saveBtn')}
       >
         <Form form={editForm} layout="vertical">
-          <Form.Item name="real_name" label="姓名" rules={[{ required: true, message: '请输入姓名' }]}>
+          <Form.Item name="real_name" label={t('user.formRealName')} rules={[{ required: true, message: t('user.formRealNameRequired') }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="role" label="角色" rules={[{ required: true, message: '请选择角色' }]}>
+          <Form.Item name="role" label={t('user.formRole')} rules={[{ required: true, message: t('user.formRoleRequired') }]}>
             <Select options={ROLE_OPTIONS} />
           </Form.Item>
-          <Form.Item name="org_id" label="所属组织">
+          <Form.Item name="org_id" label={t('user.formOrgId')}>
             <TreeSelect
               allowClear
-              placeholder="请选择所属组织"
+              placeholder={t('user.formOrgIdPlaceholder')}
               treeData={treeSelectData}
               showSearch
               treeNodeFilterProp="title"
@@ -427,31 +381,31 @@ export default function UserManagement() {
               style={{ width: '100%' }}
             />
           </Form.Item>
-          <Form.Item name="status" label="状态" rules={[{ required: true }]}>
-            <Select options={[{ value: 1, label: '启用' }, { value: 0, label: '停用' }]} />
+          <Form.Item name="status" label={t('user.formStatus')} rules={[{ required: true }]}>
+            <Select options={statusOptions} />
           </Form.Item>
         </Form>
       </Modal>
 
       {/* Reset Password Modal */}
       <Modal
-        title="重置密码"
+        title={t('user.resetModalTitle')}
         open={resetModalOpen}
         onOk={handleReset}
         onCancel={() => { setResetModalOpen(false); setEditingUser(null); resetForm.resetFields(); }}
-        okText="重置"
+        okText={t('user.resetOkBtn')}
       >
-        <p>为用户 <strong>{editingUser?.username}</strong> 设置新密码</p>
+        <p>{t('user.resetDesc', { username: editingUser?.username })}</p>
         <Form form={resetForm} layout="vertical">
-          <Form.Item name="new_password" label="新密码" rules={[{ required: true, message: '请输入新密码' }, { min: 6, message: '密码至少6位' }]}>
+          <Form.Item name="new_password" label={t('user.formNewPwd')} rules={[{ required: true, message: t('user.formNewPwdRequired') }, { min: 8, message: t('user.pwdMin8') }, { pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/, message: t('user.pwdComplexity') }]}>
             <Input.Password />
           </Form.Item>
-          <Form.Item name="confirm_password" label="确认密码" dependencies={['new_password']} rules={[
-            { required: true, message: '请确认新密码' },
+          <Form.Item name="confirm_password" label={t('user.formConfirmPwd')} dependencies={['new_password']} rules={[
+            { required: true, message: t('user.formConfirmPwdRequired') },
             ({ getFieldValue }) => ({
               validator(_, value) {
                 if (!value || getFieldValue('new_password') === value) return Promise.resolve();
-                return Promise.reject(new Error('两次密码不一致'));
+                return Promise.reject(new Error(t('user.pwdMismatch')));
               },
             }),
           ]}>

@@ -22,11 +22,11 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
 
     public List<SysUser> list() {
-        return userRepository.findAll();
+        return userRepository.findByDeletedAtIsNull();
     }
 
     public SysUser getById(Long id) {
-        return userRepository.findById(id)
+        return userRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new IllegalArgumentException("用户不存在: " + id));
     }
 
@@ -38,6 +38,8 @@ public class UserService {
         if (user.getOrgId() != null && !orgRepository.existsByIdAndDeletedAtIsNull(user.getOrgId())) {
             throw new IllegalArgumentException("组织不存在: " + user.getOrgId());
         }
+        // M-02 fix: enforce password complexity on user creation
+        validatePasswordComplexity(user.getPassword());
         user.setPassword(passwordEncoder.encode(user.getPassword()));
         if (user.getRealName() == null) user.setRealName("");
         if (user.getRole() == null) user.setRole((byte) 4);
@@ -73,6 +75,8 @@ public class UserService {
 
     @Transactional
     public void resetPassword(Long id, String newPassword) {
+        // M-01 fix: enforce password complexity on admin password reset
+        validatePasswordComplexity(newPassword);
         SysUser user = getById(id);
         user.setPassword(passwordEncoder.encode(newPassword));
         user.setMustChangePwd((byte) 1);
@@ -82,13 +86,33 @@ public class UserService {
 
     @Transactional
     public void changePassword(Long userId, String oldPassword, String newPassword) {
-        SysUser user = userRepository.findById(userId)
+        SysUser user = userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new IllegalArgumentException("用户不存在"));
         if (!passwordEncoder.matches(oldPassword, user.getPassword())) {
             throw new IllegalArgumentException("原密码错误");
         }
+        // M-02 fix: enforce password complexity on self-service change
+        validatePasswordComplexity(newPassword);
         user.setPassword(passwordEncoder.encode(newPassword));
         user.setMustChangePwd((byte) 0);
         userRepository.save(user);
+    }
+
+    /** Validate password meets complexity requirements (shared with AuthController) */
+    private void validatePasswordComplexity(String password) {
+        if (password == null || password.length() < 8) {
+            throw new IllegalArgumentException("密码长度至少8个字符");
+        }
+        if (password.length() > 128) {
+            throw new IllegalArgumentException("密码长度不能超过128个字符");
+        }
+        boolean hasUpper = password.chars().anyMatch(Character::isUpperCase);
+        boolean hasLower = password.chars().anyMatch(Character::isLowerCase);
+        boolean hasDigit = password.chars().anyMatch(Character::isDigit);
+        boolean hasSpecial = password.chars().anyMatch(c -> "!@#$%^&*()_+-=[]{}|;:',.<>?/`~".indexOf(c) >= 0);
+        int categories = (hasUpper ? 1 : 0) + (hasLower ? 1 : 0) + (hasDigit ? 1 : 0) + (hasSpecial ? 1 : 0);
+        if (categories < 3) {
+            throw new IllegalArgumentException("密码必须包含大写字母、小写字母、数字、特殊字符中至少3种");
+        }
     }
 }

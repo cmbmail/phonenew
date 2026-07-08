@@ -1,6 +1,7 @@
 package com.phonecost.service;
 
 import com.phonecost.domain.BillTemplate;
+import com.phonecost.dto.BillTemplateRequest;
 import com.phonecost.repository.BillTemplateRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,18 +40,13 @@ public class BillTemplateService {
     }
 
     @Transactional
-    public BillTemplate createTemplate(Map<String, Object> body) {
-        String name = (String) body.get("name");
-        String operator = (String) body.getOrDefault("operator", "CHINA_TELECOM");
-        String monthPattern = (String) body.get("month_pattern");
-        String description = (String) body.get("description");
-        String sheetConfigs = body.get("sheet_configs") instanceof String
-                ? (String) body.get("sheet_configs")
-                : toJson(body.get("sheet_configs"));
+    public BillTemplate createTemplate(BillTemplateRequest req) {
+        String name = req.getName();
+        String operator = req.getOperator() != null ? req.getOperator() : "CHINA_TELECOM";
+        String monthPattern = req.getMonthPattern();
+        String description = req.getDescription();
+        String sheetConfigs = req.getSheetConfigs();
 
-        if (name == null || name.isBlank()) {
-            throw new IllegalArgumentException("模板名称不能为空");
-        }
         if (sheetConfigs == null || sheetConfigs.isBlank()) {
             throw new IllegalArgumentException("Sheet配置不能为空");
         }
@@ -77,30 +73,28 @@ public class BillTemplateService {
     }
 
     @Transactional
-    public BillTemplate updateTemplate(Long id, Map<String, Object> body) {
+    public BillTemplate updateTemplate(Long id, BillTemplateRequest req) {
         BillTemplate template = getTemplate(id);
 
-        if (body.containsKey("name")) {
-            String name = (String) body.get("name");
-            if (name == null || name.isBlank()) {
+        if (req.getName() != null) {
+            String name = req.getName();
+            if (name.isBlank()) {
                 throw new IllegalArgumentException("模板名称不能为空");
             }
             template.setName(name.trim());
         }
-        if (body.containsKey("operator")) {
-            template.setOperator((String) body.get("operator"));
+        if (req.getOperator() != null) {
+            template.setOperator(req.getOperator());
         }
-        if (body.containsKey("month_pattern")) {
-            template.setMonthPattern((String) body.get("month_pattern"));
+        if (req.getMonthPattern() != null) {
+            template.setMonthPattern(req.getMonthPattern());
         }
-        if (body.containsKey("description")) {
-            template.setDescription((String) body.get("description"));
+        if (req.getDescription() != null) {
+            template.setDescription(req.getDescription());
         }
-        if (body.containsKey("sheet_configs")) {
-            String sheetConfigs = body.get("sheet_configs") instanceof String
-                    ? (String) body.get("sheet_configs")
-                    : toJson(body.get("sheet_configs"));
-            if (sheetConfigs == null || sheetConfigs.isBlank()) {
+        if (req.getSheetConfigs() != null) {
+            String sheetConfigs = req.getSheetConfigs();
+            if (sheetConfigs.isBlank()) {
                 throw new IllegalArgumentException("Sheet配置不能为空");
             }
             validateSheetConfigs(sheetConfigs);

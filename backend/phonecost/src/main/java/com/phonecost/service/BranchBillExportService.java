@@ -42,15 +42,20 @@ public class BranchBillExportService {
     private static final DateTimeFormatter DTF = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final BigDecimal ZERO = BigDecimal.ZERO;
 
+    /** Cached org map — built once and reused within a single request. Cleared between requests. */
+    private volatile Map<Long, SysOrganization> cachedOrgMap;
+
     // ==================== L1: 分摊汇总（集团→一级分行） ====================
 
     /**
      * 导出L1分摊汇总表：每个一级分行一行，汇总其所有下属组织的费用
      */
     public byte[] exportLevel1Summary(Long batchId, Long operatorId) throws IOException {
-        BillBatch batch = billBatchRepository.findById(batchId)
+        clearOrgMapCache();
+        BillBatch batch = billBatchRepository.findByIdAndDeletedAtIsNull(batchId)
                 .orElseThrow(() -> new IllegalArgumentException("账单批次不存在: " + batchId));
         List<AllocationResult> allResults = resultRepository.findByBatchIdAndDeletedAtIsNull(batchId);
+        List<BillDetail> allDetails = billDetailRepository.findByBatchIdAndDeletedAtIsNull(batchId);
         Map<Long, SysOrganization> orgMap = buildOrgMap();
 
         // 找出所有一级分行(type=2)
@@ -95,7 +100,7 @@ public class BranchBillExportService {
                 row.createCell(1).setCellValue(branch.getCostCenter() != null ? branch.getCostCenter() : "");
 
                 // 从bill_detail按原始列聚合费用（需要raw_data）
-                AggregatedFees fees = aggregateFeesByOrgPath(batchId, branchPath, orgMap);
+                AggregatedFees fees = aggregateFeesByOrgPath(allDetails, branchPath, orgMap);
 
                 setCurrencyCell(row.createCell(2), fees.platformFee, numberStyle);
                 setCurrencyCell(row.createCell(3), fees.monthlyRentCode, numberStyle);
@@ -157,7 +162,8 @@ public class BranchBillExportService {
      * 导出L2一级分行明细：某一级分行下所有直属子组织（二级分行+部门+支行）的费用
      */
     public byte[] exportLevel2BranchDetail(Long batchId, Long branchOrgId, Long operatorId) throws IOException {
-        BillBatch batch = billBatchRepository.findById(batchId)
+        clearOrgMapCache();
+        BillBatch batch = billBatchRepository.findByIdAndDeletedAtIsNull(batchId)
                 .orElseThrow(() -> new IllegalArgumentException("账单批次不存在: " + batchId));
         SysOrganization branch = orgMapGet(branchOrgId);
         if (branch == null) throw new IllegalArgumentException("组织不存在: " + branchOrgId);
@@ -185,7 +191,7 @@ public class BranchBillExportService {
 
             // Sheet1: 分行分摊汇总（直属下级）
             writeL2SummarySheet(wb, monthLabel, branchName, directChildren, allResults,
-                    batchId, orgMap, headerStyle, numberStyle, boldStyle);
+                    allDetails, orgMap, headerStyle, numberStyle, boldStyle);
 
             // Sheet2: 按号码费用（该分行下所有CALL明细）
             writePhoneDetailSheet(wb, monthLabel + branchName, allDetails, orgMap,
@@ -212,7 +218,8 @@ public class BranchBillExportService {
      * 导出L3二级分行明细：某二级分行下所有直属子组织（部门+支行）的费用
      */
     public byte[] exportLevel3SubBranchDetail(Long batchId, Long subBranchOrgId, Long operatorId) throws IOException {
-        BillBatch batch = billBatchRepository.findById(batchId)
+        clearOrgMapCache();
+        BillBatch batch = billBatchRepository.findByIdAndDeletedAtIsNull(batchId)
                 .orElseThrow(() -> new IllegalArgumentException("账单批次不存在: " + batchId));
         SysOrganization subBranch = orgMapGet(subBranchOrgId);
         if (subBranch == null) throw new IllegalArgumentException("组织不存在: " + subBranchOrgId);
@@ -241,7 +248,7 @@ public class BranchBillExportService {
 
             // Sheet1: 二级分行分摊汇总
             writeL3SummarySheet(wb, monthLabel, parentBranchName, subBranchName,
-                    directChildren, allResults, batchId, orgMap, headerStyle, numberStyle, boldStyle);
+                    directChildren, allResults, allDetails, orgMap, headerStyle, numberStyle, boldStyle);
 
             // Sheet2: 按号码费用
             writePhoneDetailSheet(wb, monthLabel + subBranchName, allDetails, orgMap,
@@ -265,11 +272,12 @@ public class BranchBillExportService {
     // ==================== L2 Summary Sheet ====================
 
     private void writeL2SummarySheet(XSSFWorkbook wb, String monthLabel, String branchName,
-                                      List<SysOrganization> children,
-                                      List<AllocationResult> allResults, Long batchId,
-                                      Map<Long, SysOrganization> orgMap,
-                                      CellStyle headerStyle, CellStyle numberStyle,
-                                      CellStyle boldStyle) {
+                                       List<SysOrganization> children,
+                                       List<AllocationResult> allResults,
+                                       List<BillDetail> allDetails,
+                                       Map<Long, SysOrganization> orgMap,
+                                       CellStyle headerStyle, CellStyle numberStyle,
+                                       CellStyle boldStyle) {
         Sheet sheet = wb.createSheet(monthLabel + branchName + "_分摊汇总");
 
         String[] headers = {"序号", "组织类型", "组织名称", "成本中心",
@@ -295,7 +303,7 @@ public class BranchBillExportService {
             row.createCell(3).setCellValue(child.getCostCenter() != null ? child.getCostCenter() : "");
 
             // 从bill_detail聚合原始费用
-            AggregatedFees fees = aggregateFeesByOrgId(batchId, child.getId(), orgMap);
+            AggregatedFees fees = aggregateFeesByOrgId(allDetails, child.getId());
             setCurrencyCell(row.createCell(4), fees.platformFee, numberStyle);
             setCurrencyCell(row.createCell(5), fees.monthlyRentCode, numberStyle);
             setCurrencyCell(row.createCell(6), fees.domesticFee, numberStyle);
@@ -347,7 +355,8 @@ public class BranchBillExportService {
     private void writeL3SummarySheet(XSSFWorkbook wb, String monthLabel,
                                      String parentBranchName, String subBranchName,
                                      List<SysOrganization> children,
-                                     List<AllocationResult> allResults, Long batchId,
+                                     List<AllocationResult> allResults,
+                                     List<BillDetail> allDetails,
                                      Map<Long, SysOrganization> orgMap,
                                      CellStyle headerStyle, CellStyle numberStyle,
                                      CellStyle boldStyle) {
@@ -375,7 +384,7 @@ public class BranchBillExportService {
             row.createCell(2).setCellValue(child.getName());
             row.createCell(3).setCellValue(child.getCostCenter() != null ? child.getCostCenter() : "");
 
-            AggregatedFees fees = aggregateFeesByOrgId(batchId, child.getId(), orgMap);
+            AggregatedFees fees = aggregateFeesByOrgId(allDetails, child.getId());
             setCurrencyCell(row.createCell(4), fees.platformFee, numberStyle);
             setCurrencyCell(row.createCell(5), fees.monthlyRentCode, numberStyle);
             setCurrencyCell(row.createCell(6), fees.domesticFee, numberStyle);
@@ -556,6 +565,7 @@ public class BranchBillExportService {
     // ==================== Cost Center Mapping (unchanged) ====================
 
     public byte[] exportCostCenterMapping(Long batchId, Long branchOrgId, Long operatorId) throws IOException {
+        clearOrgMapCache();
         List<BillDetail> allDetails = billDetailRepository.findByBatchIdAndDeletedAtIsNull(batchId);
         Map<Long, SysOrganization> orgMap = buildOrgMap();
 
@@ -597,11 +607,10 @@ public class BranchBillExportService {
 
     // ==================== Fee Aggregation Helpers ====================
 
-    /** Aggregate raw_data fields from bill_detail for a given org path prefix */
-    private AggregatedFees aggregateFeesByOrgPath(Long batchId, String pathPrefix,
+    /** Aggregate raw_data fields from bill_detail for a given org path prefix (uses pre-loaded details) */
+    private AggregatedFees aggregateFeesByOrgPath(List<BillDetail> allDetails, String pathPrefix,
                                                    Map<Long, SysOrganization> orgMap) {
-        List<BillDetail> callDetails = billDetailRepository.findByBatchIdAndDeletedAtIsNull(batchId)
-                .stream()
+        List<BillDetail> callDetails = allDetails.stream()
                 .filter(d -> "CALL".equals(d.getSheetType())
                         && isInPath(d.getOrgId(), pathPrefix, orgMap))
                 .collect(Collectors.toList());
@@ -619,11 +628,9 @@ public class BranchBillExportService {
         return fees;
     }
 
-    /** Aggregate raw_data fields from bill_detail for a specific org_id */
-    private AggregatedFees aggregateFeesByOrgId(Long batchId, Long orgId,
-                                                 Map<Long, SysOrganization> orgMap) {
-        List<BillDetail> callDetails = billDetailRepository.findByBatchIdAndDeletedAtIsNull(batchId)
-                .stream()
+    /** Aggregate raw_data fields from bill_detail for a specific org_id (uses pre-loaded details) */
+    private AggregatedFees aggregateFeesByOrgId(List<BillDetail> allDetails, Long orgId) {
+        List<BillDetail> callDetails = allDetails.stream()
                 .filter(d -> "CALL".equals(d.getSheetType()) && Objects.equals(d.getOrgId(), orgId))
                 .collect(Collectors.toList());
 
@@ -654,6 +661,7 @@ public class BranchBillExportService {
      * Each row is a Map with phone_number, org_name, ownership_source, and fields from raw_data.
      */
     public List<Map<String, Object>> getL1DetailData(Long batchId, String sheetType) {
+        clearOrgMapCache();
         String upperSheetType = sheetType.toUpperCase();
         List<BillDetail> details = billDetailRepository.findByBatchIdAndDeletedAtIsNull(batchId)
                 .stream()
@@ -669,6 +677,7 @@ public class BranchBillExportService {
      * filtered to only include details belonging to the branch's org subtree.
      */
     public List<Map<String, Object>> getL2DetailData(Long batchId, Long branchOrgId, String sheetType) {
+        clearOrgMapCache();
         String upperSheetType = sheetType.toUpperCase();
         Map<Long, SysOrganization> orgMap = buildOrgMap();
         SysOrganization branch = orgMap.get(branchOrgId);
@@ -689,6 +698,7 @@ public class BranchBillExportService {
      * filtered to only include details belonging to the sub-branch's org subtree.
      */
     public List<Map<String, Object>> getL3DetailData(Long batchId, Long subBranchOrgId, String sheetType) {
+        clearOrgMapCache();
         String upperSheetType = sheetType.toUpperCase();
         Map<Long, SysOrganization> orgMap = buildOrgMap();
         SysOrganization subBranch = orgMap.get(subBranchOrgId);
@@ -759,6 +769,7 @@ public class BranchBillExportService {
     // ==================== L1 Summary JSON (for frontend table) ====================
 
     public List<Map<String, Object>> getL1SummaryData(Long batchId) {
+        clearOrgMapCache();
         List<AllocationResult> allResults = resultRepository.findByBatchIdAndDeletedAtIsNull(batchId);
         List<BillDetail> allDetails = billDetailRepository.findByBatchIdAndDeletedAtIsNull(batchId);
         Map<Long, SysOrganization> orgMap = buildOrgMap();
@@ -773,7 +784,7 @@ public class BranchBillExportService {
         for (SysOrganization branch : branches) {
             String branchPath = branch.getPath();
 
-            AggregatedFees fees = aggregateFeesByOrgPath(batchId, branchPath, orgMap);
+            AggregatedFees fees = aggregateFeesByOrgPath(allDetails, branchPath, orgMap);
 
             List<AllocationResult> childResults = allResults.stream()
                     .filter(r -> {
@@ -909,7 +920,6 @@ public class BranchBillExportService {
         if (id == null) return null;
         return buildOrgMap().get(id);
     }
-
     // ==================== Raw Data JSON Helpers ====================
 
     private BigDecimal getRawDecimal(String rawData, String field) {
@@ -997,9 +1007,15 @@ public class BranchBillExportService {
     }
 
     private Map<Long, SysOrganization> buildOrgMap() {
-        return orgRepository.findAll().stream()
-                .filter(o -> o.getDeletedAt() == null)
+        if (cachedOrgMap != null) return cachedOrgMap;
+        cachedOrgMap = orgRepository.findByDeletedAtIsNull().stream()
                 .collect(Collectors.toMap(SysOrganization::getId, o -> o));
+        return cachedOrgMap;
+    }
+
+    /** Clear cached org map — call at the start of each public method to ensure fresh data per request. */
+    private void clearOrgMapCache() {
+        cachedOrgMap = null;
     }
 
     private static BigDecimal safeAdd(BigDecimal a, BigDecimal b) {

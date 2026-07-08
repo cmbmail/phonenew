@@ -28,16 +28,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        // Try Authorization header first, then fallback to query param (for file downloads via window.open)
+        // Only accept token from Authorization header (not URL query params)
         String token = null;
         String header = request.getHeader("Authorization");
         if (header != null && header.startsWith("Bearer ")) {
             token = header.substring(7);
-        } else {
-            String queryToken = request.getParameter("token");
-            if (queryToken != null && !queryToken.isEmpty()) {
-                token = queryToken;
-            }
         }
 
         if (token != null && jwtUtil.validateToken(token)) {

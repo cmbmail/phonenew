@@ -64,11 +64,11 @@ export default function RoleManagement() {
     setLoading(true);
     apiGet<RoleItem[]>('/roles')
       .then(setRoles)
-      .catch(() => setRoles([]))
+      .catch(() => { setRoles([]); message.error('加载角色列表失败'); })
       .finally(() => setLoading(false));
     apiGet<PermissionsData>('/roles/permissions')
       .then(setPermissions)
-      .catch(() => {});
+      .catch(() => { message.error('加载权限矩阵失败'); });
   }, []);
 
   const columns = [

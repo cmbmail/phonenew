@@ -3,15 +3,19 @@ import { Card, Table, Select, Button, Descriptions, Row, Col, Tabs, message, Emp
 import { DownloadOutlined, SearchOutlined, FileTextOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import type { BillBatch } from '../types/bill';
-import type { AllocationResult } from '../types/allocation';
+import type { AllocationResult, AllocationDetailRow } from '../types/allocation';
 import { CONFIRM_STATUS_MAP } from '../types/allocation';
 import { getAllocationResults, getL2DetailData } from '../api/allocation';
 import { getBillBatches } from '../api/import';
 import { getOrgTree } from '../api/org';
+import { useAbortableEffect } from '../hooks/useAbortableEffect';
 import type { Organization } from '../types/organization';
 import { ORG_TYPE_LABELS } from '../types/organization';
-import { exportCSV } from '../lib/export';
+  import { exportCSV } from '../lib/export';
 import { useAuthStore } from '../store/auth';
+
+/** 安全将 typed 数组转换为 Record<string,unknown>[] 供 exportCSV 使用 */
+const toPlainRecords = (data: object[]): Record<string, unknown>[] => data as Record<string, unknown>[];
 
 const SHEET_TYPES = ['CALL', 'RECORDING', 'CRBT', 'FLASH_MSG'] as const;
 type SheetType = typeof SHEET_TYPES[number];
@@ -28,7 +32,7 @@ export default function L2BranchPage() {
   const [resultsLoading, setResultsLoading] = useState(false);
 
   // 分摊明细数据
-  const [detailData, setDetailData] = useState<Record<SheetType, Record<string, unknown>[]>>({
+  const [detailData, setDetailData] = useState<Record<SheetType, AllocationDetailRow[]>>({
     CALL: [], RECORDING: [], CRBT: [], FLASH_MSG: [],
   });
   const [detailLoading, setDetailLoading] = useState(false);
@@ -102,16 +106,16 @@ export default function L2BranchPage() {
     setSelectedBranchId(branches[0].id);
   }, [branches, selectedBranchId, role, orgId, orgList]);
 
-  useEffect(() => {
+  useAbortableEffect((signal) => {
     if (selectedBatchId) {
       setResults([]); // 立即清空旧数据，让刷新可见
       setResultsLoading(true);
-      getAllocationResults(selectedBatchId)
-        .then(setResults)
+      getAllocationResults(selectedBatchId, 0, 500, signal)
+        .then(data => setResults(data.content || []))
         .catch(() => message.error(t('l2Branch.fetchFailed')))
         .finally(() => setResultsLoading(false));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在 selectedBatchId 变化时重新加载，t 为 i18n stable ref
   }, [selectedBatchId]);
 
   // 切换分行/月份时重置明细，若已加载过则自动重新加载
@@ -121,7 +125,7 @@ export default function L2BranchPage() {
     setDetailLoaded(false);
     setDetailSearch('');
     if (wasDetailLoaded && selectedBatchId && selectedBranchId) fetchAllDetails();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 故意读取 detailLoaded 旧值（闭包快照），fetchAllDetails 为 stable callback
   }, [selectedBranchId, selectedBatchId]);
 
   const orgMap = useMemo(() => {
@@ -191,7 +195,7 @@ export default function L2BranchPage() {
       const results = await Promise.all(
         SHEET_TYPES.map(st => getL2DetailData(selectedBatchId, selectedBranchId, st).then(d => [st, d] as const))
       );
-      const newData = { CALL: [], RECORDING: [], CRBT: [], FLASH_MSG: [] } as Record<SheetType, Record<string, unknown>[]>;
+      const newData = { CALL: [], RECORDING: [], CRBT: [], FLASH_MSG: [] } as Record<SheetType, AllocationDetailRow[]>;
       for (const [st, d] of results) newData[st] = d;
       setDetailData(newData);
       setDetailLoaded(true);
@@ -277,7 +281,7 @@ export default function L2BranchPage() {
   const filteredDetailData = useMemo(() => {
     const kw = detailSearch.trim().toLowerCase();
     if (!kw) return detailData;
-    const filter = (rows: Record<string, unknown>[]) =>
+    const filter = (rows: AllocationDetailRow[]) =>
       rows.filter(r =>
         String(r.phone_number || '').toLowerCase().includes(kw) ||
         String(r.extension || '').toLowerCase().includes(kw) ||
@@ -290,12 +294,12 @@ export default function L2BranchPage() {
       RECORDING: filter(detailData.RECORDING),
       CRBT: filter(detailData["CRBT"]),
       FLASH_MSG: filter(detailData.FLASH_MSG),
-    } as Record<SheetType, Record<string, unknown>[]>;
+    } as Record<SheetType, AllocationDetailRow[]>;
   }, [detailData, detailSearch]);
 
   // 统计卡片
   const detailStats = useMemo(() => {
-    const sum = (data: Record<string, unknown>[], field: string) =>
+    const sum = (data: AllocationDetailRow[], field: keyof AllocationDetailRow) =>
       data.reduce((s, r) => s + (Number(r[field]) || 0), 0);
     return {
       callCount: filteredDetailData.CALL.length,
@@ -326,7 +330,7 @@ export default function L2BranchPage() {
         rowKey={(_, idx) => `${sheetType}-${idx}`}
         size="small"
         loading={detailLoading}
-        pagination={{ pageSize: detailPageSize, showSizeChanger: true, pageSizeOptions: ['25', '50', '100'], onShowSizeChange: (_current, size) => setDetailPageSize(size), showTotal: (total) => t('common.paginationTotal', { total }) }}
+        pagination={{ pageSize: detailPageSize, showSizeChanger: true, pageSizeOptions: ['25', '50', '100'], onChange: (_p, s) => setDetailPageSize(s), showTotal: (total) => t('common.paginationTotal', { total }) }}
         scroll={{ x: scrollX }}
       />
     );
@@ -385,7 +389,7 @@ export default function L2BranchPage() {
                     { title: t('l2Branch.phoneCountCol'), dataIndex: 'phoneCount' },
                     { title: t('l2Branch.confirmStatusCol'), dataIndex: 'confirmStatus', render: (v: number) => v >= 0 ? (CONFIRM_STATUS_MAP[v]?.label || '') : '' },
                   ],
-                  childSummary as unknown as Record<string, unknown>[],
+                  toPlainRecords(childSummary),
                 );
               }}>{t('l2Branch.exportSummary')}</Button>
             </div>

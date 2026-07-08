@@ -12,9 +12,19 @@ export interface UserItem {
   updated_at: string;
 }
 
-export const getUsers = (orgId?: number) => {
-  const params = orgId ? `?org_id=${orgId}` : '';
-  return apiGet<UserItem[]>(`/users${params}`);
+export interface PagedUsers {
+  content: UserItem[];
+  total: number;
+  page: number;
+  size: number;
+}
+
+export const getUsers = (orgId?: number, page = 0, size = 200) => {
+  const params = new URLSearchParams();
+  if (orgId != null) params.set('org_id', String(orgId));
+  params.set('page', String(page));
+  params.set('size', String(size));
+  return apiGet<PagedUsers>(`/users?${params.toString()}`);
 };
 
 export const createUser = (data: {

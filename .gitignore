@@ -43,3 +43,23 @@ Thumbs.db
 mvnw
 mvnw.cmd
 *.tar.gz
+
+# Upgrade packages & deploy scripts (generated artifacts)
+*.zip
+*.zip.bin
+upgrade-*.sh
+upgrade_v*.sh
+manual_upgrade_*.sh
+rollback_*.sh
+diagnose_*.sh
+diagnose_*.sh.zip
+fix_*.sh
+fix_*.sh.bin
+fix_*.sh.zip
+fix_*/
+phone-install*
+phonecost-v*-upgrade/
+phonecost-v*-update/
+
+# AIGC watermarked documents
+*.docx

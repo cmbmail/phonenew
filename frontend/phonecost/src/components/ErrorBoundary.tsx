@@ -31,19 +31,21 @@ class ErrorBoundary extends React.Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <Result
-          status="error"
-          title="页面出错了"
-          subTitle={this.state.error?.message || '发生未知错误'}
-          extra={[
-            <Button key="retry" type="primary" onClick={this.handleReset}>
-              重试
-            </Button>,
-            <Button key="home" onClick={() => { window.location.href = '/'; }}>
-              返回首页
-            </Button>,
-          ]}
-        />
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300 }}>
+          <Result
+            status="error"
+            title="页面出错了"
+            subTitle={this.state.error?.message || '发生未知错误'}
+            extra={[
+              <Button key="retry" type="primary" onClick={this.handleReset}>
+                重试
+              </Button>,
+              <Button key="home" onClick={() => { window.location.href = '/'; }}>
+                返回首页
+              </Button>,
+            ]}
+          />
+        </div>
       );
     }
     return this.props.children;

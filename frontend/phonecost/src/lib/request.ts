@@ -17,6 +17,10 @@ function getOrStartRefresh(): Promise<string | null> {
     .then(({ data }) => {
       if (data.code === 200) {
         useAuthStore.getState().setToken(data.data.access_token);
+        // H-05 fix: 同时保存新的refresh_token（后端已实现token轮转）
+        if (data.data.refresh_token) {
+          useAuthStore.getState().setRefreshToken(data.data.refresh_token);
+        }
         return data.data.access_token as string;
       }
       return null;
@@ -35,6 +39,9 @@ instance.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 instance.interceptors.response.use(
   (res: AxiosResponse) => res,
   async (error) => {
+    // 请求被主动取消时不做处理
+    if (axios.isCancel(error)) return Promise.reject(error);
+
     const originalRequest = error.config;
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
@@ -46,37 +53,58 @@ instance.interceptors.response.use(
       useAuthStore.getState().logout();
       window.location.href = '/login';
     }
+    // 后端强制改密拦截：403 + data=MUST_CHANGE_PASSWORD
+    if (error.response?.status === 403 && error.response?.data?.data === 'MUST_CHANGE_PASSWORD') {
+      useAuthStore.getState().set({ mustChangePwd: true } as Partial<import('../store/auth').AuthState>);
+    }
     return Promise.reject(error);
   }
 );
 
-export async function apiGet<T>(url: string, params?: object): Promise<T> {
-  const { data } = await instance.get<ApiResponse<T>>(url, { params });
+// ============ API Base URL 工具 ============
+// 安全获取 Vite 注入的 __API_BASE__ 全局变量，替代 window as unknown as Record 模式
+declare global {
+  // eslint-disable-next-line no-var
+  var __API_BASE__: string | undefined;
+}
+export function getApiBaseUrl(): string {
+  return globalThis.__API_BASE__ || API_BASE_URL;
+}
+
+// ============ AbortController 工厂 ============
+// 为 React Query 等场景提供统一的信号管理，页面卸载时自动取消请求
+export function createAbortController(): AbortController {
+  const controller = new AbortController();
+  return controller;
+}
+
+export async function apiGet<T>(url: string, params?: object, signal?: AbortSignal): Promise<T> {
+  const { data } = await instance.get<ApiResponse<T>>(url, { params, signal });
   return data.data;
 }
-export async function apiPost<T>(url: string, body?: unknown): Promise<T> {
-  const { data } = await instance.post<ApiResponse<T>>(url, body);
+export async function apiPost<T>(url: string, body?: unknown, signal?: AbortSignal, timeout?: number): Promise<T> {
+  const { data } = await instance.post<ApiResponse<T>>(url, body, { signal, timeout: timeout ?? undefined });
   return data.data;
 }
-export async function apiPut<T>(url: string, body?: unknown): Promise<T> {
-  const { data } = await instance.put<ApiResponse<T>>(url, body);
+export async function apiPut<T>(url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+  const { data } = await instance.put<ApiResponse<T>>(url, body, { signal });
   return data.data;
 }
-export async function apiDelete<T>(url: string): Promise<T> {
-  const { data } = await instance.delete<ApiResponse<T>>(url);
+export async function apiDelete<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const { data } = await instance.delete<ApiResponse<T>>(url, { signal });
   return data.data;
 }
-export async function apiUpload<T>(url: string, formData: FormData): Promise<T> {
-  const { data } = await instance.post<ApiResponse<T>>(url, formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 });
+export async function apiUpload<T>(url: string, formData: FormData, signal?: AbortSignal): Promise<T> {
+  const { data } = await instance.post<ApiResponse<T>>(url, formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000, signal });
   return data.data;
 }
 
-export async function apiDownload(url: string, filename: string): Promise<void> {
-  const response = await instance.get(url, { responseType: 'blob' });
+export async function apiDownload(url: string, filename: string, signal?: AbortSignal): Promise<void> {
+  const response = await instance.get(url, { responseType: 'blob', signal });
   const blob = new Blob([response.data]);
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
   link.download = filename;
-  link.click();
-  URL.revokeObjectURL(link.href);
+  // FE-M-16 fix: wrap in try/finally to guarantee ObjectURL revocation
+  try { link.click(); } finally { URL.revokeObjectURL(link.href); }
 }

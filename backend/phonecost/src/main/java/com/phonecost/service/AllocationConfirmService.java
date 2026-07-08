@@ -12,7 +12,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 确认/撤回服务
@@ -89,15 +91,24 @@ public class AllocationConfirmService {
         }
 
         // Cascade withdraw: find all descendant orgs and withdraw them too
-        var org = orgRepository.findById(orgId).orElse(null);
+        var org = orgRepository.findByIdAndDeletedAtIsNull(orgId).orElse(null);
         int cascadeCount = 0;
         if (org != null && org.getPath() != null) {
             List<AllocationResult> allResults = resultRepository.findByBatchIdAndDeletedAtIsNull(batchId);
+            // M-16 fix: batch load all needed orgs instead of N+1 individual queries
+            List<Long> resultOrgIds = allResults.stream()
+                    .map(AllocationResult::getOrgId)
+                    .filter(id -> !id.equals(orgId))
+                    .toList();
+            Map<Long, com.phonecost.domain.SysOrganization> orgMap = new java.util.HashMap<>();
+            for (var o : orgRepository.findAllById(resultOrgIds)) {
+                orgMap.put(o.getId(), o);
+            }
             for (AllocationResult r : allResults) {
                 if (r.getId().equals(result.getId())) continue;
                 if (r.getConfirmStatus() != (byte) 1) continue;
 
-                var rOrg = orgRepository.findById(r.getOrgId()).orElse(null);
+                var rOrg = orgMap.get(r.getOrgId());
                 if (rOrg != null && rOrg.getPath() != null
                         && rOrg.getPath().startsWith(org.getPath())
                         && !rOrg.getPath().equals(org.getPath())) {
