@@ -16,8 +16,12 @@ public interface BillBatchRepository extends JpaRepository<BillBatch, Long> {
     List<BillBatch> findByBillingMonthAndDeletedAtIsNull(String billingMonth);
     List<BillBatch> findByDeletedAtIsNullOrderByBillingMonthAsc();
 
-    /** M-07: Aggregate total amount without loading all entities */
-    @Query("SELECT COALESCE(SUM(b.totalAmount), 0) FROM BillBatch b WHERE b.deletedAt IS NULL")
+    /** M-07: Aggregate total amount without loading all entities.
+     *  NOTE: Do NOT use COALESCE(SUM(...), 0) here — Hibernate 6 may return
+     *  Object[] instead of BigDecimal when the COALESCE second arg is an integer.
+     *  Caller must handle null return as BigDecimal.ZERO.
+     */
+    @Query("SELECT SUM(b.totalAmount) FROM BillBatch b WHERE b.deletedAt IS NULL")
     BigDecimal sumTotalAmount();
 
     /** M-07: Aggregate total amount by billing month (for monthly trend, no full entity load) */

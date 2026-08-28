@@ -44,11 +44,13 @@ public class AnnouncementController {
     }
 
     @GetMapping("/latest")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ApiResponse<List<Announcement>>> latest() {
         return ResponseEntity.ok(ApiResponse.ok(announcementService.listLatestPublished()));
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ApiResponse<Announcement>> get(@PathVariable Long id) {
         return ResponseEntity.ok(ApiResponse.ok(announcementService.getById(id)));
     }

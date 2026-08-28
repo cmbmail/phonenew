@@ -10,7 +10,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
 @Slf4j
 @Service
@@ -20,10 +19,6 @@ public class UserService {
     private final SysUserRepository userRepository;
     private final SysOrganizationRepository orgRepository;
     private final PasswordEncoder passwordEncoder;
-
-    public List<SysUser> list() {
-        return userRepository.findByDeletedAtIsNull();
-    }
 
     public SysUser getById(Long id) {
         return userRepository.findByIdAndDeletedAtIsNull(id)

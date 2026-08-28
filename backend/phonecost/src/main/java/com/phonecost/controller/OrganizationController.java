@@ -137,7 +137,7 @@ public class OrganizationController {
             headerStyle.setAlignment(HorizontalAlignment.CENTER);
 
             // Headers
-            String[] headers = {"组织名称", "组织代码", "成本中心"};
+            String[] headers = {"组织名称", "组织代码", "成本中心", "机构类型"};
             Row headerRow = sheet.createRow(0);
             for (int i = 0; i < headers.length; i++) {
                 Cell cell = headerRow.createCell(i);
@@ -147,13 +147,14 @@ public class OrganizationController {
             sheet.setColumnWidth(0, 12000);
             sheet.setColumnWidth(1, 5000);
             sheet.setColumnWidth(2, 5000);
+            sheet.setColumnWidth(3, 5000);
 
-            // Sample rows
+            // Sample rows (4th column = 机构类型: 一级分行/二级分行/部门/综合支行/零专支行)
             String[][] samples = {
-                {"/北京分行", "002", "CC002"},
-                {"/北京分行/海淀支行", "003", "CC003"},
-                {"/北京分行/海淀支行/科技部", "004", "CC004"},
-                {"/上海分行", "010", "CC010"},
+                {"/北京分行", "002", "CC002", "一级分行"},
+                {"/北京分行/海淀支行", "003", "CC003", "综合支行"},
+                {"/北京分行/海淀支行/科技部", "004", "CC004", "部门"},
+                {"/上海分行", "010", "CC010", "一级分行"},
             };
             for (int i = 0; i < samples.length; i++) {
                 Row row = sheet.createRow(i + 1);
@@ -170,9 +171,9 @@ public class OrganizationController {
             noteFont.setItalic(true);
             noteStyle.setFont(noteFont);
             Cell noteCell = noteRow.createCell(0);
-            noteCell.setCellValue("说明：组织名称为必填项，以 / 开头，各级以 / 分隔（如 /北京分行/海淀支行/科技部）；集团隐含，第一段为一级分行；组织代码和成本中心选填，为空时显示为 \"-\"");
+            noteCell.setCellValue("说明：组织名称为必填项，以 / 开头，各级以 / 分隔（如 /北京分行/海淀支行/科技部）；机构类型选填，可选值：一级分行、二级分行、部门、综合支行、零专支行，为空时按层级自动推断；组织代码和成本中心选填，为空时显示为 \"-\"");
             noteCell.setCellStyle(noteStyle);
-            sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(samples.length + 2, samples.length + 2, 0, 2));
+            sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(samples.length + 2, samples.length + 2, 0, 3));
 
             wb.write(out);
 

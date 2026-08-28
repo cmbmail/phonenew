@@ -5,6 +5,8 @@ import org.hibernate.annotations.ColumnDefault;
 import org.hibernate.annotations.Where;
 import lombok.*;
 
+import java.time.LocalDateTime;
+
 @Where(clause = "deleted_at IS NULL")
 @Entity
 @Table(name = "recording_data_entry")
@@ -20,4 +22,8 @@ public class RecordingDataEntry extends BaseEntity {
     private String deptName;
     @Column(name = "remark") @ColumnDefault("''")
     private String remark;
+    @Column(name = "status") @ColumnDefault("0")
+    private Byte status;  // H-DB09: INT→TINYINT
+    @Column(name = "close_time")
+    private LocalDateTime closeTime;
 }

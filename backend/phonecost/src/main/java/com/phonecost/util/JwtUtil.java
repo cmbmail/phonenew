@@ -2,6 +2,8 @@ package com.phonecost.util;
 
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -9,10 +11,23 @@ import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
 
+@Slf4j
 @Component
 public class JwtUtil {
     @Value("${jwt.secret}")
     private String secret;
+
+    @PostConstruct
+    public void validateSecret() {
+        if (secret == null || secret.isBlank()) {
+            log.error("FATAL: jwt.secret is empty or not configured. Set JWT_SECRET environment variable.");
+            throw new IllegalStateException("jwt.secret must be configured via JWT_SECRET environment variable");
+        }
+        if (secret.length() < 32) {
+            log.warn("WARNING: jwt.secret is shorter than 32 characters, which may be insecure for HMAC-SHA256.");
+        }
+        log.info("JWT secret validated successfully (length={})", secret.length());
+    }
 
     @Value("${jwt.access-token-expiration}")
     private long accessTokenExpiration;

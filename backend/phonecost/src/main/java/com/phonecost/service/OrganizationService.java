@@ -109,6 +109,7 @@ public class OrganizationService {
                 String namePath = getCellStringValue(row, 0);
                 String code = getCellStringValue(row, 1);
                 String costCenter = getCellStringValue(row, 2);
+                String typeStr = getCellStringValue(row, 3);
 
                 if (namePath == null || namePath.isEmpty() || namePath.startsWith("AIGC:")) {
                     skipped++;
@@ -118,7 +119,8 @@ public class OrganizationService {
                 rows.add(new String[]{
                     namePath.trim(),
                     code != null && !code.isEmpty() ? code.trim() : null,
-                    costCenter != null && !costCenter.isEmpty() ? costCenter.trim() : null
+                    costCenter != null && !costCenter.isEmpty() ? costCenter.trim() : null,
+                    typeStr != null && !typeStr.isEmpty() ? typeStr.trim() : null
                 });
             }
         }
@@ -150,28 +152,34 @@ public class OrganizationService {
             String[] segments = pathStr.split("/");
             Long parentId = rootId; // start from 集团
 
+            // Parse explicit org type from 4th column (e.g. "一级分行" -> 2)
+            Byte explicitType = parseOrgType(r.length > 3 ? r[3] : null);
+
             for (int d = 0; d < segments.length; d++) {
                 String name = segments[d].trim();
                 if (name.isEmpty()) continue;
 
-                // depth 0 → 一级分行(type=2), depth 1 → 二级分行(type=3), ...
+                // Use explicit type for leaf node if provided; otherwise infer from depth
                 byte type = (byte) Math.min(d + 2, 6);
-                String key = parentId.toString() + ":" + name;
                 boolean isLeaf = (d == segments.length - 1);
+                if (isLeaf && explicitType != null) {
+                    type = explicitType;
+                }
+
+                String key = parentId.toString() + ":" + name;
 
                 SysOrganization org = existingCache.get(key);
                 if (org == null) {
-                    org = SysOrganization.builder()
-                            .name(name)
-                            .type(type)
-                            .code(isLeaf ? r[1] : null)
-                            .costCenter(isLeaf ? r[2] : null)
-                            .sortOrder(0)
-                            .isActive((byte) 1)
-                            .path("")
-                            .parentId(parentId)
-                            .build();
-                    org = orgRepository.save(org);
+                SysOrganization newOrg = new SysOrganization();
+                newOrg.setName(name);
+                newOrg.setType(type);
+                newOrg.setCode(isLeaf ? r[1] : null);
+                newOrg.setCostCenter(isLeaf ? r[2] : null);
+                newOrg.setSortOrder(0);
+                newOrg.setIsActive((byte) 1);
+                newOrg.setPath("");
+                newOrg.setParentId(parentId);
+                org = orgRepository.save(newOrg);
                     existingCache.put(key, org);
                     created++;
                 } else if (isLeaf) {
@@ -182,6 +190,11 @@ public class OrganizationService {
                     }
                     if (r[2] != null && !r[2].equals(org.getCostCenter())) {
                         org.setCostCenter(r[2]);
+                        changed = true;
+                    }
+                    // Update type if explicitly specified and differs from current
+                    if (explicitType != null && org.getType() != explicitType) {
+                        org.setType(explicitType);
                         changed = true;
                     }
                     if (changed) {
@@ -225,6 +238,22 @@ public class OrganizationService {
         if (org == null || org.getParentId() == null) return "/" + orgId + "/";
         String parentPath = buildPath(org.getParentId(), orgMap, visited);
         return parentPath + orgId + "/";
+    }
+
+    /** Parse org type string to byte value. Returns null if input is null/empty/unrecognized. */
+    private Byte parseOrgType(String typeStr) {
+        if (typeStr == null || typeStr.isBlank()) return null;
+        return switch (typeStr.trim()) {
+            case "一级分行" -> (byte) 2;
+            case "二级分行" -> (byte) 3;
+            case "部门"     -> (byte) 4;
+            case "综合支行" -> (byte) 5;
+            case "零专支行" -> (byte) 6;
+            default -> {
+                log.warn("Unrecognized org type '{}', falling back to auto-infer", typeStr);
+                yield null;
+            }
+        };
     }
 
     private String getCellStringValue(Row row, int colIndex) {

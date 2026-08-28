@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Table, Tag, Descriptions, Drawer } from 'antd';
+import { Card, Table, Tag, Descriptions, Drawer, message } from 'antd';
 import { SafetyCertificateOutlined, BankOutlined, EyeOutlined } from '@ant-design/icons';
 import { apiGet } from '../lib/request';
 import { COLORS } from '../theme/morandi';

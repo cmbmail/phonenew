@@ -10,8 +10,10 @@ import lombok.*;
 @Table(name = "recording_data_batch")
 @Getter @Setter @NoArgsConstructor
 public class RecordingDataBatch extends BaseEntity {
-    @Column(name = "batch_no", nullable = false, unique = true)
+    @Column(name = "batch_no", nullable = false)
     private String batchNo;
+    @Column(name = "billing_month") @ColumnDefault("''")
+    private String billingMonth;
     @Column(name = "file_name") @ColumnDefault("''")
     private String fileName;
     @Column(name = "total_count") @ColumnDefault("0")

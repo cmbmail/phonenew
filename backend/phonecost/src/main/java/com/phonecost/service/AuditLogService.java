@@ -82,33 +82,23 @@ public class AuditLogService {
     }
 
     public Page<AuditLog> listPaged(int page, int size, String action, String username,
-                                     LocalDateTime startDate, LocalDateTime endDate) {
+                                     String entityType, LocalDateTime startDate, LocalDateTime endDate) {
         Pageable pageable = PageRequest.of(page, size);
-        boolean hasAction = action != null && !action.isEmpty();
-        boolean hasUsername = username != null && !username.isEmpty();
-        boolean hasDateRange = startDate != null && endDate != null;
-
-        if (hasAction && hasUsername && hasDateRange) {
-            return auditLogRepository.findByActionAndUsernameContainingAndCreatedAtBetweenOrderByCreatedAtDesc(action, username, startDate, endDate, pageable);
-        } else if (hasAction && hasDateRange) {
-            return auditLogRepository.findByActionAndCreatedAtBetweenOrderByCreatedAtDesc(action, startDate, endDate, pageable);
-        } else if (hasUsername && hasDateRange) {
-            return auditLogRepository.findByUsernameContainingAndCreatedAtBetweenOrderByCreatedAtDesc(username, startDate, endDate, pageable);
-        } else if (hasDateRange) {
-            return auditLogRepository.findByCreatedAtBetweenOrderByCreatedAtDesc(startDate, endDate, pageable);
-        } else if (hasAction && hasUsername) {
-            return auditLogRepository.findByActionAndUsernameContainingOrderByCreatedAtDesc(action, username, pageable);
-        } else if (hasAction) {
-            return auditLogRepository.findByActionOrderByCreatedAtDesc(action, pageable);
-        } else if (hasUsername) {
-            return auditLogRepository.findByUsernameContainingOrderByCreatedAtDesc(username, pageable);
-        }
-        return auditLogRepository.findAllByOrderByCreatedAtDesc(pageable);
+        // 使用动态查询，避免排列组合爆炸
+        String actionParam = (action != null && !action.isEmpty()) ? action : null;
+        String usernameParam = (username != null && !username.isEmpty()) ? username : null;
+        String entityTypeParam = (entityType != null && !entityType.isEmpty()) ? entityType : null;
+        return auditLogRepository.findPaged(actionParam, usernameParam, entityTypeParam, startDate, endDate, pageable);
     }
 
     // Keep backward-compatible overload
     public Page<AuditLog> listPaged(int page, int size, String action, String username) {
-        return listPaged(page, size, action, username, null, null);
+        return listPaged(page, size, action, username, null, null, null);
+    }
+
+    public Page<AuditLog> listPaged(int page, int size, String action, String username,
+                                     LocalDateTime startDate, LocalDateTime endDate) {
+        return listPaged(page, size, action, username, null, startDate, endDate);
     }
 
     private String getClientIp() {

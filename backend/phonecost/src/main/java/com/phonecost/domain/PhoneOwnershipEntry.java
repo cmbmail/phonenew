@@ -4,7 +4,6 @@ import jakarta.persistence.*;
 import org.hibernate.annotations.ColumnDefault;
 import org.hibernate.annotations.Where;
 import lombok.*;
-import org.hibernate.annotations.ColumnDefault;
 
 @Where(clause = "deleted_at IS NULL")
 @Entity
@@ -12,8 +11,6 @@ import org.hibernate.annotations.ColumnDefault;
 @Getter
 @Setter
 @NoArgsConstructor
-@AllArgsConstructor
-@Builder
 public class PhoneOwnershipEntry extends BaseEntity {
 
     @Column(name = "batch_id", nullable = false)
@@ -21,6 +18,14 @@ public class PhoneOwnershipEntry extends BaseEntity {
 
     @Column(name = "phone_number", nullable = false)
     private String phoneNumber;
+
+    @Column(name = "extension")
+    @ColumnDefault("''")
+    private String extension;
+
+    @Column(name = "full_path")
+    @ColumnDefault("''")
+    private String fullPath;
 
     @Column(name = "description")
     @ColumnDefault("''")
@@ -36,4 +41,28 @@ public class PhoneOwnershipEntry extends BaseEntity {
     @Column(name = "match_level")
     @ColumnDefault("''")
     private String matchLevel;
+
+    @Column(name = "l1_branch")
+    @ColumnDefault("''")
+    private String l1Branch;
+
+    @Column(name = "l2_branch")
+    @ColumnDefault("''")
+    private String l2Branch;
+
+    @Column(name = "status")
+    @ColumnDefault("0")
+    private Byte status;
+
+    @Column(name = "alloc_dept")
+    @ColumnDefault("''")
+    private String allocDept;
+
+    @Column(name = "org_code")
+    @ColumnDefault("''")
+    private String orgCode;
+
+    @Column(name = "cost_center")
+    @ColumnDefault("''")
+    private String costCenter;
 }

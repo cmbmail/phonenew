@@ -1,12 +1,12 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Layout, Menu, Avatar, Dropdown, Typography, Popconfirm, Modal, Form, Input, message } from 'antd';
-import { DashboardOutlined, FileTextOutlined, PhoneOutlined, TeamOutlined, SettingOutlined, LogoutOutlined, ToolOutlined, BankOutlined, BranchesOutlined, DatabaseOutlined, NumberOutlined, UserSwitchOutlined, BookOutlined, UserOutlined, AuditOutlined, BarChartOutlined, SafetyCertificateOutlined, NotificationOutlined, AudioOutlined } from '@ant-design/icons';
+import { DashboardOutlined, FileTextOutlined, PhoneOutlined, TeamOutlined, SettingOutlined, LogoutOutlined, ToolOutlined, BankOutlined, BranchesOutlined, DatabaseOutlined, NumberOutlined, UserSwitchOutlined, UserOutlined, AuditOutlined, BarChartOutlined, SafetyCertificateOutlined, NotificationOutlined, ContactsOutlined, WarningOutlined, VideoCameraOutlined, SwapOutlined, CloudServerOutlined } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
 import { getErrorMessage } from '../types/api';
 import { apiPost } from '../lib/request';
 import { COLORS } from '../theme/morandi';
-const { Sider, Header, Content } = Layout;
+const { Sider, Header } = Layout;
 const { Text } = Typography;
 
 interface MenuItemDef {
@@ -38,9 +38,11 @@ const allMenuItems: MenuItemDef[] = [
     children: [
       { key: '/org', icon: <TeamOutlined />, label: '组织架构' },
       { key: '/base/phone-ownership', icon: <NumberOutlined />, label: '号码归属' },
-      { key: '/base/directory', icon: <BookOutlined />, label: '通讯录' },
-      { key: '/base/dept-ownership', icon: <UserSwitchOutlined />, label: '部门归属' },
-      { key: '/base/recording-data', icon: <AudioOutlined />, label: '录音数据' },
+      { key: '/base/branch-ownership', icon: <BankOutlined />, label: '归属分行' },
+      { key: '/base/dept-ownership', icon: <UserSwitchOutlined />, label: '成本中心' },
+      { key: '/base/directory', icon: <ContactsOutlined />, label: '通讯录' },
+      { key: '/base/exceptions', icon: <WarningOutlined />, label: '例外号码' },
+      { key: '/base/recording-data', icon: <VideoCameraOutlined />, label: '录音数据' },
     ],
   },
   {
@@ -54,7 +56,20 @@ const allMenuItems: MenuItemDef[] = [
       { key: '/settings/announcements', icon: <NotificationOutlined />, label: '通知公告' },
       { key: '/templates', icon: <ToolOutlined />, label: '模板管理' },
       { key: '/settings/audit-log', icon: <AuditOutlined />, label: '操作日志' },
+    ],
+  },
+  {
+    key: '/data-maintenance-group',
+    icon: <CloudServerOutlined />,
+    label: '数据维护',
+    roles: [1, 2],
+    children: [
       { key: '/settings/data-maintenance', icon: <SafetyCertificateOutlined />, label: '数据维护' },
+      { key: '/data-comparison', icon: <SwapOutlined />, label: '数据对比' },
+      { key: '/maintenance/allocation-ownership', icon: <NumberOutlined />, label: '分摊号码归属' },
+      { key: '/maintenance/branch-number', icon: <BankOutlined />, label: '分行号码' },
+      { key: '/maintenance/allocation-org', icon: <BranchesOutlined />, label: '号码分摊机构' },
+      { key: '/maintenance/org-code-mapping', icon: <SafetyCertificateOutlined />, label: '组织机构对照表' },
     ],
   },
 ];
@@ -68,7 +83,7 @@ const AppLayout: React.FC = () => {
   const location = useLocation();
   const { username, realName, role, mustChangePwd, clearMustChangePwd, logout } = useAuthStore();
 
-  // Manually expanded groups + auto-expand current path's group
+  // Track open groups; auto-expand when route changes, but let user collapse afterwards
   const [manualOpenKeys, setManualOpenKeys] = useState<string[]>([]);
 
   const autoExpandKey = useMemo(() => {
@@ -80,15 +95,20 @@ const AppLayout: React.FC = () => {
     return null;
   }, [location.pathname]);
 
+  // Only auto-expand on route change; user can still manually collapse
+  useEffect(() => {
+    if (autoExpandKey) {
+      setManualOpenKeys(prev => prev.includes(autoExpandKey) ? prev : [...prev, autoExpandKey]);
+    }
+  }, [autoExpandKey]);
+
   const openKeys = useMemo(() => {
-    if (collapsed) return undefined; // 收起时不传 openKeys，让 rc-menu 内部管理 hover popup
-    const keys = [...manualOpenKeys];
-    if (autoExpandKey && !keys.includes(autoExpandKey)) keys.push(autoExpandKey);
-    return keys;
-  }, [collapsed, manualOpenKeys, autoExpandKey]);
+    if (collapsed) return undefined;
+    return manualOpenKeys;
+  }, [collapsed, manualOpenKeys]);
 
   const handleOpenChange = (keys: string[]) => {
-    if (collapsed) return; // 收起时不更新 manualOpenKeys（rc-menu 内部自行管理 popup）
+    if (collapsed) return;
     setManualOpenKeys(keys);
   };
 
@@ -150,7 +170,7 @@ const AppLayout: React.FC = () => {
         {mustChangePwd && <Typography.Paragraph type="warning" style={{ marginBottom: 16 }}>首次登录需要修改密码后才能使用系统</Typography.Paragraph>}
         <Form form={form} layout="vertical" onFinish={handleChangePwd}>
           <Form.Item name="old_password" label="原密码" rules={[{ required: true, message: '请输入原密码' }]}><Input.Password /></Form.Item>
-          <Form.Item name="new_password" label="新密码" rules={[{ required: true, message: '请输入新密码' }, { min: 8, message: '密码至少8位' }, { pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/, message: '需包含大小写字母、数字和特殊字符' }]}><Input.Password /></Form.Item>
+          <Form.Item name="new_password" label="新密码" rules={[{ required: true, message: '请输入新密码' }, { min: 8, message: '密码至少8位' }, { pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]).{8,}$/, message: '需包含大小写字母、数字和特殊字符' }]}><Input.Password /></Form.Item>
           <Form.Item name="confirm_password" label="确认新密码" dependencies={['new_password']} rules={[{ required: true, message: '请确认新密码' }, ({ getFieldValue }) => ({ validator(_, value) { return value && value !== getFieldValue('new_password') ? Promise.reject('两次密码不一致') : Promise.resolve(); } })]}><Input.Password /></Form.Item>
           <Form.Item><button type="submit" style={{ width: '100%', padding: '8px 16px', background: COLORS.sage, color: '#fff', border: 'none', borderRadius: 8, cursor: changePwdLoading ? 'not-allowed' : 'pointer', fontSize: 14 }} disabled={changePwdLoading}>{changePwdLoading ? '提交中...' : '确定'}</button></Form.Item>
         </Form>

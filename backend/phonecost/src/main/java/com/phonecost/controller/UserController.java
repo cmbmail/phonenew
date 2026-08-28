@@ -3,6 +3,7 @@ package com.phonecost.controller;
 import com.phonecost.domain.SysOrganization;
 import com.phonecost.domain.SysUser;
 import com.phonecost.dto.ApiResponse;
+import com.phonecost.dto.UserResponse;
 import com.phonecost.repository.SysOrganizationRepository;
 import com.phonecost.repository.SysUserRepository;
 import com.phonecost.service.DataScope;
@@ -41,61 +42,53 @@ public class UserController {
     public ResponseEntity<ApiResponse<Map<String, Object>>> list(
             @RequestAttribute("userId") Long userId,
             @RequestParam(required = false) Long org_id,
+            @RequestParam(required = false) String username,
+            @RequestParam(required = false) String realName,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size) {
+            @RequestParam(defaultValue = "20") int size) {
         // M-04 fix: limit page size
         size = Math.min(size, 200);
         DataScope scope = dataScopeService.getDataScope(userId);
 
+        // Normalize search params
+        String usernameParam = (username != null && !username.isEmpty()) ? username : null;
+        String realNameParam = (realName != null && !realName.isEmpty()) ? realName : null;
+
+        // Determine org IDs to filter by
+        List<Long> orgIdFilter = null;
         if (org_id != null) {
-            // Must be within caller's data scope
             if (!scope.isOrgVisible(org_id)) {
                 return ResponseEntity.ok(ApiResponse.ok(Map.of("content", List.of(), "total", 0, "page", page, "size", size)));
             }
-            // Get subtree org IDs for the requested org
             SysOrganization targetOrg = orgRepository.findByIdAndDeletedAtIsNull(org_id).orElse(null);
             if (targetOrg == null) {
                 return ResponseEntity.ok(ApiResponse.ok(Map.of("content", List.of(), "total", 0, "page", page, "size", size)));
             }
             List<SysOrganization> descendants = orgRepository.findByPathStartingWithAndDeletedAtIsNull(targetOrg.getPath());
-            Set<Long> subtreeIds = descendants.stream().map(SysOrganization::getId).collect(Collectors.toSet());
-
-            // DB-level pagination for scoped users
-            Page<SysUser> paged = userRepository.findByOrgIdInAndDeletedAtIsNull(
-                    subtreeIds.stream().toList(), PageRequest.of(page, size));
-            return ResponseEntity.ok(ApiResponse.ok(Map.of(
-                    "content", paged.getContent(),
-                    "total", paged.getTotalElements(),
-                    "page", paged.getNumber(),
-                    "size", paged.getSize())));
-        }
-
-        // No org_id filter: use data scope
-        if (scope.isAllScope()) {
-            Page<SysUser> paged = userRepository.findByDeletedAtIsNull(PageRequest.of(page, size));
-            return ResponseEntity.ok(ApiResponse.ok(Map.of(
-                    "content", paged.getContent(),
-                    "total", paged.getTotalElements(),
-                    "page", paged.getNumber(),
-                    "size", paged.getSize())));
-        } else {
+            orgIdFilter = descendants.stream().map(SysOrganization::getId).collect(Collectors.toList());
+        } else if (!scope.isAllScope()) {
             var visibleIds = scope.getVisibleOrgIds();
-            if (visibleIds != null && !visibleIds.isEmpty()) {
-                Page<SysUser> paged = userRepository.findByOrgIdInAndDeletedAtIsNull(
-                        visibleIds, PageRequest.of(page, size));
-                return ResponseEntity.ok(ApiResponse.ok(Map.of(
-                        "content", paged.getContent(),
-                        "total", paged.getTotalElements(),
-                        "page", paged.getNumber(),
-                        "size", paged.getSize())));
+            if (visibleIds == null || visibleIds.isEmpty()) {
+                return ResponseEntity.ok(ApiResponse.ok(Map.of("content", List.of(), "total", 0, "page", page, "size", size)));
             }
-            return ResponseEntity.ok(ApiResponse.ok(Map.of("content", List.of(), "total", 0, "page", page, "size", size)));
+            orgIdFilter = visibleIds;
         }
+
+        // Use dynamic search query
+        Page<SysUser> paged = userRepository.searchPaged(
+                usernameParam, realNameParam, orgIdFilter, PageRequest.of(page, size));
+        List<UserResponse> userResponses = paged.getContent().stream()
+                .map(UserResponse::from).collect(Collectors.toList());
+        return ResponseEntity.ok(ApiResponse.ok(Map.of(
+                "content", userResponses,
+                "total", paged.getTotalElements(),
+                "page", paged.getNumber(),
+                "size", paged.getSize())));
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
-    public ResponseEntity<ApiResponse<SysUser>> getById(
+    public ResponseEntity<ApiResponse<UserResponse>> getById(
             @PathVariable Long id,
             @RequestAttribute("userId") Long currentUserId) {
         SysUser target = userService.getById(id);
@@ -103,7 +96,7 @@ public class UserController {
         if (!scope.isOrgVisible(target.getOrgId())) {
             throw new IllegalArgumentException("无权访问该用户数据");
         }
-        return ResponseEntity.ok(ApiResponse.ok(target));
+        return ResponseEntity.ok(ApiResponse.ok(UserResponse.from(target)));
     }
 
     @PostMapping

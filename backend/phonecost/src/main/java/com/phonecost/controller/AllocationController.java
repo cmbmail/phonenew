@@ -20,6 +20,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 费用分摊Controller
@@ -59,20 +60,22 @@ public class AllocationController {
         Long billBatchId = req.getBillBatchId();
         Long ownershipBatchId = req.getOwnershipBatchId();
         Long directoryBatchId = req.getDirectoryBatchId();
+        Long allocationDeptBatchId = req.getAllocationDeptBatchId();
 
         // If not explicitly provided, try to load from existing DataSnapshot
-        if (ownershipBatchId == null || directoryBatchId == null) {
+        if (ownershipBatchId == null || directoryBatchId == null || allocationDeptBatchId == null) {
             var existingSnapshot = dataSnapshotRepository.findByBillBatchIdAndDeletedAtIsNull(billBatchId);
             if (existingSnapshot.isPresent()) {
                 var snap = existingSnapshot.get();
                 if (ownershipBatchId == null) ownershipBatchId = snap.getOwnershipBatchId();
                 if (directoryBatchId == null) directoryBatchId = snap.getDirectoryBatchId();
+                if (allocationDeptBatchId == null) allocationDeptBatchId = snap.getAllocationDeptBatchId();
             }
         }
 
         // Step 1: Run ownership matching with the specified (or snapshot) batches
         int matchedCount = ownershipMatchService.matchOwnershipForBillBatch(
-                billBatchId, ownershipBatchId, directoryBatchId);
+                billBatchId, ownershipBatchId, directoryBatchId, allocationDeptBatchId);
 
         // Step 2: Save/update DataSnapshot
         var existingSnap = dataSnapshotRepository.findByBillBatchIdAndDeletedAtIsNull(billBatchId);
@@ -81,12 +84,14 @@ public class AllocationController {
             snapshot = existingSnap.get();
             snapshot.setOwnershipBatchId(ownershipBatchId);
             snapshot.setDirectoryBatchId(directoryBatchId);
+            snapshot.setAllocationDeptBatchId(allocationDeptBatchId);
             snapshot.setMatchedCount(matchedCount);
         } else {
             snapshot = DataSnapshot.builder()
                     .billBatchId(billBatchId)
                     .ownershipBatchId(ownershipBatchId)
                     .directoryBatchId(directoryBatchId)
+                    .allocationDeptBatchId(allocationDeptBatchId)
                     .matchedCount(matchedCount)
                     .build();
         }
@@ -98,15 +103,18 @@ public class AllocationController {
         auditLogService.log(userId, "ALLOCATION_CALCULATE", "bill_batch", billBatchId,
                 Map.of("org_count", results.size(), "matched_count", matchedCount,
                         "ownership_batch_id", ownershipBatchId != null ? ownershipBatchId : 0L,
-                        "directory_batch_id", directoryBatchId != null ? directoryBatchId : 0L));
+                        "directory_batch_id", directoryBatchId != null ? directoryBatchId : 0L,
+                        "allocation_dept_batch_id", allocationDeptBatchId != null ? allocationDeptBatchId : 0L));
 
-        return ResponseEntity.ok(ApiResponse.ok(Map.of(
-                "bill_batch_id", billBatchId,
-                "org_count", results.size(),
-                "matched_count", matchedCount,
-                "ownership_batch_id", ownershipBatchId,
-                "directory_batch_id", directoryBatchId
-        )));
+        Map<String, Object> calcResult = new HashMap<>();
+        calcResult.put("bill_batch_id", billBatchId);
+        calcResult.put("org_count", results.size());
+        calcResult.put("matched_count", matchedCount);
+        calcResult.put("ownership_batch_id", ownershipBatchId);
+        calcResult.put("directory_batch_id", directoryBatchId);
+        calcResult.put("allocation_dept_batch_id", allocationDeptBatchId);
+
+        return ResponseEntity.ok(ApiResponse.ok(calcResult));
     }
 
     // ==================== 查询结果 ====================
@@ -121,6 +129,7 @@ public class AllocationController {
             DataSnapshot snap = snapshot.get();
             result.put("ownership_batch_id", snap.getOwnershipBatchId());
             result.put("directory_batch_id", snap.getDirectoryBatchId());
+            result.put("allocation_dept_batch_id", snap.getAllocationDeptBatchId());
             result.put("matched_count", snap.getMatchedCount());
         }
         // Available batches for selection
@@ -341,26 +350,28 @@ public class AllocationController {
 
     /**
      * L1 分摊汇总数据（JSON，供前端表格展示）
-     * 只有集团管理员和财务可以看全量L1汇总
+     * 数据源：分摊号码归属（phone_ownership_entry），按 l1_branch 聚合
      */
     @GetMapping("/l1-summary-data")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_FINANCE')")
     public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getL1SummaryData(
             @RequestParam Long batchId,
             @RequestAttribute("userId") Long userId) {
-        DataScope scope = dataScopeService.getDataScope(userId);
-        List<Map<String, Object>> data = branchBillExportService.getL1SummaryData(batchId);
-        // 按数据范围过滤：分行管理员只看管辖分行，部门管理员看自己的
-        if (!scope.isAllScope()) {
-            List<Long> visibleIds = scope.getVisibleOrgIds();
-            if (visibleIds != null) {
-                data = data.stream()
-                        .filter(row -> {
-                            Object orgId = row.get("org_id");
-                            if (orgId == null) return true; // 未归属
-                            return visibleIds.contains(((Number) orgId).longValue());
-                        })
-                        .toList();
+        List<Map<String, Object>> data = branchBillExportService.getL1SummaryDataByOwnership(batchId);
+        // 按数据范围过滤：分行管理员只看管辖分行
+        if (!data.isEmpty()) {
+            DataScope scope = dataScopeService.getDataScope(userId);
+            if (!scope.isAllScope()) {
+                Set<String> visibleBranchNames = resolveVisibleL1BranchNames(userId);
+                if (visibleBranchNames != null) {
+                    data = data.stream()
+                            .filter(row -> {
+                                Object l1Branch = row.get("l1_branch");
+                                if (l1Branch == null) return true;
+                                return visibleBranchNames.contains(l1Branch.toString());
+                            })
+                            .toList();
+                }
             }
         }
         return ResponseEntity.ok(ApiResponse.ok(data));
@@ -368,8 +379,8 @@ public class AllocationController {
 
     /**
      * L1 分摊明细数据（JSON，供前端分摊明细4个Tab展示）
+     * 数据源：分摊号码归属，按号码匹配 bill_detail
      * sheetType: CALL / RECORDING / CRBT / FLASH_MSG
-     * 集团管理员和财务可看全量，其他人按范围过滤
      */
     @GetMapping("/l1-detail")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_FINANCE', 'ROLE_BRANCH', 'ROLE_DEPARTMENT')")
@@ -377,18 +388,44 @@ public class AllocationController {
             @RequestParam Long batchId,
             @RequestParam String sheetType,
             @RequestAttribute("userId") Long userId) {
-        DataScope scope = dataScopeService.getDataScope(userId);
-        List<Map<String, Object>> data = branchBillExportService.getL1DetailData(batchId, sheetType);
-        if (!scope.isAllScope()) {
-            List<Long> visibleIds = scope.getVisibleOrgIds();
-            if (visibleIds != null) {
-                data = data.stream()
-                        .filter(row -> {
-                            Object orgId = row.get("org_id");
-                            if (orgId == null) return true;
-                            return visibleIds.contains(((Number) orgId).longValue());
-                        })
-                        .toList();
+        List<Map<String, Object>> data = branchBillExportService.getL1DetailDataByOwnership(batchId, sheetType);
+        if (!data.isEmpty()) {
+            DataScope scope = dataScopeService.getDataScope(userId);
+            if (!scope.isAllScope()) {
+                Set<String> visibleBranchNames = resolveVisibleL1BranchNames(userId);
+                if (visibleBranchNames != null) {
+                    data = data.stream()
+                            .filter(row -> {
+                                Object l1Branch = row.get("l1_branch");
+                                if (l1Branch == null || l1Branch.toString().isBlank()) return true;
+                                return visibleBranchNames.contains(l1Branch.toString());
+                            })
+                            .toList();
+                }
+            }
+        }
+        return ResponseEntity.ok(ApiResponse.ok(data));
+    }
+
+    /**
+     * L2 一级分行汇总数据（JSON，按 l2_branch 聚合）
+     * 数据源：分摊号码归属
+     */
+    @GetMapping("/l2-summary-data")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_FINANCE', 'ROLE_BRANCH', 'ROLE_DEPARTMENT')")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getL2SummaryData(
+            @RequestParam Long batchId,
+            @RequestParam String l1Branch,
+            @RequestAttribute("userId") Long userId) {
+        List<Map<String, Object>> data = branchBillExportService.getL2SummaryDataByOwnership(batchId, l1Branch);
+        // 权限过滤：非全量用户只能看本分行
+        if (!data.isEmpty()) {
+            DataScope scope = dataScopeService.getDataScope(userId);
+            if (!scope.isAllScope()) {
+                Set<String> visibleBranchNames = resolveVisibleL1BranchNames(userId);
+                if (visibleBranchNames != null && !visibleBranchNames.contains(l1Branch)) {
+                    data = List.of();
+                }
             }
         }
         return ResponseEntity.ok(ApiResponse.ok(data));
@@ -396,38 +433,47 @@ public class AllocationController {
 
     /**
      * L2 一级分行分摊明细数据（JSON，供前端分摊明细4个Tab展示）
-     * 只返回该一级分行下属组织的明细
-     * 部门管理员只能看到自己所属分行（通过resolveEffectiveBranchOrgId自动定位）
+     * 数据源：分摊号码归属，按 l1_branch 过滤
      */
     @GetMapping("/l2-detail")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_FINANCE', 'ROLE_BRANCH', 'ROLE_DEPARTMENT')")
     public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getL2DetailData(
             @RequestParam Long batchId,
-            @RequestParam Long branchOrgId,
+            @RequestParam String l1Branch,
             @RequestParam String sheetType,
             @RequestAttribute("userId") Long userId) {
+        // 权限校验：非全量用户只能看本分行
         DataScope scope = dataScopeService.getDataScope(userId);
-        // 非全量权限：校验请求的branchOrgId是否在管辖范围
-        if (!scope.isAllScope() && !scope.isOrgVisible(branchOrgId)) {
-            // 部门管理员可能不直接属于一级分行，需要检查是否属于该分行子树
-            // 使用resolveEffectiveBranchOrgId自动定位到用户所属分行
-            Long effectiveBranchOrgId = resolveEffectiveBranchOrgId(branchOrgId, userId);
-            if (!effectiveBranchOrgId.equals(branchOrgId)) {
-                branchOrgId = effectiveBranchOrgId;
+        if (!scope.isAllScope()) {
+            Set<String> visibleBranchNames = resolveVisibleL1BranchNames(userId);
+            if (visibleBranchNames != null && !visibleBranchNames.contains(l1Branch)) {
+                return ResponseEntity.ok(ApiResponse.ok(List.of()));
             }
         }
-        List<Map<String, Object>> data = branchBillExportService.getL2DetailData(batchId, branchOrgId, sheetType);
-        // 再按数据范围过滤明细行
-        if (!scope.isAllScope()) {
-            List<Long> visibleIds = scope.getVisibleOrgIds();
-            if (visibleIds != null) {
-                data = data.stream()
-                        .filter(row -> {
-                            Object orgId = row.get("org_id");
-                            if (orgId == null) return true;
-                            return visibleIds.contains(((Number) orgId).longValue());
-                        })
-                        .toList();
+        List<Map<String, Object>> data = branchBillExportService.getL2DetailDataByOwnership(batchId, l1Branch, sheetType);
+        return ResponseEntity.ok(ApiResponse.ok(data));
+    }
+
+    /**
+     * L3 二级分行汇总数据（JSON，按 alloc_dept 聚合）
+     * 数据源：分摊号码归属
+     */
+    @GetMapping("/l3-summary-data")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_FINANCE', 'ROLE_BRANCH', 'ROLE_DEPARTMENT')")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getL3SummaryData(
+            @RequestParam Long batchId,
+            @RequestParam String l1Branch,
+            @RequestParam String l2Branch,
+            @RequestAttribute("userId") Long userId) {
+        List<Map<String, Object>> data = branchBillExportService.getL3SummaryDataByOwnership(batchId, l1Branch, l2Branch);
+        // 权限过滤
+        if (!data.isEmpty()) {
+            DataScope scope = dataScopeService.getDataScope(userId);
+            if (!scope.isAllScope()) {
+                Set<String> visibleBranchNames = resolveVisibleL1BranchNames(userId);
+                if (visibleBranchNames != null && !visibleBranchNames.contains(l1Branch)) {
+                    data = List.of();
+                }
             }
         }
         return ResponseEntity.ok(ApiResponse.ok(data));
@@ -435,36 +481,63 @@ public class AllocationController {
 
     /**
      * L3 二级分行分摊明细数据（JSON，供前端分摊明细4个Tab展示）
-     * 只返回该二级分行下属组织的明细
-     * 部门管理员只能看到自己所属支行
+     * 数据源：分摊号码归属，按 l1_branch + l2_branch 过滤
      */
     @GetMapping("/l3-detail")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_FINANCE', 'ROLE_BRANCH', 'ROLE_DEPARTMENT')")
     public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getL3DetailData(
             @RequestParam Long batchId,
-            @RequestParam Long subBranchOrgId,
+            @RequestParam String l1Branch,
+            @RequestParam String l2Branch,
             @RequestParam String sheetType,
             @RequestAttribute("userId") Long userId) {
         DataScope scope = dataScopeService.getDataScope(userId);
-        // 校验：请求的subBranchOrgId必须在管辖范围
-        if (!scope.isAllScope() && !scope.isOrgVisible(subBranchOrgId)) {
-            return ResponseEntity.ok(ApiResponse.ok(List.of()));
-        }
-        List<Map<String, Object>> data = branchBillExportService.getL3DetailData(batchId, subBranchOrgId, sheetType);
-        // 再按数据范围过滤明细行
         if (!scope.isAllScope()) {
-            List<Long> visibleIds = scope.getVisibleOrgIds();
-            if (visibleIds != null) {
-                data = data.stream()
-                        .filter(row -> {
-                            Object orgId = row.get("org_id");
-                            if (orgId == null) return true;
-                            return visibleIds.contains(((Number) orgId).longValue());
-                        })
-                        .toList();
+            Set<String> visibleBranchNames = resolveVisibleL1BranchNames(userId);
+            if (visibleBranchNames != null && !visibleBranchNames.contains(l1Branch)) {
+                return ResponseEntity.ok(ApiResponse.ok(List.of()));
             }
         }
+        List<Map<String, Object>> data = branchBillExportService.getL3DetailDataByOwnership(batchId, l1Branch, l2Branch, sheetType);
         return ResponseEntity.ok(ApiResponse.ok(data));
+    }
+
+    /**
+     * Resolve visible l1_branch names for non-admin users based on their orgId.
+     * Returns null for admin/finance (all visible).
+     */
+    private Set<String> resolveVisibleL1BranchNames(Long userId) {
+        DataScope scope = dataScopeService.getDataScope(userId);
+        if (scope.isAllScope()) return null;
+        // Find the user's orgId, then walk up to find type=2 (一级分行) name
+        List<Long> visibleOrgIds = scope.getVisibleOrgIds();
+        if (visibleOrgIds == null || visibleOrgIds.isEmpty()) return Set.of();
+        Map<Long, SysOrganization> orgMap = orgRepository.findByDeletedAtIsNull().stream()
+                .collect(java.util.stream.Collectors.toMap(SysOrganization::getId, o -> o, (a, b) -> a));
+        Set<String> names = new java.util.HashSet<>();
+        for (Long orgId : visibleOrgIds) {
+            SysOrganization org = orgMap.get(orgId);
+            if (org != null && org.getType() != null && org.getType() == 2) {
+                names.add(org.getName());
+            }
+        }
+        // Also resolve from singleOrgId or path prefix
+        if (scope.getSingleOrgId() != null) {
+            SysOrganization org = orgMap.get(scope.getSingleOrgId());
+            if (org != null && org.getPath() != null) {
+                String[] segments = org.getPath().split("/");
+                for (int i = segments.length - 1; i >= 0; i--) {
+                    if (segments[i].isEmpty()) continue;
+                    Long segId = Long.parseLong(segments[i]);
+                    SysOrganization ancestor = orgMap.get(segId);
+                    if (ancestor != null && ancestor.getType() != null && ancestor.getType() == 2) {
+                        names.add(ancestor.getName());
+                        break;
+                    }
+                }
+            }
+        }
+        return names;
     }
 
     /**

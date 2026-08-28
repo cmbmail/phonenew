@@ -69,6 +69,12 @@ export const morandiTheme: ThemeConfig = {
       darkItemHoverBg: 'rgba(139, 157, 158, 0.25)',
       darkItemColor: 'rgba(255,255,255,0.75)',
       darkItemSelectedColor: COLORS.white,
+      darkPopupBg: COLORS.charcoal,
+    },
+    Layout: {
+      siderBg: COLORS.charcoal,
+      triggerBg: COLORS.charcoal,
+      triggerColor: 'rgba(255,255,255,0.75)',
     },
     Tabs: {
       cardBg: COLORS.white,

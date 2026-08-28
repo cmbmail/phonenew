@@ -1,12 +1,13 @@
 # Development profile — provides safe defaults for local development only
 # NEVER use this profile in production
+# All secrets must be provided via environment variables; no hardcoded defaults
 
 spring:
   datasource:
-    password: ${DB_PASSWORD:PhoneCostApp@2026}
+    password: ${DB_PASSWORD:}  # H-S06: no hardcoded default
   data:
     redis:
-      password: ${REDIS_PASSWORD:RedisCost@2026}
+      password: ${REDIS_PASSWORD:}  # H-S06: no hardcoded default
 
 jwt:
-  secret: ${JWT_SECRET:PhoneCostJwtSecret2026DevOnlyNotForProductionUse}
+  secret: ${JWT_SECRET:}  # H-S06: no hardcoded default

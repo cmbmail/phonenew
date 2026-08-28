@@ -26,6 +26,7 @@ import {
   DeleteOutlined,
   KeyOutlined,
   ApartmentOutlined,
+  SearchOutlined,
 } from '@ant-design/icons';
 import type { DataNode } from 'antd/es/tree';
 import { useTranslation } from 'react-i18next';
@@ -60,22 +61,32 @@ export default function UserManagement() {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [resetModalOpen, setResetModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserItem | null>(null);
+  const [totalUsers, setTotalUsers] = useState(0);
+  const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(20);
+  const [searchKeyword, setSearchKeyword] = useState('');
   const [addForm] = Form.useForm();
   const [editForm] = Form.useForm();
   const [resetForm] = Form.useForm();
 
-  const fetchUsers = useCallback(async (orgId?: number) => {
+  const fetchUsers = useCallback(async (orgId?: number, p?: number, ps?: number, keyword?: string) => {
     setLoading(true);
     try {
-      const result = await getUsers(orgId);
+      const result = await getUsers({
+        orgId,
+        username: keyword || undefined,
+        realName: keyword || undefined,
+        page: p ?? page,
+        size: ps ?? pageSize,
+      });
       setUsers(result.content);
+      setTotalUsers(result.total);
     } catch {
       message.error(t('user.fetchFailed'));
     } finally {
       setLoading(false);
     }
-  }, [t]);
+  }, [page, pageSize, t]);
 
   const fetchOrgs = useCallback(async () => {
     try {
@@ -90,7 +101,7 @@ export default function UserManagement() {
     } catch { /* ignore */ }
   }, []);
 
-  useEffect(() => { fetchOrgs(); fetchUsers(); }, [fetchOrgs, fetchUsers]);
+  useEffect(() => { fetchOrgs(); fetchUsers(undefined, 0, pageSize, ''); }, [fetchOrgs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const orgNameMap = useMemo(() => new Map(orgList.map((o) => [o.id, o.name])), [orgList]);
 
@@ -111,12 +122,22 @@ export default function UserManagement() {
   const handleTreeSelect = (_selectedKeys: React.Key[], info: { node: { key: React.Key } }) => {
     const orgId = info.node.key as number;
     setSelectedOrgId(orgId);
-    fetchUsers(orgId);
+    setPage(0);
+    setSearchKeyword('');
+    fetchUsers(orgId, 0, pageSize, '');
   };
 
   const handleShowAll = () => {
     setSelectedOrgId(null);
-    fetchUsers();
+    setPage(0);
+    setSearchKeyword('');
+    fetchUsers(undefined, 0, pageSize, '');
+  };
+
+  const handleSearch = (value: string) => {
+    setSearchKeyword(value);
+    setPage(0);
+    fetchUsers(selectedOrgId ?? undefined, 0, pageSize, value);
   };
 
   const handleAdd = async () => {
@@ -126,7 +147,7 @@ export default function UserManagement() {
       message.success(t('user.createSuccess'));
       setAddModalOpen(false);
       addForm.resetFields();
-      fetchUsers(selectedOrgId ?? undefined);
+      fetchUsers(selectedOrgId ?? undefined, page, pageSize, searchKeyword);
     } catch (err) {
       message.error(getErrorMessage(err, t('common.failed')));
     }
@@ -141,7 +162,7 @@ export default function UserManagement() {
       setEditModalOpen(false);
       setEditingUser(null);
       editForm.resetFields();
-      fetchUsers(selectedOrgId ?? undefined);
+      fetchUsers(selectedOrgId ?? undefined, page, pageSize, searchKeyword);
     } catch (err) {
       message.error(getErrorMessage(err, t('common.failed')));
     }
@@ -151,7 +172,7 @@ export default function UserManagement() {
     try {
       await deleteUser(id);
       message.success(t('user.deleteSuccess'));
-      fetchUsers(selectedOrgId ?? undefined);
+      fetchUsers(selectedOrgId ?? undefined, page, pageSize, searchKeyword);
     } catch (err) {
       message.error(getErrorMessage(err, t('user.deleteFailed')));
     }
@@ -295,14 +316,24 @@ export default function UserManagement() {
                   </Tag>
                 )}
                 <Typography.Text type="secondary" style={{ fontSize: 12, fontWeight: 'normal' }}>
-                  {t('user.totalUsers', { count: users.length })}
+                  {t('user.totalUsers', { count: totalUsers })}
                 </Typography.Text>
               </span>
             }
             extra={
-              <Button type="primary" icon={<PlusOutlined />} onClick={() => setAddModalOpen(true)}>
-                {t('user.addUser')}
-              </Button>
+              <Space>
+                <Input.Search
+                  prefix={<SearchOutlined />}
+                  placeholder={t('user.searchPlaceholder')}
+                  allowClear
+                  style={{ width: 200 }}
+                  onSearch={handleSearch}
+                  onChange={e => { if (!e.target.value) handleSearch(''); }}
+                />
+                <Button type="primary" icon={<PlusOutlined />} onClick={() => setAddModalOpen(true)}>
+                  {t('user.addUser')}
+                </Button>
+              </Space>
             }
           >
             <Table
@@ -311,7 +342,19 @@ export default function UserManagement() {
               rowKey="id"
               size="small"
               loading={loading}
-              pagination={{ pageSize, showSizeChanger: true, pageSizeOptions: ['20', '50', '100'], showTotal: (total) => `共 ${total} 条`, onChange: (_p, s) => setPageSize(s) }}
+              pagination={{
+                current: page + 1,
+                pageSize,
+                total: totalUsers,
+                showSizeChanger: true,
+                pageSizeOptions: ['20', '50', '100'],
+                showTotal: (total) => t('common.paginationTotal', { total }),
+                onChange: (p, ps) => {
+                  setPage(p - 1);
+                  setPageSize(ps);
+                  fetchUsers(selectedOrgId ?? undefined, p - 1, ps, searchKeyword);
+                },
+              }}
             />
           </Card>
         </Col>
@@ -329,7 +372,7 @@ export default function UserManagement() {
           <Form.Item name="username" label={t('user.formUsername')} rules={[{ required: true, message: t('user.formUsernameRequired') }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="password" label={t('user.formPassword')} rules={[{ required: true, message: t('user.formPasswordRequired') }, { min: 8, message: t('user.pwdMin8') }, { pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/, message: t('user.pwdComplexity') }]}>
+          <Form.Item name="password" label={t('user.formPassword')} rules={[{ required: true, message: t('user.formPasswordRequired') }, { min: 8, message: t('user.pwdMin8') }, { pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]).{8,}$/, message: t('user.pwdComplexity') }]}>
             <Input.Password />
           </Form.Item>
           <Form.Item name="real_name" label={t('user.formRealName')} rules={[{ required: true, message: t('user.formRealNameRequired') }]}>
@@ -397,7 +440,7 @@ export default function UserManagement() {
       >
         <p>{t('user.resetDesc', { username: editingUser?.username })}</p>
         <Form form={resetForm} layout="vertical">
-          <Form.Item name="new_password" label={t('user.formNewPwd')} rules={[{ required: true, message: t('user.formNewPwdRequired') }, { min: 8, message: t('user.pwdMin8') }, { pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/, message: t('user.pwdComplexity') }]}>
+          <Form.Item name="new_password" label={t('user.formNewPwd')} rules={[{ required: true, message: t('user.formNewPwdRequired') }, { min: 8, message: t('user.pwdMin8') }, { pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]).{8,}$/, message: t('user.pwdComplexity') }]}>
             <Input.Password />
           </Form.Item>
           <Form.Item name="confirm_password" label={t('user.formConfirmPwd')} dependencies={['new_password']} rules={[

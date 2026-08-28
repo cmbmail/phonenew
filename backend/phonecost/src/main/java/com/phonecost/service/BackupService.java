@@ -176,6 +176,10 @@ public class BackupService {
             String[] connInfo = parseDbUrl();
             String host = connInfo[0], port = connInfo[1], dbName = connInfo[2];
             String sinceStr = sinceTime.format(DB_TS_FMT);
+            // Validate sinceStr format to prevent SQL injection (must match yyyy-MM-dd HH:mm:ss)
+            if (!sinceStr.matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}")) {
+                throw new IllegalArgumentException("Invalid timestamp format for incremental backup: " + sinceStr);
+            }
 
             // Query information_schema for table column info (using parameterized query)
             List<String> tablesWithUpdatedAt = new ArrayList<>();

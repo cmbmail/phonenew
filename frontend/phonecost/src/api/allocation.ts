@@ -1,6 +1,6 @@
-import { apiGet, apiPost } from '../lib/request';
+import { apiGet, apiPost, getApiBaseUrl } from '../lib/request';
 import { useAuthStore } from '../store/auth';
-import type { AllocationResult, L1SummaryRow, AllocationDetailRow, AllocationResultPage } from '../types/allocation';
+import type { L1SummaryRow, L2SummaryRow, L3SummaryRow, AllocationDetailRow, AllocationResultPage } from '../types/allocation';
 import type { OwnershipBatch, DirectoryBatch } from '../types/import';
 
 // ==================== Snapshot ====================
@@ -43,11 +43,17 @@ export const getL1SummaryData = (batchId: number) =>
 export const getL1DetailData = (batchId: number, sheetType: string) =>
   apiGet<AllocationDetailRow[]>(`/allocation/l1-detail?batchId=${batchId}&sheetType=${sheetType}`);
 
-export const getL2DetailData = (batchId: number, branchOrgId: number, sheetType: string) =>
-  apiGet<AllocationDetailRow[]>(`/allocation/l2-detail?batchId=${batchId}&branchOrgId=${branchOrgId}&sheetType=${sheetType}`);
+export const getL2SummaryData = (batchId: number, l1Branch: string) =>
+  apiGet<L2SummaryRow[]>(`/allocation/l2-summary-data?batchId=${batchId}&l1Branch=${encodeURIComponent(l1Branch)}`);
 
-export const getL3DetailData = (batchId: number, subBranchOrgId: number, sheetType: string) =>
-  apiGet<AllocationDetailRow[]>(`/allocation/l3-detail?batchId=${batchId}&subBranchOrgId=${subBranchOrgId}&sheetType=${sheetType}`);
+export const getL2DetailData = (batchId: number, l1Branch: string, sheetType: string) =>
+  apiGet<AllocationDetailRow[]>(`/allocation/l2-detail?batchId=${batchId}&l1Branch=${encodeURIComponent(l1Branch)}&sheetType=${sheetType}`);
+
+export const getL3SummaryData = (batchId: number, l1Branch: string, l2Branch: string) =>
+  apiGet<L3SummaryRow[]>(`/allocation/l3-summary-data?batchId=${batchId}&l1Branch=${encodeURIComponent(l1Branch)}&l2Branch=${encodeURIComponent(l2Branch)}`);
+
+export const getL3DetailData = (batchId: number, l1Branch: string, l2Branch: string, sheetType: string) =>
+  apiGet<AllocationDetailRow[]>(`/allocation/l3-detail?batchId=${batchId}&l1Branch=${encodeURIComponent(l1Branch)}&l2Branch=${encodeURIComponent(l2Branch)}&sheetType=${sheetType}`);
 
 // ==================== Export (secure fetch-based) ====================
 
@@ -74,21 +80,21 @@ const downloadExport = async (url: string, filename: string) => {
 };
 
 export const exportSummary = (batchId: number, branchOrgId?: number) => {
-  let url = `/api/allocation/export/summary?batchId=${batchId}`;
+  let url = `${getApiBaseUrl()}/allocation/export/summary?batchId=${batchId}`;
   if (branchOrgId) url += `&branchOrgId=${branchOrgId}`;
   const ts = new Date().toISOString().slice(0, 10);
   return downloadExport(url, `费用分摊汇总_${ts}.xlsx`);
 };
 
 export const exportDetail = (batchId: number, branchOrgId?: number) => {
-  let url = `/api/allocation/export/detail?batchId=${batchId}`;
+  let url = `${getApiBaseUrl()}/allocation/export/detail?batchId=${batchId}`;
   if (branchOrgId) url += `&branchOrgId=${branchOrgId}`;
   const ts = new Date().toISOString().slice(0, 10);
   return downloadExport(url, `费用分摊明细_${ts}.xlsx`);
 };
 
 export const exportL1Summary = (batchId: number) => {
-  const url = `/api/allocation/export/l1-summary?batchId=${batchId}`;
+  const url = `${getApiBaseUrl()}/allocation/export/l1-summary?batchId=${batchId}`;
   const ts = new Date().toISOString().slice(0, 10);
   return downloadExport(url, `一级分行汇总_${ts}.xlsx`);
 };

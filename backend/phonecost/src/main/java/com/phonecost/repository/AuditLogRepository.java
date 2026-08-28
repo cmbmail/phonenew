@@ -12,14 +12,22 @@ import java.time.LocalDateTime;
 
 @Repository
 public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
-    Page<AuditLog> findByActionOrderByCreatedAtDesc(String action, Pageable pageable);
-    Page<AuditLog> findByUsernameContainingOrderByCreatedAtDesc(String username, Pageable pageable);
-    Page<AuditLog> findByActionAndUsernameContainingOrderByCreatedAtDesc(String action, String username, Pageable pageable);
-    Page<AuditLog> findAllByOrderByCreatedAtDesc(Pageable pageable);
 
-    // With date range
-    Page<AuditLog> findByCreatedAtBetweenOrderByCreatedAtDesc(LocalDateTime start, LocalDateTime end, Pageable pageable);
-    Page<AuditLog> findByActionAndCreatedAtBetweenOrderByCreatedAtDesc(String action, LocalDateTime start, LocalDateTime end, Pageable pageable);
-    Page<AuditLog> findByUsernameContainingAndCreatedAtBetweenOrderByCreatedAtDesc(String username, LocalDateTime start, LocalDateTime end, Pageable pageable);
-    Page<AuditLog> findByActionAndUsernameContainingAndCreatedAtBetweenOrderByCreatedAtDesc(String action, String username, LocalDateTime start, LocalDateTime end, Pageable pageable);
+    /**
+     * 动态条件分页查询，避免排列组合爆炸
+     */
+    @Query("SELECT a FROM AuditLog a WHERE " +
+           "(:action IS NULL OR a.action = :action) AND " +
+           "(:username IS NULL OR LOWER(a.username) LIKE LOWER(CONCAT('%', :username, '%'))) AND " +
+           "(:entityType IS NULL OR a.entityType = :entityType) AND " +
+           "(:startDate IS NULL OR a.createdAt >= :startDate) AND " +
+           "(:endDate IS NULL OR a.createdAt < :endDate) " +
+           "ORDER BY a.createdAt DESC")
+    Page<AuditLog> findPaged(
+            @Param("action") String action,
+            @Param("username") String username,
+            @Param("entityType") String entityType,
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate,
+            Pageable pageable);
 }

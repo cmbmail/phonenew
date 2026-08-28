@@ -26,6 +26,7 @@ public class AuditLogController {
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) String action,
             @RequestParam(required = false) String username,
+            @RequestParam(required = false) String entityType,
             @RequestParam(required = false) String startDate,
             @RequestParam(required = false) String endDate) {
         // M-11 fix: cap page size at 200
@@ -38,7 +39,7 @@ public class AuditLogController {
         if (endDate != null && !endDate.isEmpty()) {
             endDt = java.time.LocalDate.parse(endDate).plusDays(1).atStartOfDay();
         }
-        Page<AuditLog> result = auditLogService.listPaged(page, size, action, username, startDt, endDt);
+        Page<AuditLog> result = auditLogService.listPaged(page, size, action, username, entityType, startDt, endDt);
         return ResponseEntity.ok(ApiResponse.ok(Map.of(
                 "content", result.getContent(),
                 "totalElements", result.getTotalElements(),

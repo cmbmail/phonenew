@@ -9,5 +9,5 @@ import java.util.Optional;
 public interface SystemVersionRepository extends JpaRepository<SystemVersion, Long> {
 
     List<SystemVersion> findByDeletedAtIsNull();
-    Optional<SystemVersion> findByIsCurrentTrueAndDeletedAtIsNull();
+    Optional<SystemVersion> findTopByIsCurrentTrueAndDeletedAtIsNullOrderByIdDesc();
 }

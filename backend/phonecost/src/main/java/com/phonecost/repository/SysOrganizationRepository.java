@@ -17,6 +17,9 @@ public interface SysOrganizationRepository extends JpaRepository<SysOrganization
     List<SysOrganization> findByPathStartingWithAndDeletedAtIsNull(String path);
     Optional<SysOrganization> findByIdAndDeletedAtIsNull(Long id);
 
+    /** 按名称+类型查找（用于按 l1_branch 名称匹配分行 orgId） */
+    Optional<SysOrganization> findByNameAndTypeAndDeletedAtIsNull(String name, Byte type);
+
     List<SysOrganization> findByDeletedAtIsNull();
 
     boolean existsByIdAndDeletedAtIsNull(Long id);

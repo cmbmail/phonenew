@@ -19,12 +19,22 @@ export interface PagedUsers {
   size: number;
 }
 
-export const getUsers = (orgId?: number, page = 0, size = 200) => {
-  const params = new URLSearchParams();
-  if (orgId != null) params.set('org_id', String(orgId));
-  params.set('page', String(page));
-  params.set('size', String(size));
-  return apiGet<PagedUsers>(`/users?${params.toString()}`);
+export interface GetUsersParams {
+  orgId?: number;
+  username?: string;
+  realName?: string;
+  page?: number;
+  size?: number;
+}
+
+export const getUsers = (params: GetUsersParams = {}) => {
+  const qs = new URLSearchParams();
+  if (params.orgId != null) qs.set('org_id', String(params.orgId));
+  if (params.username) qs.set('username', params.username);
+  if (params.realName) qs.set('realName', params.realName);
+  qs.set('page', String(params.page ?? 0));
+  qs.set('size', String(params.size ?? 20));
+  return apiGet<PagedUsers>(`/users?${qs.toString()}`);
 };
 
 export const createUser = (data: {

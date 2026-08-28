@@ -16,9 +16,9 @@ const formatMoney = (v: number) => {
 const formatNumber = (v: number) => v.toLocaleString();
 
 // ============ Donut Chart (CSS conic-gradient) ============
-function DonutChart({ data, size = 120 }: { data: FeeBreakdownItem[]; size?: number }) {
+function DonutChart({ data, size = 120, totalLabel, emptyText }: { data: FeeBreakdownItem[]; size?: number; totalLabel: string; emptyText: string }) {
   const total = data.reduce((s, d) => s + (d.value || 0), 0);
-  if (total === 0) return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" />;
+  if (total === 0) return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={emptyText} />;
 
   let cumulative = 0;
   const segments = data.map((d) => {
@@ -60,7 +60,7 @@ function DonutChart({ data, size = 120 }: { data: FeeBreakdownItem[]; size?: num
             justifyContent: 'center',
           }}
         >
-          <span style={{ fontSize: 11, color: COLORS.textMuted }}>合计</span>
+          <span style={{ fontSize: 11, color: COLORS.textMuted }}>{totalLabel}</span>
           <span style={{ fontSize: 14, fontWeight: 600, color: COLORS.textDark }}>
             {formatMoney(total)}
           </span>
@@ -80,7 +80,7 @@ function DonutChart({ data, size = 120 }: { data: FeeBreakdownItem[]; size?: num
 }
 
 // ============ Mini Bar Chart (for monthly trend) ============
-function MonthlyBarChart({ data }: { data: { month: string; amount: number; count: number }[] }) {
+function MonthlyBarChart({ data, countUnit }: { data: { month: string; amount: number; count: number }[]; countUnit: string }) {
   if (!data || data.length === 0) return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} />;
   const maxAmount = Math.max(...data.map((d) => d.amount || 0), 1);
 
@@ -106,7 +106,7 @@ function MonthlyBarChart({ data }: { data: { month: string; amount: number; coun
               }}
             />
             <span style={{ fontSize: 12, color: COLORS.textMuted }}>{d.month}</span>
-            <span style={{ fontSize: 11, color: COLORS.textMuted }}>{d.count}条</span>
+            <span style={{ fontSize: 11, color: COLORS.textMuted }}>{d.count}{countUnit}</span>
           </div>
         );
       })}
@@ -155,7 +155,7 @@ function StatCard({
 }
 
 // ============ Progress Bar ============
-function ProgressBar({ confirmed, pending, total }: { confirmed: number; pending: number; total: number }) {
+function ProgressBar({ confirmed, pending, total, confirmedLabel, pendingLabel }: { confirmed: number; pending: number; total: number; confirmedLabel: string; pendingLabel: string }) {
   const confirmedPct = total > 0 ? (confirmed / total) * 100 : 0;
   const pendingPct = total > 0 ? (pending / total) * 100 : 0;
 
@@ -167,10 +167,10 @@ function ProgressBar({ confirmed, pending, total }: { confirmed: number; pending
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 12 }}>
         <span style={{ opacity: 0.8 }}>
-          ● 已确认 {confirmed}
+          {confirmedLabel} {confirmed}
         </span>
         <span style={{ opacity: 0.8 }}>
-          ● 待确认 {pending}
+          {pendingLabel} {pending}
         </span>
       </div>
     </div>
@@ -219,7 +219,7 @@ export default function Dashboard() {
 
   const branchColumns = [
     {
-      title: '排名',
+      title: t('dashboard.rankCol'),
       key: 'rank',
       width: 60,
       render: (_: unknown, __: unknown, i: number) => (
@@ -239,9 +239,9 @@ export default function Dashboard() {
         </span>
       ),
     },
-    { title: '分行名称', dataIndex: 'name', key: 'name', width: 140 },
+    { title: t('dashboard.branchNameCol'), dataIndex: 'name', key: 'name', width: 140 },
     {
-      title: '费用金额',
+      title: t('dashboard.amountCol'),
       dataIndex: 'amount',
       key: 'amount',
       width: 140,
@@ -250,7 +250,7 @@ export default function Dashboard() {
       sorter: (a: BranchSummaryItem, b: BranchSummaryItem) => a.amount - b.amount,
     },
     {
-      title: '号码数',
+      title: t('dashboard.phoneCountCol'),
       dataIndex: 'phone_count',
       key: 'phone_count',
       width: 100,
@@ -258,7 +258,7 @@ export default function Dashboard() {
       render: (v: number) => formatNumber(v),
     },
     {
-      title: '确认状态',
+      title: t('dashboard.confirmStatusCol'),
       dataIndex: 'confirm_status',
       key: 'confirm_status',
       width: 100,
@@ -274,7 +274,7 @@ export default function Dashboard() {
         <Title level={4} style={{ margin: 0 }}>{t('dashboard.title')}</Title>
         {stats.latest_batch && (
           <span style={{ color: COLORS.textMuted, fontSize: 13 }}>
-            {t('dashboard.latestBatch')}：{latestMonth} · {formatMoney(latestAmount)} · {stats.latest_batch.count}条
+            {t('dashboard.latestBatch')}：{latestMonth} · {formatMoney(latestAmount)} · {stats.latest_batch.count}{t('dashboard.countUnit')}
           </span>
         )}
       </div>
@@ -292,6 +292,8 @@ export default function Dashboard() {
             confirmed={stats.confirmed_count}
             pending={stats.pending_count}
             total={totalAllocation}
+            confirmedLabel={t('dashboard.dotConfirmed')}
+            pendingLabel={t('dashboard.dotPending')}
           />
         </StatCard>
 
@@ -302,7 +304,7 @@ export default function Dashboard() {
           bgColor={COLORS.cream}
           textColor={COLORS.textDark}
         >
-          <DonutChart data={stats.fee_breakdown || []} size={80} />
+          <DonutChart data={stats.fee_breakdown || []} size={80} totalLabel={t('dashboard.totalLabel')} emptyText={t('dashboard.noData')} />
         </StatCard>
 
         <StatCard
@@ -316,6 +318,8 @@ export default function Dashboard() {
             confirmed={stats.confirmed_count}
             pending={stats.pending_count}
             total={totalAllocation}
+            confirmedLabel={t('dashboard.dotConfirmed')}
+            pendingLabel={t('dashboard.dotPending')}
           />
         </StatCard>
 
@@ -348,7 +352,7 @@ export default function Dashboard() {
           headStyle={{ borderBottom: `1px solid ${COLORS.border}` }}
           style={{ borderRadius: 16, boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}
         >
-          <MonthlyBarChart data={stats.monthly_trend || []} />
+          <MonthlyBarChart data={stats.monthly_trend || []} countUnit={t('dashboard.countUnit')} />
         </Card>
 
         {/* Branch Ranking */}

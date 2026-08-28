@@ -406,8 +406,9 @@ ul{margin:6px 0;padding-left:24px}li{margin:4px 0;line-height:1.7}
 <tr><td>二级分行</td><td><code>/allocation/sub-branch</code></td><td>二级分行/支行维度分摊结果+确认+导出</td><td>ADMIN, BRANCH, DEPARTMENT, FINANCE</td></tr>
 <tr><td>费用分析</td><td><code>/allocation/analysis</code></td><td>5维度分段分析+纯CSS柱状图</td><td>全部角色</td></tr>
 <tr><td><strong>数据导入</strong></td><td>数据导入</td><td><code>/import</code></td><td>3Tab：号码归属+通讯录+账单导入，归属匹配按钮</td><td>ADMIN</td></tr>
-<tr><td rowspan="4"><strong>基础数据</strong></td><td>组织架构</td><td><code>/org</code></td><td>树形展示929个组织节点，支持搜索</td><td>全部角色</td></tr>
-<tr><td>号码归属</td><td><code>/base/phone-ownership</code></td><td>号码归属批次+明细查看</td><td>ADMIN</td></tr>
+<tr><td rowspan="5"><strong>基础数据</strong></td><td>组织架构</td><td><code>/org</code></td><td>树形展示929个组织节点，支持搜索</td><td>全部角色</td></tr>
+<tr><td>号码归属</td><td><code>/base/phone-ownership</code></td><td>号码归属批次+明细查看，月份筛选、导入月选择Modal、批次列表、服务端搜索+分页</td><td>ADMIN</td></tr>
+<tr><td>例外号码</td><td><code>/base/exception-number</code></td><td>P0例外号码独立管理，月份筛选、批次列表、例外详情（差异对比/编辑原因/同步/解除/批量解除）</td><td>ADMIN</td></tr>
 <tr><td>通讯录</td><td><code>/base/directory</code></td><td>通讯录批次+明细查看</td><td>ADMIN</td></tr>
 <tr><td>部门归属</td><td><code>/base/dept-ownership</code></td><td>部门归属维度查看</td><td>ADMIN</td></tr>
 <tr><td rowspan="6"><strong>系统管理</strong></td><td>人员管理</td><td><code>/settings/users</code></td><td>左右双栏（组织树+人员列表），新增/编辑用户</td><td>ADMIN</td></tr>
@@ -697,7 +698,11 @@ CREATE TABLE audit_log (
 
 <h3>US-001 导入号码归属表</h3>
 <p>作为集团管理员，我想要导入号码归属表，以便建立号码与组织的归属关系。</p>
-<ul><li>支持Excel上传，解析2列数据</li><li>自动识别[例外]前缀并标记is_exception=1</li><li>描述字段用"/"分隔解析组织层级</li></ul>
+<ul><li>支持Excel上传，解析2列数据</li><li>自动识别[例外]前缀并标记is_exception=1</li><li>描述字段用"/"分隔解析组织层级</li><li>支持按月份筛选批次，导入时可选择账单月份</li><li>明细支持服务端搜索+分页查询</li></ul>
+
+<h3>US-001a 例外号码独立管理</h3>
+<p>作为集团管理员，我想要在独立页面管理P0例外号码，以便快速查看和处理例外号码归属。</p>
+<ul><li>独立页面（/base/exception-number），与号码归属页面分离</li><li>月份筛选+批次列表，按月查看例外号码</li><li>例外详情：5级组织差异高亮对比</li><li>操作：编辑原因、同步当前数据、解除例外、批量解除</li></ul>
 
 <h3>US-002 导入通讯录</h3>
 <p>作为集团管理员，我想要导入通讯录，以便建立号码→员工→部门的归属链。</p>
@@ -782,6 +787,9 @@ CREATE TABLE audit_log (
 <tr><td><span class="badge" style="background:#1565C0">POST</span></td><td><code>/api/organizations/import</code></td><td>导入组织架构（CSV）</td></tr>
 <tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/bill-templates</code></td><td>获取账单解析模板</td></tr>
 <tr><td><span class="badge" style="background:#E65100">PUT</span></td><td><code>/api/bill-templates/:id</code></td><td>更新模板配置</td></tr>
+<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/import/ownership/months</code></td><td>获取号码归属已导入月份数据</td></tr>
+<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/import/ownership/batches</code></td><td>获取号码归属批次列表（支持billing_month参数筛选）</td></tr>
+<tr><td><span class="badge" style="background:#2E7D32">GET</span></td><td><code>/api/import/ownership/entries-by-month</code></td><td>按月份查询号码归属明细（服务端分页+搜索）</td></tr>
 </table>
 
 <h2>10.6 系统管理</h2>
@@ -848,7 +856,7 @@ CREATE TABLE audit_log (
 <h2>11.3 核心Service</h2>
 <table>
 <tr><th>Service</th><th>职责</th><th>状态</th></tr>
-<tr><td><code>PhoneOwnershipService</code></td><td>归属表导入、例外解析、P0匹配</td><td><span class="tag tag-green">已实现</span></td></tr>
+<tr><td><code>PhoneOwnershipService</code></td><td>归属表导入、例外解析、P0匹配、月份查询、批次按月筛选、明细服务端分页</td><td><span class="tag tag-green">已实现</span></td></tr>
 <tr><td><code>DirectoryService</code></td><td>通讯录导入、部门路径解析、借调检测</td><td><span class="tag tag-green">已实现</span></td></tr>
 <tr><td><code>BillImportService</code></td><td>账单导入、模板匹配、Sheet解析、闪信季度累计</td><td><span class="tag tag-green">已实现</span></td></tr>
 <tr><td><code>OwnershipResolver</code></td><td>归属校验引擎：P0→P1→P2→P3优先级匹配</td><td><span class="tag tag-green">已实现</span></td></tr>

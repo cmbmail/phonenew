@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -104,6 +105,7 @@ public class AllocationConfirmService {
             for (var o : orgRepository.findAllById(resultOrgIds)) {
                 orgMap.put(o.getId(), o);
             }
+            List<AllocationResult> toSave = new ArrayList<>();
             for (AllocationResult r : allResults) {
                 if (r.getId().equals(result.getId())) continue;
                 if (r.getConfirmStatus() != (byte) 1) continue;
@@ -116,9 +118,13 @@ public class AllocationConfirmService {
                     r.setWithdrawnAt(LocalDateTime.now());
                     r.setWithdrawnBy(userId);
                     r.setWithdrawReason("上级撤回: " + reason);
-                    resultRepository.save(r);
+                    toSave.add(r);
                     cascadeCount++;
                 }
+            }
+            // Batch save instead of N+1 individual saves
+            if (!toSave.isEmpty()) {
+                resultRepository.saveAll(toSave);
             }
         }
 
@@ -167,22 +173,20 @@ public class AllocationConfirmService {
             return 0;
         }
 
-        List<AllocationResult> results = resultRepository.findByBatchIdAndConfirmStatusAndDeletedAtIsNull(
-                batchId, (byte) 0);
+        // Use scoped query instead of loading ALL results then filtering in Java
+        List<AllocationResult> results = resultRepository.findByBatchIdAndOrgIdInAndConfirmStatusAndDeletedAtIsNull(
+                batchId, visibleOrgIds, (byte) 0);
 
         int count = 0;
         for (AllocationResult r : results) {
-            // 只确认可见范围内的组织（sentinel orgId=-1 不自动确认）
-            if (visibleOrgIds.contains(r.getOrgId())) {
-                r.setConfirmStatus((byte) 1);
-                r.setConfirmedAt(LocalDateTime.now());
-                r.setConfirmedBy(userId);
-                try {
-                    resultRepository.save(r);
-                    count++;
-                } catch (ObjectOptimisticLockingFailureException e) {
-                    log.warn("Optimistic lock conflict on confirmAllInScope, skipping result id={}", r.getId());
-                }
+            r.setConfirmStatus((byte) 1);
+            r.setConfirmedAt(LocalDateTime.now());
+            r.setConfirmedBy(userId);
+            try {
+                resultRepository.save(r);
+                count++;
+            } catch (ObjectOptimisticLockingFailureException e) {
+                log.warn("Optimistic lock conflict on confirmAllInScope, skipping result id={}", r.getId());
             }
         }
 

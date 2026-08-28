@@ -10,6 +10,7 @@ import com.phonecost.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import jakarta.annotation.PreDestroy;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -51,6 +52,13 @@ public class BillImportService {
     private final DirectoryEntryRepository directoryEntryRepository;
     private final PlatformTransactionManager transactionManager;
     private final JdbcTemplate jdbcTemplate;
+
+    /**
+     * 使用 @Lazy 避免循环依赖：
+     * BillImportService -> OwnershipMatchService -> BillDetailRepository / BillBatchRepository
+     */
+    @Lazy
+    private final OwnershipMatchService ownershipMatchService;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final DateTimeFormatter DTF = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
@@ -215,17 +223,15 @@ public class BillImportService {
         List<Object[]> allRows = new ArrayList<>(100000);
         int[] totalCountRef = {0};
 
-        // Step 1: Get sheet names using POI (metadata-only, quick for typical bill files < 5MB)
+        // Step 1: Get sheet names using read-only WorkbookFactory (avoids full DOM load)
         // This allows us to match sheets by name before the streaming EasyExcel read
         List<String> sheetNames = new ArrayList<>();
-        try {
-            try (InputStream metaIs = Files.newInputStream(tempFile);
-                 org.apache.poi.ss.usermodel.Workbook metaWb = new org.apache.poi.xssf.usermodel.XSSFWorkbook(metaIs)) {
-                for (int i = 0; i < metaWb.getNumberOfSheets(); i++) {
-                    sheetNames.add(metaWb.getSheetAt(i).getSheetName());
-                }
+        try (InputStream metaIs = Files.newInputStream(tempFile);
+             org.apache.poi.ss.usermodel.Workbook metaWb = org.apache.poi.ss.usermodel.WorkbookFactory.create(metaIs)) {
+            for (int i = 0; i < metaWb.getNumberOfSheets(); i++) {
+                sheetNames.add(metaWb.getSheetAt(i).getSheetName());
             }
-        } catch (IOException e) {
+        } catch (Exception e) {
             log.warn("Could not read sheet metadata for bill import", e);
             throw new RuntimeException("无法读取Excel文件结构: " + e.getMessage(), e);
         }
@@ -273,6 +279,10 @@ public class BillImportService {
                     for (ColumnConfig col : cfg.columns) {
                         String rawVal = row.getOrDefault(col.index, null);
                         Object val = convertCellValue(rawVal, col.type);
+                        // Strip Excel empty-date artifacts (e.g. 1904/1/1, 1900/1/0) for recordingDir
+                        if ("recordingDir".equals(col.field) && val instanceof String s && isInvalidExcelDate(s)) {
+                            val = null;
+                        }
                         values.put(col.field, val);
                     }
 
@@ -461,6 +471,17 @@ public class BillImportService {
             });
         });
 
+        // === 阶段5: 自动触发归属匹配 ===
+        try {
+            progress.setSheetInfo("执行归属匹配...");
+            log.info("Auto-triggering ownership matching for bill batch={}", batchId);
+            int matchedCount = ownershipMatchService.matchOwnershipForBillBatch(batchId, null, null, null);
+            log.info("Ownership matching completed for bill batch={}, matched={}", batchId, matchedCount);
+        } catch (Exception e) {
+            log.error("Ownership matching failed for bill batch={}, continuing without matching", batchId, e);
+            // 不中断导入流程，匹配失败不影响数据写入
+        }
+
         long elapsed = System.currentTimeMillis() - startTime;
         progress.setProcessed(totalCount);
         progress.setStatus("COMPLETED");
@@ -478,14 +499,15 @@ public class BillImportService {
      * Replaces N+1 query pattern with O(1) HashMap lookup + batch UPDATE.
      */
     private void backfillExtensionsFromDirectoryFast(Long batchId, TransactionTemplate txTemplate) {
-        // 1. Pre-load directory phone→extension map
+        // 1. Pre-load directory phone→extension map (projection query — avoids loading full entities)
         Map<String, String> phoneToExtMap = txTemplate.execute(status -> {
             Map<String, String> map = new HashMap<>();
-            List<DirectoryEntry> entries = directoryEntryRepository.findByDeletedAtIsNull();
-            for (DirectoryEntry e : entries) {
-                if (e.getPhoneNumber() != null && e.getExtension() != null
-                        && !e.getExtension().isEmpty() && !map.containsKey(e.getPhoneNumber())) {
-                    map.put(e.getPhoneNumber(), e.getExtension());
+            List<Object[]> rows = directoryEntryRepository.findPhoneAndExtension();
+            for (Object[] row : rows) {
+                String phone = (String) row[0];
+                String ext = (String) row[1];
+                if (!map.containsKey(phone)) {
+                    map.put(phone, ext);
                 }
             }
             return map;
@@ -643,6 +665,24 @@ public class BillImportService {
         }
         // Default: STRING
         return rawVal.trim();
+    }
+
+    /**
+     * Detect Excel empty-date artifacts rendered as a string (e.g. "1904/1/1",
+     * "1900/1/0", "1904/1/0"). These appear when an Excel cell with an empty
+     * date (underlying numeric 0) is read back, and should be treated as blank.
+     */
+    private boolean isInvalidExcelDate(String s) {
+        if (s == null || s.isEmpty()) return false;
+        String t = s.trim();
+        if (!t.contains("/")) return false;
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("^(\\d{4})/(\\d{1,2})/(\\d{1,2})$").matcher(t);
+        if (!m.matches()) return false;
+        int year = Integer.parseInt(m.group(1));
+        int month = Integer.parseInt(m.group(2));
+        int day = Integer.parseInt(m.group(3));
+        // Empty date numeric 0 -> 1904/1/1 (1904 system) or 1900/1/0 / 1904/1/0 (0 day)
+        return (year == 1900 || year == 1904) && month <= 2 && day <= 1;
     }
 
     private String getStringValue(Map<String, Object> values, String key) {

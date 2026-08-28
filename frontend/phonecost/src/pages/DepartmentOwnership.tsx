@@ -1,113 +1,135 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { COLORS } from '../theme/morandi';
-import { Card, Table, Select, Row, Col, message, Empty, Input, Statistic, Tabs, Button, Dropdown, Progress, Modal, Form } from 'antd';
-import { SearchOutlined, CameraOutlined, UploadOutlined, DownloadOutlined, EditOutlined } from '@ant-design/icons';
+import { Card, Table, Row, Col, message, Input, Button, Dropdown, Space, Modal, Form, Popconfirm, Progress } from 'antd';
+import { SearchOutlined, UploadOutlined, DownloadOutlined, ExportOutlined, EditOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
+import {
+  getAllDirectoryEntries,
+  addDirectoryEntry,
+  deleteDirectoryEntry,
+  exportCostCenterEntries,
+  downloadCostCenterTemplate,
+  importDirectory,
+  getDirectoryProgress,
+  updateDirectoryEntry,
+} from '../api/import';
 import { useTranslation } from 'react-i18next';
-import type { DirectoryBatch, DirectoryEntry, DataSnapshot, ImportProgress } from '../types/import';
-import { getDirectoryBatches, getSnapshots, getBillBatches, importDirectory, downloadDirectoryTemplate, getDirectoryProgress, updateDirectoryEntry } from '../api/import';
+import { useAuthStore } from '../store/auth';
 import { useImportProgress } from '../hooks/useImportProgress';
-import { apiGet } from '../lib/request';
-import type { BillBatch } from '../types/bill';
+import type { ImportProgress } from '../types/import';
+
+interface DirectoryEntryItem {
+  id: number;
+  batch_id: number;
+  dept_path: string;
+  username: string;
+  extension: string;
+  phone_number: string;
+  alloc_dept: string;
+  org_code: string;
+  cost_center: string;
+  remark: string;
+  org_id: number | null;
+  is_seconded: number;
+  actual_org_id: number | null;
+  seconded_keyword: string;
+}
 
 export default function DepartmentOwnership() {
   const { t } = useTranslation();
+  const canEdit = useAuthStore((s) => s.role === 1 || s.role === 2);
 
-  // Current data state
-  const [batches, setBatches] = useState<DirectoryBatch[]>([]);
-  const [selectedBatchId, setSelectedBatchId] = useState<number | null>(null);
-  const [entries, setEntries] = useState<DirectoryEntry[]>([]);
+  // ==================== Data state ====================
+  const [entries, setEntries] = useState<DirectoryEntryItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(50);
   const [loading, setLoading] = useState(false);
-  const [entriesLoading, setEntriesLoading] = useState(false);
   const [search, setSearch] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
+  const [filteredCount, setFilteredCount] = useState(0);
+
+  // Import
   const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Edit modal state
-  const [editModalOpen, setEditModalOpen] = useState(false);
-  const [editingEntry, setEditingEntry] = useState<DirectoryEntry | null>(null);
-  const [editLoading, setEditLoading] = useState(false);
-  const [editForm] = Form.useForm();
-
-  // Async import progress
   const { progress: importProgress, polling: importPolling, startPolling, percent: importPercent } = useImportProgress({
     onComplete: (p: ImportProgress) => {
-      message.success(`部门归属导入完成：${p.total} 条`);
-      fetchBatches();
+      message.success(t('deptOwnership.importSuccess', { total: p.total }));
       setUploading(false);
+      fetchData(appliedSearch, 0, pageSize);
     },
     onError: (p: ImportProgress) => {
-      message.error(`导入失败：${p.message || '未知错误'}`);
+      message.error(t('deptOwnership.importFailed', { error: p.message || t('common.unknown') }));
       setUploading(false);
     },
   });
 
-  // Snapshot state
-  const [snapshots, setSnapshots] = useState<DataSnapshot[]>([]);
-  const [billBatches, setBillBatches] = useState<BillBatch[]>([]);
-  const [snapshotsLoading, setSnapshotsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('current');
-  const [selectedSnapshotMonth, setSelectedSnapshotMonth] = useState<string | null>(null);
-  const [snapshotEntries, setSnapshotEntries] = useState<DirectoryEntry[]>([]);
-  const [snapshotEntriesLoading, setSnapshotEntriesLoading] = useState(false);
-  const [snapshotSearch, setSnapshotSearch] = useState('');
-  const [pageSize, setPageSize] = useState(50);
+  // Add modal
+  const [addModalOpen, setAddModalOpen] = useState(false);
+  const [addLoading, setAddLoading] = useState(false);
+  const [addForm] = Form.useForm();
 
-  const fetchBatches = useCallback(async () => {
+  // Edit modal
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editForm] = Form.useForm();
+  const [editingEntry, setEditingEntry] = useState<DirectoryEntryItem | null>(null);
+
+  // ==================== Data fetching ====================
+
+  const fetchData = useCallback(async (keyword = '', p = 0, size = 50) => {
     setLoading(true);
-    try { setBatches(await getDirectoryBatches()); } catch { message.error(t('deptOwnership.fetchFailed')); } finally { setLoading(false); }
-  }, [t]);
-
-  const handleUpload = async (file: File) => {
-    setUploading(true);
     try {
-      const result = await importDirectory(file);
-      startPolling(result.batch_id, getDirectoryProgress);
-    } catch (err) {
-      message.error(`导入失败：${err instanceof Error ? err.message : '未知错误'}`);
-      setUploading(false);
-    }
-  };
-
-  const fetchEntries = useCallback(async () => {
-    if (!selectedBatchId) return;
-    setEntriesLoading(true);
-    try {
-      const data = await apiGet<{ entries: DirectoryEntry[] }>(`/import/directory/entries/${selectedBatchId}`);
+      const data = await getAllDirectoryEntries(keyword || undefined, p, size);
       setEntries(data.entries);
+      setTotal(data.total);
+      setFilteredCount(data.filtered ?? data.total);
+      setPage(data.page);
+      setPageSize(data.size);
     } catch {
       message.error(t('deptOwnership.fetchFailed'));
     } finally {
-      setEntriesLoading(false);
+      setLoading(false);
     }
-  }, [selectedBatchId, t]);
-
-  const fetchSnapshots = useCallback(async () => {
-    setSnapshotsLoading(true);
-    try {
-      const [snaps, bills] = await Promise.all([getSnapshots(), getBillBatches()]);
-      setSnapshots(snaps);
-      setBillBatches(bills);
-    } catch { message.error(t('deptOwnership.snapshotFetchFailed')); } finally { setSnapshotsLoading(false); }
   }, [t]);
 
-  useEffect(() => { fetchBatches(); }, [fetchBatches]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
-  useEffect(() => {
-    if (activeTab === 'snapshot') {
-      fetchSnapshots();
+  // ==================== Handlers ====================
+
+  const handleSearch = () => {
+    setAppliedSearch(search);
+    fetchData(search, 0, pageSize);
+  };
+
+  // Add
+  const handleAddOk = async () => {
+    try {
+      const values = await addForm.validateFields();
+      setAddLoading(true);
+      await addDirectoryEntry({
+        dept_path: values.dept_path,
+        username: values.username || '',
+        extension: values.extension || '',
+        phone_number: '',
+        alloc_dept: values.alloc_dept || '',
+        org_code: values.org_code || '',
+        cost_center: values.cost_center || '',
+        remark: values.remark || '',
+      });
+      message.success(t('deptOwnership.editSuccess'));
+      setAddModalOpen(false);
+      addForm.resetFields();
+      fetchData(appliedSearch, 0, pageSize);
+    } catch (err) {
+      if (err instanceof Error) message.error(err.message);
+    } finally {
+      setAddLoading(false);
     }
-  }, [activeTab, fetchSnapshots]);
+  };
 
-  useEffect(() => {
-    if (batches.length > 0 && !selectedBatchId) {
-      const sorted = [...batches].sort((a, b) => b.id - a.id);
-      setSelectedBatchId(sorted[0].id);
-    }
-  }, [batches, selectedBatchId]);
-
-  useEffect(() => { fetchEntries(); }, [fetchEntries]);
-
-  // Edit handlers
-  const handleEdit = (record: DirectoryEntry) => {
+  // Edit
+  const handleEdit = (record: DirectoryEntryItem) => {
     setEditingEntry(record);
     editForm.setFieldsValue({
       dept_path: record.dept_path,
@@ -119,7 +141,7 @@ export default function DepartmentOwnership() {
     setEditModalOpen(true);
   };
 
-  const handleEditSave = async () => {
+  const handleEditOk = async () => {
     if (!editingEntry) return;
     try {
       const values = await editForm.validateFields();
@@ -133,7 +155,9 @@ export default function DepartmentOwnership() {
       });
       message.success(t('deptOwnership.editSuccess'));
       setEditModalOpen(false);
-      fetchEntries();
+      editForm.resetFields();
+      setEditingEntry(null);
+      fetchData(appliedSearch, page, pageSize);
     } catch (err) {
       if (err instanceof Error) message.error(err.message);
     } finally {
@@ -141,197 +165,227 @@ export default function DepartmentOwnership() {
     }
   };
 
-  // Snapshot month options
-  const snapshotMonthOptions = useMemo(() => {
-    const m = new Map<string, string>();
-    snapshots.forEach(s => {
-      const bill = billBatches.find(b => b.id === s.bill_batch_id);
-      if (bill?.billing_month) m.set(bill.billing_month, bill.billing_month);
-    });
-    return [...m.keys()].sort().reverse().map(month => ({ label: month, value: month }));
-  }, [snapshots, billBatches]);
-
-  useEffect(() => {
-    if (activeTab === 'snapshot' && snapshotMonthOptions.length > 0 && !selectedSnapshotMonth) {
-      setSelectedSnapshotMonth(snapshotMonthOptions[0].value);
+  // Delete
+  const handleDelete = async (id: number) => {
+    try {
+      await deleteDirectoryEntry(id);
+      message.success(t('deptOwnership.deleteSuccess'));
+      fetchData(appliedSearch, page, pageSize);
+    } catch (err) {
+      message.error(t('deptOwnership.deleteFailed', { error: err instanceof Error ? err.message : '' }));
     }
-  }, [activeTab, snapshotMonthOptions, selectedSnapshotMonth]);
+  };
 
-  useEffect(() => {
-    if (activeTab !== 'snapshot' || !selectedSnapshotMonth) return;
-    const snap = snapshots.find(s => {
-      const bill = billBatches.find(b => b.id === s.bill_batch_id);
-      return bill?.billing_month === selectedSnapshotMonth;
-    });
-    if (!snap?.directory_batch_id) { setSnapshotEntries([]); return; }
-    setSnapshotEntriesLoading(true);
-    apiGet<{ entries: DirectoryEntry[] }>(`/import/directory/entries/${snap.directory_batch_id}`)
-      .then(data => setSnapshotEntries(data.entries))
-      .catch(() => { message.error(t('deptOwnership.fetchFailed')); setSnapshotEntries([]); })
-      .finally(() => setSnapshotEntriesLoading(false));
-  }, [activeTab, selectedSnapshotMonth, snapshots, billBatches, t]);
+  // Import
+  const handleUpload = async (file: File) => {
+    setUploading(true);
+    try {
+      const result = await importDirectory(file);
+      startPolling(result.batch_id, getDirectoryProgress);
+    } catch (err) {
+      message.error(t('deptOwnership.importFailed', { error: err instanceof Error ? err.message : t('common.unknown') }));
+      setUploading(false);
+    }
+  };
 
-  // Search filter - current data
-  const filteredEntries = useMemo(() => {
-    const kw = search.trim().toLowerCase();
-    if (!kw) return entries;
-    return entries.filter(e =>
-      String(e.phone_number || '').toLowerCase().includes(kw) ||
-      String(e.dept_path || '').toLowerCase().includes(kw) ||
-      String(e.alloc_dept || '').toLowerCase().includes(kw) ||
-      String(e.org_code || '').toLowerCase().includes(kw) ||
-      String(e.cost_center || '').toLowerCase().includes(kw) ||
-      String(e.remark || '').toLowerCase().includes(kw)
-    );
-  }, [entries, search]);
+  // Export
+  const handleExport = () => {
+    exportCostCenterEntries();
+    message.info(t('exceptionNumber.exportStarted'));
+  };
 
-  // Search filter - snapshot data
-  const filteredSnapshotEntries = useMemo(() => {
-    const kw = snapshotSearch.trim().toLowerCase();
-    if (!kw) return snapshotEntries;
-    return snapshotEntries.filter(e =>
-      String(e.phone_number || '').toLowerCase().includes(kw) ||
-      String(e.dept_path || '').toLowerCase().includes(kw) ||
-      String(e.alloc_dept || '').toLowerCase().includes(kw) ||
-      String(e.org_code || '').toLowerCase().includes(kw) ||
-      String(e.cost_center || '').toLowerCase().includes(kw) ||
-      String(e.remark || '').toLowerCase().includes(kw)
-    );
-  }, [snapshotEntries, snapshotSearch]);
+  // ==================== Columns ====================
 
-  // Current snapshot info
-  const selectedSnapshot = useMemo(() => {
-    if (!selectedSnapshotMonth) return null;
-    return snapshots.find(s => {
-      const bill = billBatches.find(b => b.id === s.bill_batch_id);
-      return bill?.billing_month === selectedSnapshotMonth;
-    }) || null;
-  }, [selectedSnapshotMonth, snapshots, billBatches]);
-
-  // Columns for current data (with edit)
-  const currentColumns = [
+  const columns = [
+    { title: t('deptOwnership.l1BranchCol'), key: 'l1_branch', width: 120, fixed: 'left' as const,
+      render: (_: unknown, record: DirectoryEntryItem) => {
+        if (!record.dept_path) return '-';
+        const parts = record.dept_path.split('-');
+        return parts.length >= 2 ? parts[1] || '-' : '-';
+      } },
     { title: t('deptOwnership.deptPathCol'), dataIndex: 'dept_path', key: 'dept_path', width: 200, ellipsis: true },
-    { title: t('deptOwnership.allocDeptCol'), dataIndex: 'alloc_dept', key: 'alloc_dept', width: 120 },
-    { title: t('deptOwnership.orgCodeCol'), dataIndex: 'org_code', key: 'org_code', width: 100 },
-    { title: t('deptOwnership.costCenterCol'), dataIndex: 'cost_center', key: 'cost_center', width: 100 },
-    { title: t('deptOwnership.remarkCol'), dataIndex: 'remark', key: 'remark', width: 150, ellipsis: true },
-    {
-      title: t('deptOwnership.editCol'), key: 'edit', width: 70, fixed: 'right' as const,
-      render: (_: unknown, r: DirectoryEntry) => (
-        <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(r)} />
+    { title: t('deptOwnership.allocDeptCol'), dataIndex: 'alloc_dept', key: 'alloc_dept', width: 120,
+      render: (v: string) => v || '-' },
+    { title: t('deptOwnership.orgCodeCol'), dataIndex: 'org_code', key: 'org_code', width: 100,
+      render: (v: string) => v || '-' },
+    { title: t('deptOwnership.costCenterCol'), dataIndex: 'cost_center', key: 'cost_center', width: 100,
+      render: (v: string) => v || '-' },
+    { title: t('deptOwnership.remarkCol'), dataIndex: 'remark', key: 'remark', width: 150, ellipsis: true,
+      render: (v: string) => v || '-' },
+    ...(canEdit ? [{
+      title: t('deptOwnership.editCol'), key: 'actions', width: 100, fixed: 'right' as const,
+      render: (_: unknown, record: DirectoryEntryItem) => (
+        <Space size={0}>
+          <Button type="text" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
+          <Popconfirm
+            title={t('deptOwnership.deleteConfirm')}
+            description={record.dept_path}
+            onConfirm={() => handleDelete(record.id)}
+            okText={t('common.confirm')}
+            cancelText={t('common.cancel')}
+            okButtonProps={{ danger: true }}
+          >
+            <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
       ),
-    },
+    }] : []),
   ];
 
-  // Columns for snapshot (read-only, no edit)
-  const snapshotColumns = [
-    { title: t('deptOwnership.deptPathCol'), dataIndex: 'dept_path', key: 'dept_path', width: 200, ellipsis: true },
-    { title: t('deptOwnership.allocDeptCol'), dataIndex: 'alloc_dept', key: 'alloc_dept', width: 120 },
-    { title: t('deptOwnership.orgCodeCol'), dataIndex: 'org_code', key: 'org_code', width: 100 },
-    { title: t('deptOwnership.costCenterCol'), dataIndex: 'cost_center', key: 'cost_center', width: 100 },
-    { title: t('deptOwnership.remarkCol'), dataIndex: 'remark', key: 'remark', width: 150, ellipsis: true },
-  ];
-
-  const currentDataContent = (
-    <>
-      <Row gutter={16} align="middle" style={{ marginBottom: 16 }}>
-        <Col>
-          <span style={{ marginRight: 8 }}>{t('deptOwnership.selectBatch')}</span>
-          <Select style={{ width: 280 }} placeholder={t('deptOwnership.selectBatchPlaceholder')} loading={loading}
-            value={selectedBatchId} onChange={setSelectedBatchId}
-            options={[...batches].sort((a, b) => b.id - a.id).map(b => ({ label: `${b.batch_no} (${b.total_count}条)`, value: b.id }))} />
-        </Col>
-        <Col flex="auto" />
-        <Col>
-          <Dropdown menu={{ items: [
-            { key: 'import', icon: <UploadOutlined />, label: '导入部门归属', disabled: uploading },
-            { key: 'template', icon: <DownloadOutlined />, label: '下载模板' },
-          ], onClick: ({ key }) => {
-            if (key === 'import') document.getElementById('dept-upload-input')?.click();
-            if (key === 'template') downloadDirectoryTemplate();
-          } }}>
-            <Button type="primary" icon={<UploadOutlined />} loading={uploading && !importPolling}>导入部门归属</Button>
-          </Dropdown>
-          <input type="file" accept=".xlsx,.xls" id="dept-upload-input" style={{ display: 'none' }} onChange={(e) => { const f = e.target.files?.[0]; if (f) { handleUpload(f); e.target.value = ''; } }} />
-          {importPolling && importProgress && (
-            <Progress
-              percent={importPercent}
-              size="small"
-              style={{ width: 200, marginLeft: 12, display: 'inline-block', verticalAlign: 'middle' }}
-              format={() => importProgress.message || `${importProgress.processed}/${importProgress.total}`}
-            />
-          )}
-        </Col>
-      </Row>
-      {selectedBatchId && (
-        <Row gutter={16} style={{ marginBottom: 16 }}>
-          <Col span={4}><Statistic title={t('deptOwnership.totalCount')} value={filteredEntries.length} /></Col>
-        </Row>
-      )}
-      {selectedBatchId && (
-        <Input prefix={<SearchOutlined />} placeholder={t('deptOwnership.searchPlaceholder')} allowClear value={search}
-          onChange={e => setSearch(e.target.value)} style={{ width: 360, marginBottom: 12 }} />
-      )}
-      {selectedBatchId && filteredEntries.length > 0 ? (
-        <Table columns={currentColumns} dataSource={filteredEntries} rowKey="id" size="small" loading={entriesLoading}
-          pagination={{ pageSize, showSizeChanger: true, pageSizeOptions: ['25', '50', '100'], showTotal: (total) => t('common.paginationTotal', { total }), onChange: (_p, s) => setPageSize(s) }}
-          scroll={{ x: 800 }} />
-      ) : (!entriesLoading && <Empty description={t('deptOwnership.noData')} />)}
-    </>
-  );
-
-  const snapshotContent = snapshots.length === 0 && !snapshotsLoading ? (
-    <Empty description={t('deptOwnership.snapshotNoData')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
-  ) : (
-    <>
-      <Row gutter={16} align="middle" style={{ marginBottom: 16 }}>
-        <Col>
-          <span style={{ marginRight: 8 }}>{t('deptOwnership.snapshotSelectMonth')}</span>
-          <Select style={{ width: 160 }} placeholder={t('deptOwnership.snapshotMonthPlaceholder')} loading={snapshotsLoading}
-            value={selectedSnapshotMonth} onChange={setSelectedSnapshotMonth}
-            options={snapshotMonthOptions} />
-        </Col>
-        {selectedSnapshot && (
-          <Col style={{ color: COLORS.textMuted, fontSize: 13 }}>
-            {t('deptOwnership.snapshotBatchInfo', { directoryBatch: selectedSnapshot.directory_batch_id ?? '-', matched: selectedSnapshot.matched_count })}
-          </Col>
-        )}
-      </Row>
-      {selectedSnapshotMonth && (
-        <Row gutter={16} style={{ marginBottom: 16 }}>
-          <Col span={4}><Statistic title={t('deptOwnership.totalCount')} value={filteredSnapshotEntries.length} /></Col>
-        </Row>
-      )}
-      {selectedSnapshotMonth && (
-        <Input prefix={<SearchOutlined />} placeholder={t('deptOwnership.searchPlaceholder')} allowClear value={snapshotSearch}
-          onChange={e => setSnapshotSearch(e.target.value)} style={{ width: 360, marginBottom: 12 }} />
-      )}
-      {selectedSnapshotMonth && filteredSnapshotEntries.length > 0 ? (
-        <Table columns={snapshotColumns} dataSource={filteredSnapshotEntries} rowKey="id" size="small" loading={snapshotEntriesLoading}
-          pagination={{ pageSize, showSizeChanger: true, pageSizeOptions: ['25', '50', '100'], showTotal: (total) => t('common.paginationTotal', { total }), onChange: (_p, s) => setPageSize(s) }}
-          scroll={{ x: 700 }} />
-      ) : (!snapshotEntriesLoading && selectedSnapshotMonth && <Empty description={t('deptOwnership.noData')} />)}
-    </>
-  );
+  // ==================== Render ====================
 
   return (
     <div>
+      {/* Top toolbar: search on the left, action buttons on the right */}
+      <Row gutter={16} align="middle" style={{ marginBottom: 16 }}>
+        <Col>
+          <Space>
+            <Input
+              prefix={<SearchOutlined />}
+              placeholder={t('deptOwnership.searchPlaceholder')}
+              allowClear
+              size="small"
+              style={{ width: 260 }}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onPressEnter={handleSearch}
+            />
+            <Button size="small" type="primary" onClick={handleSearch} icon={<SearchOutlined />}>
+              {t('common.search')}
+            </Button>
+            {appliedSearch && (
+              <span style={{ color: COLORS.textMuted, fontSize: 12 }}>
+                {t('exceptionNumber.searchResult', { count: filteredCount })}
+              </span>
+            )}
+          </Space>
+        </Col>
+        <Col flex="auto" />
+        <Col>
+          <Space>
+            {canEdit && (
+              <Button icon={<PlusOutlined />} onClick={() => { addForm.resetFields(); setAddModalOpen(true); }}>
+                {t('exceptionNumber.add')}
+              </Button>
+            )}
+            <Dropdown menu={{ items: [
+              { key: 'import', icon: <UploadOutlined />, label: t('deptOwnership.importLabel'), disabled: uploading },
+              { key: 'template', icon: <DownloadOutlined />, label: t('deptOwnership.downloadTemplate') },
+            ], onClick: ({ key }) => {
+              if (key === 'import') fileInputRef.current?.click();
+              if (key === 'template') downloadCostCenterTemplate();
+            } }}>
+              <Button icon={<UploadOutlined />} loading={uploading}>
+                {t('deptOwnership.importLabel')}
+              </Button>
+            </Dropdown>
+            <input type="file" accept=".xlsx,.xls" ref={fileInputRef} style={{ display: 'none' }}
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) { handleUpload(f); e.target.value = ''; } }} />
+            {uploading && importPolling && importProgress && (
+              <Progress
+                percent={importPercent}
+                size="small"
+                style={{ width: 160, display: 'inline-block', verticalAlign: 'middle' }}
+                format={() => importProgress.message || `${importProgress.processed}/${importProgress.total}`}
+              />
+            )}
+            <Button icon={<ExportOutlined />} onClick={handleExport}>
+              {t('exceptionNumber.export')}
+            </Button>
+          </Space>
+        </Col>
+      </Row>
+
+      {/* Main table */}
       <Card>
-        <Tabs activeKey={activeTab} onChange={(key) => { setActiveTab(key); if (key === 'snapshot') setSelectedSnapshotMonth(null); }} items={[
-          { key: 'current', label: t('deptOwnership.currentDataTab'), children: currentDataContent },
-          { key: 'snapshot', label: <><CameraOutlined /> {t('deptOwnership.snapshotTab')}</>, children: snapshotContent },
-        ]} />
+        <Table
+          columns={columns}
+          dataSource={entries}
+          rowKey="id"
+          size="small"
+          loading={loading}
+          scroll={{ x: canEdit ? 1000 : 890 }}
+          title={() => (
+            <span style={{ fontWeight: 500 }}>
+              {t('deptOwnership.totalCount', { total })}
+            </span>
+          )}
+          pagination={{
+            current: page + 1,
+            pageSize,
+            total: filteredCount,
+            showSizeChanger: true,
+            pageSizeOptions: ['20', '50', '100'],
+            showTotal: (total) => t('common.paginationTotal', { total }),
+            onChange: (p, s) => {
+              fetchData(appliedSearch, p - 1, s);
+            },
+          }}
+        />
       </Card>
 
+      {/* Add modal */}
+      <Modal
+        title={t('exceptionNumber.add')}
+        open={addModalOpen}
+        onOk={handleAddOk}
+        onCancel={() => { setAddModalOpen(false); addForm.resetFields(); }}
+        okText={t('common.confirm')}
+        cancelText={t('common.cancel')}
+        confirmLoading={addLoading}
+        width={560}
+        destroyOnClose
+      >
+        <Form form={addForm} layout="vertical" preserve={false} style={{ marginTop: 16 }}>
+          <Form.Item name="dept_path" label={t('deptOwnership.deptPathCol')} rules={[{ required: true, message: t('deptOwnership.deptPathRequired') }]}>
+            <Input placeholder="/北京分行/科技部" />
+          </Form.Item>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="username" label={t('deptOwnership.usernameCol')}>
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="extension" label={t('phoneOwnership.extensionCol')}>
+                <Input placeholder="8001" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="alloc_dept" label={t('deptOwnership.allocDeptCol')}>
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="org_code" label={t('deptOwnership.orgCodeCol')}>
+                <Input />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Form.Item name="cost_center" label={t('deptOwnership.costCenterCol')}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="remark" label={t('deptOwnership.remarkCol')}>
+            <Input.TextArea rows={2} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* Edit modal */}
       <Modal
         title={t('deptOwnership.editTitle')}
         open={editModalOpen}
-        onOk={handleEditSave}
-        onCancel={() => setEditModalOpen(false)}
+        onOk={handleEditOk}
+        onCancel={() => { setEditModalOpen(false); editForm.resetFields(); setEditingEntry(null); }}
+        okText={t('common.confirm')}
+        cancelText={t('common.cancel')}
         confirmLoading={editLoading}
-        width={520}
+        width={560}
+        destroyOnClose
       >
-        <Form form={editForm} layout="vertical">
+        <Form form={editForm} layout="vertical" preserve={false} style={{ marginTop: 16 }}>
           <Form.Item name="dept_path" label={t('deptOwnership.deptPathCol')} rules={[{ required: true, message: t('deptOwnership.deptPathRequired') }]}>
             <Input />
           </Form.Item>

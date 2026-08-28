@@ -11,11 +11,14 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import lombok.Data;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 @RestController
 @RequestMapping("/auth")
@@ -25,14 +28,18 @@ public class AuthController {
     private final JwtUtil jwtUtil;
     private final AuditLogService auditLogService;
     private final LoginRateLimitService rateLimitService;
+    private final RedisTemplate<String, Object> redisTemplate;
 
     public AuthController(SysUserRepository userRepository, PasswordEncoder passwordEncoder,
-                          JwtUtil jwtUtil, AuditLogService auditLogService, LoginRateLimitService rateLimitService) {
+                          JwtUtil jwtUtil, AuditLogService auditLogService,
+                          LoginRateLimitService rateLimitService,
+                          RedisTemplate<String, Object> redisTemplate) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtUtil = jwtUtil;
         this.auditLogService = auditLogService;
         this.rateLimitService = rateLimitService;
+        this.redisTemplate = redisTemplate;
     }
 
     @PostMapping("/login")
@@ -58,7 +65,7 @@ public class AuthController {
                     Map.of("username", req.getUsername()));
             throw new IllegalArgumentException("用户名或密码错误");
         }
-        if (user.getStatus() != 1) {
+        if (!Byte.valueOf((byte)1).equals(user.getStatus())) {
             auditLogService.log(user.getId(), "AUTH_LOGIN_DISABLED", "sys_user", user.getId(),
                     Map.of("username", req.getUsername()));
             throw new IllegalArgumentException("账号已被停用");
@@ -84,6 +91,7 @@ public class AuthController {
     }
 
     @GetMapping("/me")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ApiResponse<Map<String, Object>>> me(@RequestAttribute("userId") Long userId) {
         var user = userRepository.findByIdAndDeletedAtIsNull(userId)
             .orElseThrow(() -> new IllegalArgumentException("用户不存在"));
@@ -104,16 +112,44 @@ public class AuthController {
         if (refreshToken == null || !jwtUtil.validateToken(refreshToken)) {
             throw new IllegalArgumentException("无效的refresh token");
         }
+        // H-S04: Check if refresh token is revoked
+        String revokeKey = "revoked_refresh:" + refreshToken.hashCode();
+        if (Boolean.TRUE.equals(redisTemplate.hasKey(revokeKey))) {
+            throw new IllegalArgumentException("refresh token已撤销，请重新登录");
+        }
         Long userId = jwtUtil.getUserId(refreshToken);
         var user = userRepository.findByIdAndDeletedAtIsNull(userId)
             .orElseThrow(() -> new IllegalArgumentException("用户不存在"));
         String newAccessToken = jwtUtil.generateAccessToken(user.getId(), user.getUsername(), user.getRole(), user.getOrgId());
         // Rotate refresh token
         String newRefreshToken = jwtUtil.generateRefreshToken(user.getId());
+        // H-S04: Revoke old refresh token
+        long remainingMs = jwtUtil.parseToken(refreshToken).getExpiration().getTime() - System.currentTimeMillis();
+        if (remainingMs > 0) {
+            redisTemplate.opsForValue().set(revokeKey, "1", remainingMs, TimeUnit.MILLISECONDS);
+        }
         return ResponseEntity.ok(ApiResponse.ok(Map.of(
                 "access_token", newAccessToken,
                 "refresh_token", newRefreshToken
         )));
+    }
+
+    /** H-S04: Logout — revoke refresh token */
+    @PostMapping("/logout")
+    public ResponseEntity<ApiResponse<Void>> logout(@RequestAttribute("userId") Long userId,
+                                                     @RequestBody(required = false) Map<String, String> body) {
+        if (body != null && body.containsKey("refresh_token")) {
+            String refreshToken = body.get("refresh_token");
+            if (refreshToken != null && jwtUtil.validateToken(refreshToken)) {
+                String revokeKey = "revoked_refresh:" + refreshToken.hashCode();
+                long remainingMs = jwtUtil.parseToken(refreshToken).getExpiration().getTime() - System.currentTimeMillis();
+                if (remainingMs > 0) {
+                    redisTemplate.opsForValue().set(revokeKey, "1", remainingMs, TimeUnit.MILLISECONDS);
+                }
+            }
+        }
+        auditLogService.log(userId, "AUTH_LOGOUT", "sys_user", userId, Map.of());
+        return ResponseEntity.ok(ApiResponse.ok());
     }
 
     @PostMapping("/change-password")
@@ -136,14 +172,18 @@ public class AuthController {
 
     // === Helpers ===
 
-    /** Extract client IP, considering X-Forwarded-For header */
+    /** Extract client IP, considering X-Forwarded-For header
+     *  H-S05: Only trust XFF from trusted proxy (nginx on localhost) */
     private String getClientIp(HttpServletRequest request) {
         String xff = request.getHeader("X-Forwarded-For");
+        String remoteAddr = request.getRemoteAddr();
         if (xff != null && !xff.isBlank()) {
-            // Take the first IP in the chain (original client)
-            return xff.split(",")[0].trim();
+            // Only trust XFF if the request comes from a trusted proxy (localhost / 127.0.0.1)
+            if (remoteAddr.equals("127.0.0.1") || remoteAddr.equals("0:0:0:0:0:0:0:1") || remoteAddr.equals("::1")) {
+                return xff.split(",")[0].trim();
+            }
         }
-        return request.getRemoteAddr();
+        return remoteAddr;
     }
 
     /** Validate password meets complexity requirements */

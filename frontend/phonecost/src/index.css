@@ -37,7 +37,8 @@ body {
 #root { min-height: 100vh; }
 
 /* 表头居中 — ConfigProvider不支持text-align，需保留 */
-.ant-table-thead > tr > th { text-align: center; }
+.ant-table-thead > tr > th,
+.ant-table-thead > tr > th.ant-table-cell { text-align: center !important; }
 
 /* 侧边栏折叠按钮背景色 — Sider trigger不接受ConfigProvider token */
 .ant-layout-sider-trigger { background: var(--color-charcoal); }

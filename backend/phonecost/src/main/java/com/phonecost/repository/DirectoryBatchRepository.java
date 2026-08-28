@@ -12,7 +12,14 @@ public interface DirectoryBatchRepository extends JpaRepository<DirectoryBatch, 
     Optional<DirectoryBatch> findByIdAndDeletedAtIsNull(Long id);
 
     List<DirectoryBatch> findByDeletedAtIsNull();
+    List<DirectoryBatch> findByBillingMonthAndDeletedAtIsNull(String billingMonth);
+    List<DirectoryBatch> findByDeletedAtIsNullOrderByCreatedAtDesc();
     Optional<DirectoryBatch> findByBatchNoAndDeletedAtIsNull(String batchNo);
     Optional<DirectoryBatch> findTopByDeletedAtIsNullOrderByCreatedAtDesc();
-    List<DirectoryBatch> findAllByDeletedAtIsNullOrderByCreatedAtDesc();
+
+    @org.springframework.data.jpa.repository.Query("SELECT DISTINCT d.billingMonth FROM DirectoryBatch d WHERE d.deletedAt IS NULL AND d.billingMonth IS NOT NULL ORDER BY d.billingMonth DESC")
+    List<String> findDistinctMonths();
+
+    @org.springframework.data.jpa.repository.Query("SELECT DISTINCT d.billingMonth FROM DirectoryBatch d WHERE d.deletedAt IS NULL AND d.billingMonth IS NOT NULL AND d.batchNo LIKE 'EXC-%' ORDER BY d.billingMonth DESC")
+    List<String> findExceptionDistinctMonths();
 }

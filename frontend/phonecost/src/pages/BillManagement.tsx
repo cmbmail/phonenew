@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { COLORS } from '../theme/morandi';
 import { Card, Table, Tag, Button, Space, Modal, message, Select, Dropdown, Row, Col, Progress, Popconfirm, DatePicker, Tabs, Input } from 'antd';
+import type { ColumnType } from 'antd/es/table';
 import { UploadOutlined, DeleteOutlined, DownloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { useAuthStore } from '../store/auth';
 import type { BillBatch, BillDetail, SheetTypeCode } from '../types/bill';
-import { SHEET_TYPE_LABELS, SHEET_TYPES } from '../types/bill';
+import { SHEET_TYPES } from '../types/bill';
 import type { ImportProgress } from '../types/import';
 import {
   getBillBatches,
@@ -80,13 +81,13 @@ export default function BillManagement() {
 
   // ==================== Allocation state (preserved for calculate/confirm/withdraw) ====================
   const [results, setResults] = useState<AllocationResult[]>([]);
-  const [resultsLoading, setResultsLoading] = useState(false);
+  const [_resultsLoading, setResultsLoading] = useState(false);
   const [calculatingId, setCalculatingId] = useState<number | null>(null);
   const [withdrawModal, setWithdrawModal] = useState<{ open: boolean; result?: AllocationResult }>({ open: false });
   const [withdrawReason, setWithdrawReason] = useState('');
 
   // Fee summary search
-  const [feeSearch, setFeeSearch] = useState('');
+  
 
   // Bill detail search
   const [detailSearch, setDetailSearch] = useState('');
@@ -128,10 +129,10 @@ export default function BillManagement() {
   useEffect(() => { fetchMonths(); }, [fetchMonths]);
 
   // Fetch bill details for the selected batch + sheet type
-  const fetchDetails = useCallback(async (batchId: number, sheetType: SheetTypeCode, page = 0, size = 20) => {
+  const fetchDetails = useCallback(async (batchId: number, sheetType: SheetTypeCode, page = 0, size = 20, keyword?: string) => {
     setDetailsLoading(true);
     try {
-      const data = await getBillDetails(batchId, sheetType, page, size);
+      const data = await getBillDetails(batchId, sheetType, page, size, keyword);
       setDetails(data.entries);
       setDetailsTotal(data.total);
       setDetailsPage(data.page);
@@ -167,6 +168,18 @@ export default function BillManagement() {
       setResults([]);
     }
   }, [selectedBatch, activeSheetType, fetchDetails, fetchResults]);
+
+  // Debounced server-side search: when detailSearch changes, re-fetch from backend
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!selectedBatch) return;
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      fetchDetails(selectedBatch.id, activeSheetType, 0, detailsPageSize, detailSearch.trim() || undefined);
+    }, 400);
+    return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detailSearch]);
 
   // ==================== Handlers ====================
 
@@ -229,17 +242,35 @@ export default function BillManagement() {
       const snap = await getAllocationSnapshot(batchId);
       setOwnershipBatches(snap.ownership_batches || []);
       setDirectoryBatches(snap.directory_batches || []);
+
+      // Find the bill batch's billing month for auto-matching
+      const billBatch = batches.find(b => b.id === batchId);
+      const billMonth = billBatch?.billing_month;
+
+      // Auto-select ownership batch: prefer same month, fallback to snapshot, then latest
       if (snap.ownership_batch_id) setSelectedOwnershipBatchId(snap.ownership_batch_id);
       else if (snap.ownership_batches?.length > 0) {
-        const latest = [...snap.ownership_batches].sort((a, b) => b.id - a.id)[0];
-        setSelectedOwnershipBatchId(latest.id);
+        const monthMatch = billMonth
+          ? snap.ownership_batches.find((b: OwnershipBatch) => b.billing_month === billMonth)
+          : null;
+        const best = monthMatch || [...snap.ownership_batches].sort((a, b) => b.id - a.id)[0];
+        setSelectedOwnershipBatchId(best.id);
       }
+
+      // Auto-select directory batch: prefer same month, fallback to snapshot, then latest
       if (snap.directory_batch_id) setSelectedDirectoryBatchId(snap.directory_batch_id);
       else if (snap.directory_batches?.length > 0) {
-        const withMonth = snap.directory_batches.filter(b => b.billing_month);
-        const source = withMonth.length > 0 ? withMonth : snap.directory_batches;
-        const latest = [...source].sort((a, b) => b.id - a.id)[0];
-        setSelectedDirectoryBatchId(latest.id);
+        const monthMatch = billMonth
+          ? snap.directory_batches.find((b: DirectoryBatch) => b.billing_month === billMonth)
+          : null;
+        const fallback = monthMatch
+          ? monthMatch
+          : (() => {
+              const withMonth = snap.directory_batches.filter((b: DirectoryBatch) => b.billing_month);
+              const source = withMonth.length > 0 ? withMonth : snap.directory_batches;
+              return [...source].sort((a, b) => b.id - a.id)[0];
+            })();
+        setSelectedDirectoryBatchId(fallback.id);
       }
     } catch {
       message.error(t('bill.snapshotFetchFailed'));
@@ -378,25 +409,47 @@ export default function BillManagement() {
 
   // ==================== Detail table columns per sheet type (raw/original bill data) ====================
 
-  /** Parse rawData JSON from BillDetail, fallback to empty object */
+  /** Parse rawData JSON from BillDetail, fallback to empty object.
+   *  Also normalizes col_N keys to proper field names for old data
+   *  where template was missing duration/remark column mappings. */
   const parseRaw = (raw: string | null): Record<string, unknown> => {
     if (!raw) return {};
-    try { return JSON.parse(raw); } catch { return {}; }
+    let obj: Record<string, unknown>;
+    try { obj = JSON.parse(raw); } catch { return {}; }
+    // Compatibility: old data stored duration fields as col_3/col_4/col_6 and remark as col_9
+    const fallbacks: Record<string, string> = {
+      domesticDuration: 'col_3',
+      transferDuration: 'col_4',
+      internationalDuration: 'col_6',
+      remark: 'col_9',
+      recordingDir: 'col_2',
+    };
+    for (const [field, colKey] of Object.entries(fallbacks)) {
+      if (obj[field] == null && obj[colKey] != null) {
+        obj[field] = obj[colKey];
+      }
+    }
+    return obj;
   };
 
   /** Format a fee value from rawData */
   const fmtFee = (v: unknown) => {
-    if (v == null || v === '' || v === 0) return '-';
+    if (v == null || v === '') return '-';
     const n = Number(v);
-    return isNaN(n) ? '-' : `¥${n.toFixed(2)}`;
+    if (isNaN(n)) return '-';
+    // Show '-' when numeric value is 0 (including string "0"/"0.00")
+    return n === 0 ? '-' : `¥${n.toFixed(2)}`;
   };
 
   /** Format a duration value from rawData (domestic/transfer/international) */
   const fmtDur = (v: unknown) => {
-    if (v == null || v === '' || v === 0) return '-';
+    if (v == null || v === '') return '-';
     const n = Number(v);
     return isNaN(n) ? '-' : n.toString();
   };
+
+  /** Filter Excel empty-date artifacts (e.g. 1904/1/1, 1900/1/0) rendered as blank */
+  const isInvalidExcelDate = (s: string) => /^1(?:900|904)\/\d{1,2}\/\d{1,2}$/.test(s.trim());
 
   const callColumns = [
     { title: t('bill.raw.phoneNumber'), key: 'phoneNumber', width: 130, render: (_: unknown, r: BillDetail) => parseRaw(r.raw_data).phoneNumber ?? r.phone_number },
@@ -414,7 +467,10 @@ export default function BillManagement() {
   const recordingColumns = [
     { title: t('bill.raw.extension'), key: 'extension', width: 100, render: (_: unknown, r: BillDetail) => parseRaw(r.raw_data).extension ?? r.extension },
     { title: t('bill.raw.phoneNumber'), key: 'phoneNumber', width: 130, render: (_: unknown, r: BillDetail) => parseRaw(r.raw_data).phoneNumber ?? r.phone_number },
-    { title: t('bill.raw.recordingDir'), key: 'recordingDir', width: 120, render: (_: unknown, r: BillDetail) => (parseRaw(r.raw_data).recordingDir as string) || '-' },
+    { title: t('bill.raw.recordingDir'), key: 'recordingDir', width: 120, render: (_: unknown, r: BillDetail) => {
+      const v = parseRaw(r.raw_data).recordingDir as string;
+      return (v && !isInvalidExcelDate(v)) ? v : '-';
+    } },
     { title: t('bill.raw.recordingFee'), key: 'recordingFee', width: 110, render: (_: unknown, r: BillDetail) => <strong>{fmtFee(parseRaw(r.raw_data).recordingFee)}</strong> },
   ];
 
@@ -440,7 +496,7 @@ export default function BillManagement() {
 
   // ==================== Allocation columns (for the allocation tab) ====================
 
-  const resultColumns = [
+  const _resultColumns = [
     {
       title: t('bill.orgLabel'), dataIndex: 'org_name', key: 'org_name', width: 180,
       render: (name: string, r: AllocationResult) =>
@@ -487,8 +543,8 @@ export default function BillManagement() {
 
   // ==================== Render ====================
 
-  const totalFee = results.reduce((sum, r) => sum + (r.total_fee || 0), 0);
-  const confirmedCount = results.filter(r => r.confirm_status === 1).length;
+  const _totalFee = results.reduce((sum, r) => sum + (r.total_fee || 0), 0);
+  const _confirmedCount = results.filter(r => r.confirm_status === 1).length;
 
   return (
     <div>
@@ -610,13 +666,8 @@ export default function BillManagement() {
                 label: t(`bill.sheetType_${st}`),
                 children: (
                   <Table
-                    columns={detailColumnMap[st] as any}
-                    dataSource={detailSearch.trim()
-                      ? details.filter(d => {
-                          const s = detailSearch.trim();
-                          return (d.phone_number || '').includes(s) || (d.extension || '').includes(s) || (d.raw_data || '').includes(s);
-                        })
-                      : details}
+                    columns={detailColumnMap[st] as ColumnType<unknown>[]}
+                    dataSource={details}
                     rowKey="id"
                     size="small"
                     loading={detailsLoading}
@@ -628,7 +679,7 @@ export default function BillManagement() {
                       pageSizeOptions: ['20', '50', '100'],
                       showTotal: (total) => t('common.paginationTotal', { total }),
                       onChange: (p, s) => {
-                        fetchDetails(selectedBatch.id, st, p - 1, s);
+                        fetchDetails(selectedBatch.id, st, p - 1, s, detailSearch.trim() || undefined);
                       },
                     }}
                   />
@@ -673,9 +724,7 @@ export default function BillManagement() {
         okButtonProps={{ danger: true }}
       >
         <p>{t('bill.withdrawDesc')}</p>
-        <input
-          className="ant-input"
-          style={{ width: '100%', padding: '4px 11px' }}
+        <Input.TextArea
           rows={3}
           placeholder={t('bill.withdrawReasonPlaceholder')}
           value={withdrawReason}

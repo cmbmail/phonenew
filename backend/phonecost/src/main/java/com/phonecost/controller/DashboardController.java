@@ -29,6 +29,14 @@ public class DashboardController {
     private final AllocationResultRepository allocationResultRepository;
     private final DataScopeService dataScopeService;
 
+    /** Safely convert JPQL aggregate result to BigDecimal (handles Long, Integer, BigDecimal, null) */
+    private BigDecimal toBigDecimal(Object val) {
+        if (val == null) return BigDecimal.ZERO;
+        if (val instanceof BigDecimal bd) return bd;
+        if (val instanceof Number n) return BigDecimal.valueOf(n.doubleValue());
+        return BigDecimal.ZERO;
+    }
+
     @GetMapping("/stats")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getStats(
             @RequestAttribute("userId") Long userId) {
@@ -46,7 +54,9 @@ public class DashboardController {
         long billDetailCount = billDetailRepository.count();
 
         // M-07: Use aggregate query instead of loading all BillBatch entities
+        // Handle null: SUM returns null when no rows match (e.g. all soft-deleted)
         BigDecimal totalAmount = billBatchRepository.sumTotalAmount();
+        if (totalAmount == null) totalAmount = BigDecimal.ZERO;
 
         // M-07: Use single aggregate query instead of N+1 loop over batches
         long allocationResultCount;
@@ -160,13 +170,22 @@ public class DashboardController {
         List<Map<String, Object>> feeBreakdown = List.of();
         if (!monthlyTrend.isEmpty()) {
             Long latestBatchId = (Long) monthlyTrend.get(monthlyTrend.size() - 1).get("batch_id");
-            Object[] sums = allocationResultRepository.sumFeeBreakdownByBatchId(latestBatchId);
+            List<Object[]> feeRows = allocationResultRepository.sumFeeBreakdownByBatchId(latestBatchId);
 
-            BigDecimal platformFee = sums[0] != null ? (BigDecimal) sums[0] : BigDecimal.ZERO;
-            BigDecimal callFee = sums[1] != null ? (BigDecimal) sums[1] : BigDecimal.ZERO;
-            BigDecimal recordingFee = sums[2] != null ? (BigDecimal) sums[2] : BigDecimal.ZERO;
-            BigDecimal crbtFee = sums[3] != null ? (BigDecimal) sums[3] : BigDecimal.ZERO;
-            BigDecimal flashFee = sums[4] != null ? (BigDecimal) sums[4] : BigDecimal.ZERO;
+            BigDecimal platformFee = BigDecimal.ZERO;
+            BigDecimal callFee = BigDecimal.ZERO;
+            BigDecimal recordingFee = BigDecimal.ZERO;
+            BigDecimal crbtFee = BigDecimal.ZERO;
+            BigDecimal flashFee = BigDecimal.ZERO;
+
+            if (feeRows != null && !feeRows.isEmpty()) {
+                Object[] sums = feeRows.get(0);
+                platformFee = toBigDecimal(sums[0]);
+                callFee = toBigDecimal(sums[1]);
+                recordingFee = toBigDecimal(sums[2]);
+                crbtFee = toBigDecimal(sums[3]);
+                flashFee = toBigDecimal(sums[4]);
+            }
 
             feeBreakdown = List.of(
                     Map.of("name", "通话费", "value", callFee, "color", "#8B9D9E"),

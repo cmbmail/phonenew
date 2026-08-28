@@ -7,6 +7,7 @@ export interface OwnershipBatch {
   file_name: string;
   total_count: number;
   exception_count: number;
+  billing_month: string | null;
   import_status: number;
   error_message: string | null;
   imported_by: number;
@@ -17,10 +18,20 @@ export interface OwnershipEntry {
   id: number;
   batch_id: number;
   phone_number: string;
+  extension: string;
+  full_path: string;
   description: string;
   is_exception: number;
   org_id: number | null;
   match_level: string;
+  l1_branch: string;
+  l2_branch: string;
+  exception_mismatch: boolean;
+  status: number;
+  alloc_dept: string;
+  org_code: string;
+  cost_center: string;
+  updated_at: string;
 }
 
 // Directory types
@@ -74,18 +85,6 @@ export interface AsyncImportResult {
   message: string;
 }
 
-// Import result
-export interface ImportResult {
-  batch_id: number;
-  batch_no: string;
-  total_count: number;
-  exception_count?: number;
-  seconded_count?: number;
-  import_status: number;
-  billing_month?: string;
-  total_amount?: number;
-}
-
 // Ownership match result
 export interface MatchResult {
   bill_batch_id: number;
@@ -113,6 +112,7 @@ export const IMPORT_STATUS_MAP: Record<number, { label: string; color: string }>
 export interface RecordingDataBatch {
   id: number;
   batch_no: string;
+  billing_month: string;
   file_name: string;
   total_count: number;
   import_status: number;
@@ -128,4 +128,32 @@ export interface RecordingDataEntry {
   phone_number: string;
   dept_name: string;
   remark: string;
+  status: number | null;
+  close_time: string | null;
+}
+
+// Allocation Dept types
+export interface AllocDeptBatch {
+  id: number;
+  batch_no: string;
+  file_name: string;
+  total_count: number;
+  billing_month: string | null;
+  import_status: number;
+  error_message: string | null;
+  imported_by: number;
+  created_at: string;
+}
+
+export interface AllocDeptEntry {
+  id: number;
+  batch_id: number;
+  phone_number: string;
+  extension: string;
+  branch: string;
+  dept_name: string;
+  full_path: string;
+  org_code: string;
+  cost_center: string;
+  is_exception: number;
 }

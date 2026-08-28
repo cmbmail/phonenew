@@ -31,6 +31,9 @@ public class PhoneOwnershipBatch extends BaseEntity {
     @ColumnDefault("0")
     private Integer exceptionCount;
 
+    @Column(name = "billing_month", length = 7)
+    private String billingMonth;
+
     @Column(name = "import_status")
     @ColumnDefault("0")
     private Byte importStatus;

@@ -41,8 +41,7 @@ export interface AllocationAdjustment {
 }
 
 export interface L1SummaryRow {
-  branch_name: string;
-  cost_center: string;
+  l1_branch: string;
   platform_fee: number;
   monthly_rent_code: number;
   domestic_duration: number;
@@ -56,8 +55,43 @@ export interface L1SummaryRow {
   flash_fee: number;
   total_fee: number;
   phone_count: number;
-  confirmed: number;
-  pending: number;
+}
+
+export interface L2SummaryRow {
+  l1_branch: string;
+  l2_branch: string;
+  platform_fee: number;
+  monthly_rent_code: number;
+  domestic_duration: number;
+  transfer_duration: number;
+  domestic_fee: number;
+  international_duration: number;
+  international_fee: number;
+  call_subtotal: number;
+  recording_fee: number;
+  crbt_fee: number;
+  flash_fee: number;
+  total_fee: number;
+  phone_count: number;
+}
+
+export interface L3SummaryRow {
+  l1_branch: string;
+  l2_branch: string;
+  alloc_dept: string;
+  platform_fee: number;
+  monthly_rent_code: number;
+  domestic_duration: number;
+  transfer_duration: number;
+  domestic_fee: number;
+  international_duration: number;
+  international_fee: number;
+  call_subtotal: number;
+  recording_fee: number;
+  crbt_fee: number;
+  flash_fee: number;
+  total_fee: number;
+  phone_count: number;
 }
 
 export const CONFIRM_STATUS_MAP: Record<number, { label: string; color: string }> = {
@@ -79,6 +113,10 @@ export interface AllocationResultPage {
 export interface AllocationDetailRow {
   phone_number?: string;
   extension?: string;
+  l1_branch?: string;
+  l2_branch?: string;
+  alloc_dept?: string;
+  full_path?: string;
   org_name?: string;
   org_code?: string;
   cost_center?: string;

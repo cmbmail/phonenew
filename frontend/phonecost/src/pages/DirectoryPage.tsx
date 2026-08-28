@@ -1,489 +1,542 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Card, Table, Select, Tag, Row, Col, message, Empty, Input, Statistic, Upload, Button, Space, Tabs, DatePicker, Modal, Tooltip, Popconfirm, Dropdown, Progress } from 'antd';
-import { SearchOutlined, UploadOutlined, DownloadOutlined, ReloadOutlined, CameraOutlined, CheckCircleOutlined, SyncOutlined, ExclamationCircleOutlined, EditOutlined } from '@ant-design/icons';
-import type { DirectoryBatch, DirectoryEntry, ImportProgress } from '../types/import';
-import { importDirectory, getDirectoryBatches, setDirectoryMonth, getDirectorySnapshots, clearDirectoryException, syncDirectoryFromMatch, batchClearDirectoryException, updateDirectoryExceptionReason, downloadDirectoryTemplate, getDirectoryProgress } from '../api/import';
-import { useImportProgress } from '../hooks/useImportProgress';
+import { useState, useEffect, useCallback } from 'react';
 import { COLORS } from '../theme/morandi';
-import { apiGet } from '../lib/request';
+import { Card, Table, Row, Col, message, Input, Button, Popconfirm, Space, Modal, Form, Progress, DatePicker, Select } from 'antd';
+import { SearchOutlined, UploadOutlined, DownloadOutlined, DeleteOutlined, PlusOutlined, ExportOutlined, EditOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
+import type { DirectoryBatch, DirectoryEntry, ImportProgress } from '../types/import';
+import {
+  importDirectory,
+  getDirectoryBatches,
+  downloadDirectoryTemplate,
+  getDirectoryProgress,
+  addDirectoryEntry,
+  updateDirectoryEntry,
+  deleteDirectoryEntry,
+  exportAllDirectoryEntries,
+} from '../api/import';
+import { useImportProgress } from '../hooks/useImportProgress';
+import { useAuthStore } from '../store/auth';
+import { apiGet, apiDelete } from '../lib/request';
 import dayjs from 'dayjs';
 
-const LEVEL_LABELS = ['集团', '一级分行', '二级分行/部门', '三级部门', '四级部门'];
-const DIFF_BG = 'rgba(196,123,108,0.12)'; // subtle danger tint for differing fields
-
-function splitDeptPath(deptPath: string): string[] {
-  const parts = deptPath.split('-').map(s => s.trim()).filter(Boolean);
-  return Array.from({ length: 5 }, (_, i) => parts[i] || '');
-}
-
-/** Build a map from phone_number -> non-exception entry for quick lookup */
-function buildCurrentMap(entries: DirectoryEntry[]): Map<string, DirectoryEntry> {
-  const map = new Map<string, DirectoryEntry>();
-  for (const e of entries) {
-    if (e.is_seconded !== 1 && e.phone_number) {
-      if (!map.has(e.phone_number)) map.set(e.phone_number, e);
-    }
-  }
-  return map;
-}
-
-interface FieldDiff {
-  level0: boolean; level1: boolean; level2: boolean; level3: boolean; level4: boolean;
-  phone_number: boolean;
-  hasDiff: boolean;
-  matched: boolean;
-}
-
-function compareFields(ex: DirectoryEntry, current: DirectoryEntry | undefined): FieldDiff {
-  if (!current) return { level0: false, level1: false, level2: false, level3: false, level4: false, phone_number: false, hasDiff: false, matched: false };
-  const eLevels = splitDeptPath(ex.dept_path);
-  const cLevels = splitDeptPath(current.dept_path);
-  const diffs = {
-    level0: eLevels[0] !== cLevels[0],
-    level1: eLevels[1] !== cLevels[1],
-    level2: eLevels[2] !== cLevels[2],
-    level3: eLevels[3] !== cLevels[3],
-    level4: eLevels[4] !== cLevels[4],
-    phone_number: false, // phone_number is the matching key, always same
-  };
-  const hasDiff = Object.values(diffs).some(v => v);
-  return { ...diffs, hasDiff, matched: true };
-}
-
 const DirectoryPage: React.FC = () => {
+  const { t } = useTranslation();
+  const canEdit = useAuthStore((s) => s.role === 1 || s.role === 2);
+  const isAdmin = useAuthStore((s) => s.role === 1);
+
+  // ==================== Batch list state ====================
   const [batches, setBatches] = useState<DirectoryBatch[]>([]);
-  const [selectedBatchId, setSelectedBatchId] = useState<number | null>(null);
-  const [entries, setEntries] = useState<DirectoryEntry[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [entriesLoading, setEntriesLoading] = useState(false);
-  const [search, setSearch] = useState('');
+  const [batchLoading, setBatchLoading] = useState(false);
+  const [selectedBatch, setSelectedBatch] = useState<DirectoryBatch | null>(null);
+  const [batchPageSize, setBatchPageSize] = useState(6);
+
+  // Month filter
+  const [availableMonths, setAvailableMonths] = useState<string[]>([]);
+  const [selectedMonth, setSelectedMonth] = useState<string | undefined>(undefined);
+
+  // Import
   const [uploading, setUploading] = useState(false);
-  const [processingIds, setProcessingIds] = useState<Set<number>>(new Set());
+  const [importMonthModal, setImportMonthModal] = useState(false);
+  const [importBillingMonth, setImportBillingMonth] = useState<string>(dayjs().format('YYYY-MM'));
 
   // Async import progress
   const { progress: importProgress, polling: importPolling, startPolling, percent: importPercent } = useImportProgress({
     onComplete: (p: ImportProgress) => {
-      message.success(`通讯录导入完成：${p.total} 条，借调 ${p.seconded_count ?? 0} 条`);
+      message.success(t('import.directoryImportSuccess', { total: p.total, seconded: p.seconded_count ?? 0 }));
       fetchBatches();
+      fetchMonths();
       setUploading(false);
     },
     onError: (p: ImportProgress) => {
-      message.error(`导入失败：${p.message || '未知错误'}`);
+      message.error(t('bill.importFailedMsg', { error: p.message || t('common.unknown') }));
       setUploading(false);
     },
   });
 
-  // Snapshot state
-  const [snapshots, setSnapshots] = useState<DirectoryBatch[]>([]);
-  const [snapshotsLoading, setSnapshotsLoading] = useState(false);
-  const [selectedSnapshotMonth, setSelectedSnapshotMonth] = useState<string | null>(null);
-  const [snapshotEntries, setSnapshotEntries] = useState<DirectoryEntry[]>([]);
-  const [snapshotEntriesLoading, setSnapshotEntriesLoading] = useState(false);
-  const [snapshotSearch, setSnapshotSearch] = useState('');
-  const [exceptionSearch, setExceptionSearch] = useState('');
-  const [pageSize, setPageSize] = useState(50);
-  const [codeToNameMap, setCodeToNameMap] = useState<Record<string, string>>({});
+  // Add entry modal
+  const [addModalOpen, setAddModalOpen] = useState(false);
+  const [addLoading, setAddLoading] = useState(false);
+  const [addForm] = Form.useForm();
 
-  // Resolve a dept_path segment: if it's a code found in map, return the Chinese name; otherwise return as-is
-  const resolveOrgCode = useCallback((segment: string): string => {
-    if (!segment) return '-';
-    return codeToNameMap[segment] || segment;
-  }, [codeToNameMap]);
-
-  // Create snapshot modal
-  const [snapshotModalOpen, setSnapshotModalOpen] = useState(false);
-  const [snapshotMonth, setSnapshotMonth] = useState<string>('');
-
-  // Edit exception reason modal
+  // Edit entry modal
   const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
   const [editingEntry, setEditingEntry] = useState<DirectoryEntry | null>(null);
-  const [editReason, setEditReason] = useState('');
+  const [editForm] = Form.useForm();
+
+  // Delete
+  const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set());
+
+  // ==================== Entry detail state ====================
+  const [entries, setEntries] = useState<DirectoryEntry[]>([]);
+  const [entriesLoading, setEntriesLoading] = useState(false);
+  const [search, setSearch] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
+
+  // ==================== Data fetching ====================
+
+  const fetchMonths = useCallback(async () => {
+    try {
+      const data = await apiGet<string[]>('/import/directory/months');
+      setAvailableMonths(data);
+    } catch { /* silent */ }
+  }, []);
 
   const fetchBatches = useCallback(async () => {
-    setLoading(true);
+    setBatchLoading(true);
     try {
-      const data = await getDirectoryBatches();
+      const data = await getDirectoryBatches(selectedMonth);
       setBatches(data);
+      if (!selectedBatch && data.length > 0) {
+        setSelectedBatch(data[data.length - 1]);
+      }
     } catch {
-      message.error('获取批次列表失败');
+      message.error(t('import.fetchFailed'));
     } finally {
-      setLoading(false);
+      setBatchLoading(false);
     }
-  }, []);
+  }, [t, selectedMonth]);
 
-  const fetchSnapshots = useCallback(async () => {
-    setSnapshotsLoading(true);
-    try {
-      const data = await getDirectorySnapshots();
-      setSnapshots(data);
-    } catch {
-      message.error('获取快照列表失败');
-    } finally {
-      setSnapshotsLoading(false);
-    }
-  }, []);
+  useEffect(() => { fetchBatches(); }, [fetchBatches]);
+  useEffect(() => { fetchMonths(); }, [fetchMonths]);
 
-  const fetchEntries = useCallback(async () => {
-    if (!selectedBatchId) { setEntries([]); return; }
+  // Fetch entries for selected batch
+  const fetchEntries = useCallback(async (keyword = '') => {
+    if (!selectedBatch) { setEntries([]); return; }
     setEntriesLoading(true);
     try {
-      const data = await apiGet<{ entries: DirectoryEntry[]; codeToNameMap: Record<string, string> }>(`/import/directory/entries/${selectedBatchId}`);
-      setEntries(data.entries);
-      setCodeToNameMap(data.codeToNameMap || {});
+      const data = await apiGet<{ entries: DirectoryEntry[] }>(`/import/directory/entries/${selectedBatch.id}`);
+      let filtered = data.entries || [];
+      if (keyword) {
+        const kw = keyword.toLowerCase();
+        filtered = filtered.filter(e =>
+          (e.dept_path || '').toLowerCase().includes(kw) ||
+          (e.username || '').toLowerCase().includes(kw) ||
+          (e.phone_number || '').toLowerCase().includes(kw) ||
+          (e.extension || '').toLowerCase().includes(kw)
+        );
+      }
+      setEntries(filtered);
     } catch {
-      message.error('获取通讯录数据失败');
+      message.error(t('import.fetchFailed'));
     } finally {
       setEntriesLoading(false);
     }
-  }, [selectedBatchId]);
+  }, [selectedBatch, t]);
 
-  useEffect(() => { fetchBatches(); fetchSnapshots(); }, [fetchBatches, fetchSnapshots]);
-  useEffect(() => {
-    if (batches.length > 0 && !selectedBatchId) {
-      const latest = [...batches].sort((a, b) => b.id - a.id)[0];
-      setSelectedBatchId(latest.id);
+  useEffect(() => { fetchEntries(appliedSearch); }, [fetchEntries, appliedSearch]);
+
+  // ==================== Handlers ====================
+
+  const handleImportClick = () => {
+    setImportMonthModal(true);
+  };
+
+  const handleConfirmMonth = () => {
+    if (!importBillingMonth) {
+      message.warning(t('directory.selectMonthFirst'));
+      return;
     }
-  }, [batches, selectedBatchId]);
-  useEffect(() => { fetchEntries(); }, [fetchEntries]);
+    setImportMonthModal(false);
+    // Trigger file picker after closing modal
+    setTimeout(() => {
+      document.getElementById('directory-upload-input')?.click();
+    }, 100);
+  };
 
-  useEffect(() => {
-    if (!selectedSnapshotMonth) { setSnapshotEntries([]); return; }
-    const snap = snapshots.find(s => s.billing_month === selectedSnapshotMonth);
-    if (!snap) { setSnapshotEntries([]); return; }
-    setSnapshotEntriesLoading(true);
-    apiGet<{ entries: DirectoryEntry[]; codeToNameMap: Record<string, string> }>(`/import/directory/entries/${snap.id}`)
-      .then(data => {
-        setSnapshotEntries(data.entries);
-        setCodeToNameMap(data.codeToNameMap || {});
-      })
-      .catch(() => message.error('获取快照数据失败'))
-      .finally(() => setSnapshotEntriesLoading(false));
-  }, [selectedSnapshotMonth, snapshots]);
-
-  const handleUpload = async (file: File) => {
+  const handleFileSelected = async (file: File) => {
+    const month = importBillingMonth;
     setUploading(true);
     try {
-      const result = await importDirectory(file);
-      // Start async progress polling
+      const result = await importDirectory(file, month);
       startPolling(result.batch_id, getDirectoryProgress);
     } catch (err) {
-      message.error(`导入失败：${err instanceof Error ? err.message : '未知错误'}`);
+      message.error(t('bill.importFailedMsg', { error: err instanceof Error ? err.message : t('common.unknown') }));
       setUploading(false);
     }
-    return false;
   };
 
-  const handleCreateSnapshot = async () => {
-    if (!selectedBatchId || !snapshotMonth) { message.warning('请选择批次和月份'); return; }
+  const handleDeleteBatch = async (batchId: number) => {
     try {
-      await setDirectoryMonth(selectedBatchId, snapshotMonth);
-      message.success(`快照已创建：${snapshotMonth}`);
-      setSnapshotModalOpen(false);
-      setSnapshotMonth('');
+      await apiDelete(`/import/directory/batches/${batchId}`);
+      message.success(t('directory.deleteSuccess'));
+      if (selectedBatch?.id === batchId) {
+        setSelectedBatch(null);
+        setEntries([]);
+      }
       fetchBatches();
-      fetchSnapshots();
-      setSelectedSnapshotMonth(snapshotMonth);
-    } catch (err) {
-      message.error(`创建快照失败：${err instanceof Error ? err.message : '未知错误'}`);
+      fetchMonths();
+    } catch {
+      message.error(t('directory.deleteFailed'));
     }
   };
 
-  const handleClearException = async (id: number) => {
-    setProcessingIds(prev => new Set(prev).add(id));
-    try {
-      await clearDirectoryException(id);
-      message.success('已解除例外');
-      fetchEntries();
-    } catch { message.error('解除例外失败'); }
-    finally { setProcessingIds(prev => { const s = new Set(prev); s.delete(id); return s; }); }
+  const handleSearch = () => {
+    setAppliedSearch(search);
   };
 
-  const handleSyncFromMatch = async (id: number) => {
-    setProcessingIds(prev => new Set(prev).add(id));
+  // Add entry
+  const handleAddOk = async () => {
     try {
-      await syncDirectoryFromMatch(id);
-      message.success('已同步当前数据到例外记录');
-      fetchEntries();
+      const values = await addForm.validateFields();
+      setAddLoading(true);
+      await addDirectoryEntry(values);
+      message.success(t('directory.addSuccess'));
+      setAddModalOpen(false);
+      addForm.resetFields();
+      fetchBatches();
+      fetchMonths();
     } catch (err) {
-      message.error(`同步失败：${err instanceof Error ? err.message : '未知错误'}`);
+      if (err instanceof Error) message.error(t('directory.addFailed', { error: err.message }));
+    } finally {
+      setAddLoading(false);
     }
-    finally { setProcessingIds(prev => { const s = new Set(prev); s.delete(id); return s; }); }
   };
 
-  const handleBatchClear = async () => {
-    const ids = exceptionEntries.map(e => e.id);
-    if (ids.length === 0) return;
-    try {
-      const result = await batchClearDirectoryException(ids);
-      message.success(`已批量解除例外：${result.cleared} 条`);
-      fetchEntries();
-    } catch { message.error('批量解除失败'); }
+  // Edit entry
+  const handleEdit = (record: DirectoryEntry) => {
+    editForm.setFieldsValue({
+      dept_path: record.dept_path || '',
+      username: record.username || '',
+      extension: record.extension || '',
+      phone_number: record.phone_number || '',
+      remark: record.remark || '',
+    });
+    setEditingEntry(record);
+    setEditModalOpen(true);
   };
 
-  const handleUpdateReason = async () => {
+  const handleEditOk = async () => {
     if (!editingEntry) return;
     try {
-      await updateDirectoryExceptionReason(editingEntry.id, editReason);
-      message.success('说明已更新');
+      const values = await editForm.validateFields();
+      setEditLoading(true);
+      await updateDirectoryEntry(editingEntry.id, {
+        dept_path: values.dept_path,
+        remark: values.remark,
+      });
+      message.success(t('directory.editSuccess'));
       setEditModalOpen(false);
       setEditingEntry(null);
-      setEditReason('');
-      fetchEntries();
+      fetchEntries(appliedSearch);
     } catch (err) {
-      message.error(`更新失败：${err instanceof Error ? err.message : '未知错误'}`);
+      if (err instanceof Error) message.error(t('directory.editFailed', { error: err.message }));
+    } finally {
+      setEditLoading(false);
     }
   };
 
-  // Derived data
-  const exceptionCount = entries.filter(e => e.is_seconded === 1).length;
-  const filteredEntries = search
-    ? entries.filter(e => e.phone_number.includes(search) || e.dept_path.includes(search))
-    : entries;
-
-  const exceptionEntries = entries.filter(e => e.is_seconded === 1);
-  const filteredExceptionEntries = exceptionSearch
-    ? exceptionEntries.filter(e => e.phone_number.includes(exceptionSearch) || e.dept_path.includes(exceptionSearch))
-    : exceptionEntries;
-
-  const currentMap = useMemo(() => buildCurrentMap(entries), [entries]);
-  const diffsMap = useMemo(() => {
-    const map = new Map<number, FieldDiff>();
-    for (const ex of exceptionEntries) {
-      const current = currentMap.get(ex.phone_number);
-      map.set(ex.id, compareFields(ex, current));
+  // Delete entry
+  const handleDeleteEntry = async (id: number) => {
+    setDeletingIds(prev => new Set(prev).add(id));
+    try {
+      await deleteDirectoryEntry(id);
+      message.success(t('directory.entryDeleteSuccess'));
+      fetchEntries(appliedSearch);
+    } catch {
+      message.error(t('directory.entryDeleteFailed'));
+    } finally {
+      setDeletingIds(prev => { const s = new Set(prev); s.delete(id); return s; });
     }
-    return map;
-  }, [exceptionEntries, currentMap]);
+  };
 
-  const filteredSnapshotEntries = snapshotSearch
-    ? snapshotEntries.filter(e => e.phone_number.includes(snapshotSearch) || e.dept_path.includes(snapshotSearch))
-    : snapshotEntries;
+  // Export
+  const handleExport = () => {
+    exportAllDirectoryEntries();
+    message.info(t('directory.exportStarted'));
+  };
 
-  const snapshotMonthOptions = [...new Set(snapshots.map(s => s.billing_month!))].sort().reverse().map(m => ({ label: m, value: m }));
+  // ==================== Batch list columns ====================
 
-  const matchedCount = exceptionEntries.filter(e => currentMap.has(e.phone_number)).length;
-  const diffCount = [...diffsMap.values()].filter(d => d.hasDiff).length;
-
-  // Column helpers
-  const baseColumns = [
-    { title: LEVEL_LABELS[0], key: 'level0', width: 140, fixed: 'left' as const,
-      render: (_: unknown, r: DirectoryEntry) => resolveOrgCode(splitDeptPath(r.dept_path)[0]) },
-    { title: LEVEL_LABELS[1], key: 'level1', width: 120,
-      render: (_: unknown, r: DirectoryEntry) => resolveOrgCode(splitDeptPath(r.dept_path)[1]) },
-    { title: LEVEL_LABELS[2], key: 'level2', width: 160,
-      render: (_: unknown, r: DirectoryEntry) => resolveOrgCode(splitDeptPath(r.dept_path)[2]) },
-    { title: LEVEL_LABELS[3], key: 'level3', width: 120,
-      render: (_: unknown, r: DirectoryEntry) => resolveOrgCode(splitDeptPath(r.dept_path)[3]) },
-    { title: LEVEL_LABELS[4], key: 'level4', width: 120,
-      render: (_: unknown, r: DirectoryEntry) => resolveOrgCode(splitDeptPath(r.dept_path)[4]) },
-    { title: '号码', dataIndex: 'phone_number', key: 'phone_number', width: 130 },
+  const batchColumns = [
+    {
+      title: t('import.month'), dataIndex: 'billing_month', key: 'billing_month', width: 140,
+      render: (v: string) => (
+        <span style={{ fontWeight: selectedBatch?.id === batches.find(b => b.billing_month === v)?.id ? 600 : 400 }}>
+          {v || t('allocationDept.monthNotSet')}
+        </span>
+      ),
+    },
+    {
+      title: t('directory.totalCountCol'), dataIndex: 'total_count', key: 'total_count', width: 120,
+      render: (v: number) => (
+        <span style={{ fontWeight: 500 }}>
+          {v != null ? v.toLocaleString() : '-'}
+          <span style={{ color: COLORS.textMuted, fontSize: 12, marginLeft: 6 }}>
+            {t('directory.totalCountCol')}
+          </span>
+        </span>
+      ),
+    },
+    {
+      title: t('directory.secondedCountCol'), dataIndex: 'seconded_count', key: 'seconded_count', width: 100,
+      render: (v: number) => v != null && v > 0 ? <span style={{ color: COLORS.accent }}>{v}</span> : '-',
+    },
+    {
+      title: t('directory.importTimeCol'), dataIndex: 'created_at', key: 'created_at', width: 130,
+      render: (v: string) => dayjs(v).format('MM-DD HH:mm'),
+    },
+    {
+      title: t('common.delete'), key: 'delete', width: 70,
+      render: (_: unknown, record: DirectoryBatch) => isAdmin ? (
+        <Popconfirm
+          title={t('directory.deleteConfirm')}
+          description={t('directory.deleteConfirmDesc', { batchNo: record.batch_no })}
+          onConfirm={(e) => { e?.stopPropagation(); handleDeleteBatch(record.id); }}
+          onCancel={(e) => e?.stopPropagation()}
+          okText={t('common.confirm')}
+          cancelText={t('common.cancel')}
+          okButtonProps={{ danger: true }}
+        >
+          <Button size="small" danger type="text" icon={<DeleteOutlined />}
+            onClick={(e) => e.stopPropagation()} />
+        </Popconfirm>
+      ) : null,
+    },
   ];
 
-  const columns = [
-    ...baseColumns,
-    { title: '例外', dataIndex: 'is_seconded', key: 'is_seconded', width: 70,
-      render: (v: number) => v === 1 ? <Tag color={COLORS.danger}>例外</Tag> : '-' },
+  // ==================== Detail columns ====================
+
+  const detailColumns = [
+    { title: t('directory.deptPathCol'), dataIndex: 'dept_path', key: 'dept_path', width: 280, ellipsis: true,
+      render: (v: string) => v || '-' },
+    { title: t('directory.usernameCol'), dataIndex: 'username', key: 'username', width: 100,
+      render: (v: string) => v || '-' },
+    { title: t('directory.extensionCol'), dataIndex: 'extension', key: 'extension', width: 100,
+      render: (v: string) => v || '-' },
+    { title: t('directory.phoneCol'), dataIndex: 'phone_number', key: 'phone_number', width: 130,
+      render: (v: string) => v || '-' },
+    { title: t('directory.remarkCol'), dataIndex: 'remark', key: 'remark', width: 160, ellipsis: true,
+      render: (v: string) => v || '-' },
+    ...(canEdit ? [{
+      title: t('directory.actionsCol'), key: 'actions', width: 120, fixed: 'right' as const,
+      render: (_: unknown, record: DirectoryEntry) => (
+        <Space size={0}>
+          <Button size="small" type="text" icon={<EditOutlined />}
+            onClick={(e) => { e.stopPropagation(); handleEdit(record); }} />
+          <Popconfirm
+            title={t('directory.entryDeleteConfirm')}
+            onConfirm={() => handleDeleteEntry(record.id)}
+            okText={t('common.confirm')}
+            cancelText={t('common.cancel')}
+            okButtonProps={{ danger: true }}
+          >
+            <Button size="small" danger type="text" icon={<DeleteOutlined />}
+              loading={deletingIds.has(record.id)}
+              onClick={(e) => e.stopPropagation()} />
+          </Popconfirm>
+        </Space>
+      ),
+    }] : []),
   ];
 
-  // Exception columns with diff highlighting
-  const exceptionColumns = [
-    { title: LEVEL_LABELS[0], key: 'level0', width: 140, fixed: 'left' as const,
-      render: (_: unknown, r: DirectoryEntry) => {
-        const diff = diffsMap.get(r.id);
-        const val = resolveOrgCode(splitDeptPath(r.dept_path)[0]);
-        return <span style={diff?.level0 ? { background: DIFF_BG, borderRadius: 3, padding: '0 4px' } : undefined}>{val}</span>;
-      }},
-    { title: LEVEL_LABELS[1], key: 'level1', width: 120,
-      render: (_: unknown, r: DirectoryEntry) => {
-        const diff = diffsMap.get(r.id);
-        const val = resolveOrgCode(splitDeptPath(r.dept_path)[1]);
-        return <span style={diff?.level1 ? { background: DIFF_BG, borderRadius: 3, padding: '0 4px' } : undefined}>{val}</span>;
-      }},
-    { title: LEVEL_LABELS[2], key: 'level2', width: 160,
-      render: (_: unknown, r: DirectoryEntry) => {
-        const diff = diffsMap.get(r.id);
-        const val = resolveOrgCode(splitDeptPath(r.dept_path)[2]);
-        return <span style={diff?.level2 ? { background: DIFF_BG, borderRadius: 3, padding: '0 4px' } : undefined}>{val}</span>;
-      }},
-    { title: LEVEL_LABELS[3], key: 'level3', width: 120,
-      render: (_: unknown, r: DirectoryEntry) => {
-        const diff = diffsMap.get(r.id);
-        const val = resolveOrgCode(splitDeptPath(r.dept_path)[3]);
-        return <span style={diff?.level3 ? { background: DIFF_BG, borderRadius: 3, padding: '0 4px' } : undefined}>{val}</span>;
-      }},
-    { title: LEVEL_LABELS[4], key: 'level4', width: 120,
-      render: (_: unknown, r: DirectoryEntry) => {
-        const diff = diffsMap.get(r.id);
-        const val = resolveOrgCode(splitDeptPath(r.dept_path)[4]);
-        return <span style={diff?.level4 ? { background: DIFF_BG, borderRadius: 3, padding: '0 4px' } : undefined}>{val}</span>;
-      }},
-    { title: '号码', dataIndex: 'phone_number', key: 'phone_number', width: 130 },
-    { title: '说明', dataIndex: 'seconded_keyword', key: 'seconded_keyword', width: 100,
-      render: (v: string) => v ? <Tag color={COLORS.pending}>{v}</Tag> : '-' },
-    { title: '匹配', key: 'match', width: 80,
-      render: (_: unknown, r: DirectoryEntry) => {
-        const diff = diffsMap.get(r.id);
-        if (!diff?.matched) return <Tooltip title="未匹配到当前数据"><ExclamationCircleOutlined style={{ color: COLORS.textMuted }} /></Tooltip>;
-        if (diff.hasDiff) return <Tooltip title="有字段差异（高亮显示）"><ExclamationCircleOutlined style={{ color: COLORS.danger }} /></Tooltip>;
-        return <Tooltip title="完全匹配"><CheckCircleOutlined style={{ color: COLORS.confirmed }} /></Tooltip>;
-      }},
-    { title: '操作', key: 'actions', width: 80, fixed: 'right' as const,
-      render: (_: unknown, r: DirectoryEntry) => {
-        const diff = diffsMap.get(r.id);
-        const loading = processingIds.has(r.id);
-        const items = [
-          { key: 'edit', label: '编辑', icon: <EditOutlined /> },
-          ...(diff?.matched && diff.hasDiff ? [{ key: 'sync', label: '同步当前数据', icon: <SyncOutlined /> }] : []),
-          { key: 'clear', label: '解除例外', icon: <CheckCircleOutlined /> },
-        ];
-        return (
-          <Dropdown menu={{ items, onClick: ({ key }) => {
-            if (key === 'edit') {
-              setEditingEntry(r);
-              setEditReason(r.seconded_keyword || '');
-              setEditModalOpen(true);
-            } else if (key === 'clear') {
-              Modal.confirm({ title: '解除例外', content: '确认解除例外标记？', onOk: () => handleClearException(r.id) });
-            } else if (key === 'sync') {
-              if (!diff?.matched) { message.warning('未匹配到当前数据，无法同步'); return; }
-              Modal.confirm({ title: '同步当前数据', content: '将当前数据同步到此例外记录？', onOk: () => handleSyncFromMatch(r.id) });
-            }
-          }}}>
-            <Button size="small" loading={loading}>编辑</Button>
-          </Dropdown>
-        );
-      }},
-  ];
+  // ==================== Render ====================
 
-  // Current data tab content
-  const currentDataContent = (
-    <>
+  return (
+    <div>
+      {/* Top toolbar: month filter + import/export */}
       <Row gutter={16} align="middle" style={{ marginBottom: 16 }}>
         <Col>
-          <Space>
-            <span>批次：</span>
-            <Select style={{ width: 300 }} placeholder="选择通讯录批次" loading={loading} value={selectedBatchId} onChange={setSelectedBatchId}
-              options={[...batches].sort((a, b) => b.id - a.id).map(b => ({ label: `${b.batch_no}${b.billing_month ? ` [${b.billing_month}]` : ''} (${b.total_count}条)`, value: b.id }))} />
-            <Button icon={<ReloadOutlined />} onClick={fetchBatches} loading={loading} />
-          </Space>
+          <Select
+            style={{ width: 150 }}
+            placeholder={t('allocationDept.filterByMonth')}
+            allowClear
+            value={selectedMonth}
+            onChange={(v) => setSelectedMonth(v)}
+            options={availableMonths.map(m => ({ label: m, value: m }))}
+          />
         </Col>
         <Col flex="auto" />
         <Col>
           <Space>
-            <Button icon={<CameraOutlined />} onClick={() => setSnapshotModalOpen(true)} disabled={!selectedBatchId}>制作快照</Button>
-            <Dropdown menu={{ items: [
-              { key: 'import', icon: <UploadOutlined />, label: '导入通讯录', disabled: uploading },
-              { key: 'template', icon: <DownloadOutlined />, label: '下载模板' },
-            ], onClick: ({ key }) => {
-              if (key === 'import') document.getElementById('directory-upload-input')?.click();
-              if (key === 'template') downloadDirectoryTemplate();
-            } }}>
-              <Button type="primary" icon={<UploadOutlined />} loading={uploading && !importPolling}>导入通讯录</Button>
-            </Dropdown>
-            <input type="file" accept=".xlsx,.xls" id="directory-upload-input" style={{ display: 'none' }} onChange={(e) => { const f = e.target.files?.[0]; if (f) { handleUpload(f); e.target.value = ''; } }} />
+            {canEdit && (
+              <Button icon={<PlusOutlined />} onClick={() => setAddModalOpen(true)}>
+                {t('directory.addLabel')}
+              </Button>
+            )}
+            <Button icon={<UploadOutlined />} onClick={handleImportClick} loading={uploading && !importPolling} disabled={uploading}>
+              {t('directory.importLabel')}
+            </Button>
+            <Button icon={<DownloadOutlined />} onClick={() => downloadDirectoryTemplate()}>
+              {t('directory.downloadTemplate')}
+            </Button>
+            <input type="file" accept=".xlsx,.xls" id="directory-upload-input" style={{ display: 'none' }}
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) { handleFileSelected(f); e.target.value = ''; } }} />
             {importPolling && importProgress && (
               <Progress
                 percent={importPercent}
                 size="small"
-                style={{ width: 200, display: 'inline-block', verticalAlign: 'middle' }}
-                format={() => importProgress.message || `${importProgress.processed}/${importProgress.total}`}
+                style={{ width: 160, display: 'inline-block', verticalAlign: 'middle' }}
+                format={() => `${importProgress.processed}/${importProgress.total}`}
               />
             )}
+            <Button icon={<ExportOutlined />} onClick={handleExport}>
+              {t('directory.exportLabel')}
+            </Button>
           </Space>
         </Col>
       </Row>
-      {selectedBatchId && (
-        <Row gutter={16} style={{ marginBottom: 12 }}>
-          <Col span={4}><Statistic title="总条数" value={filteredEntries.length} /></Col>
-          <Col span={4}><Statistic title="例外数" value={exceptionCount} valueStyle={{ color: exceptionCount > 0 ? COLORS.danger : undefined }} /></Col>
-        </Row>
+
+      {/* Batch list card */}
+      <Card>
+        <Table
+          columns={batchColumns}
+          dataSource={batches}
+          rowKey="id"
+          size="small"
+          loading={batchLoading}
+          pagination={{
+            pageSize: batchPageSize,
+            showSizeChanger: true,
+            pageSizeOptions: ['6', '10', '20'],
+            showTotal: (total) => t('common.paginationTotal', { total }),
+            onChange: (_p, s) => setBatchPageSize(s),
+          }}
+          onRow={(record) => ({
+            onClick: () => {
+              setSelectedBatch(record);
+              setSearch('');
+              setAppliedSearch('');
+            },
+            style: {
+              cursor: 'pointer',
+              background: selectedBatch?.id === record.id ? 'rgba(139, 157, 158, 0.08)' : undefined,
+            },
+          })}
+        />
+      </Card>
+
+      {/* Entry detail below selected batch */}
+      {selectedBatch && (
+        <Card
+          style={{ marginTop: 16 }}
+          title={selectedBatch.billing_month
+            ? t('directory.monthResults', { month: selectedBatch.billing_month })
+            : t('directory.batchResults', { batch: selectedBatch.batch_no })}
+          extra={
+            <Space>
+              <Input
+                prefix={<SearchOutlined />}
+                placeholder={t('directory.searchPlaceholder')}
+                allowClear
+                size="small"
+                style={{ width: 220 }}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onPressEnter={handleSearch}
+              />
+              <Button size="small" type="primary" onClick={handleSearch} icon={<SearchOutlined />}>
+                {t('common.search')}
+              </Button>
+            </Space>
+          }
+        >
+          <Table
+            columns={detailColumns}
+            dataSource={entries}
+            rowKey="id"
+            size="small"
+            loading={entriesLoading}
+            scroll={{ x: 900 }}
+            pagination={{
+              showSizeChanger: true,
+              pageSizeOptions: ['20', '50', '100'],
+              showTotal: (total) => t('common.paginationTotal', { total }),
+            }}
+          />
+        </Card>
       )}
-      {selectedBatchId && <Input prefix={<SearchOutlined />} placeholder="搜索号码/部门" allowClear value={search} onChange={e => setSearch(e.target.value)} style={{ width: 400, marginBottom: 12 }} />}
-      {selectedBatchId && filteredEntries.length > 0 ? (
-        <Table columns={columns} dataSource={filteredEntries} rowKey="id" size="small" loading={entriesLoading}
-          pagination={{ pageSize, showSizeChanger: true, pageSizeOptions: ['25', '50', '100'], showTotal: (total) => `共 ${total} 条`, onChange: (_p, s) => setPageSize(s) }} scroll={{ x: 1200 }} />
-      ) : (!entriesLoading && <Empty description={selectedBatchId ? '无匹配数据' : '请选择批次或导入通讯录'} />)}
-    </>
-  );
 
-  // Exception tab content
-  const exceptionContent = !selectedBatchId ? (
-    <Empty description="请先在当前数据 Tab 选择批次" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-  ) : exceptionEntries.length === 0 ? (
-    <Empty description="当前批次无例外号码" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-  ) : (
-    <>
-      <Row gutter={16} style={{ marginBottom: 12 }}>
-        <Col span={4}><Statistic title="例外总数" value={exceptionEntries.length} valueStyle={{ color: COLORS.danger }} /></Col>
-        <Col span={4}><Statistic title="已匹配" value={matchedCount} valueStyle={{ color: COLORS.confirmed }} /></Col>
-        <Col span={4}><Statistic title="存在差异" value={diffCount} valueStyle={{ color: diffCount > 0 ? COLORS.pending : undefined }} /></Col>
-      </Row>
-      <Row gutter={16} align="middle" style={{ marginBottom: 12 }}>
-        <Col>
-          <Input prefix={<SearchOutlined />} placeholder="搜索号码/部门" allowClear value={exceptionSearch} onChange={e => setExceptionSearch(e.target.value)} style={{ width: 400 }} />
-        </Col>
-        <Col flex="auto" />
-        <Col>
-          <Popconfirm title={`确认批量解除全部 ${exceptionEntries.length} 条例外？`} onConfirm={handleBatchClear}>
-            <Button danger>批量解除例外</Button>
-          </Popconfirm>
-        </Col>
-      </Row>
-      <Table columns={exceptionColumns} dataSource={filteredExceptionEntries} rowKey="id" size="small" loading={entriesLoading}
-        pagination={{ pageSize, showSizeChanger: true, pageSizeOptions: ['25', '50', '100'], showTotal: (total) => `共 ${total} 条`, onChange: (_p, s) => setPageSize(s) }} scroll={{ x: 1500 }} />
-      <div style={{ marginTop: 8, color: COLORS.textMuted, fontSize: 12 }}>
-        <ExclamationCircleOutlined style={{ marginRight: 4 }} />
-        高亮字段表示例外记录与当前数据（按号码匹配）不一致，可选择「同步数据」将当前数据覆盖到例外记录，或「解除例外」取消例外标记。
-      </div>
-    </>
-  );
-
-  // Snapshot tab content
-  const snapshotContent = snapshots.length === 0 && !snapshotsLoading ? (
-    <Empty description="暂无快照。在当前数据 Tab 中点击「制作快照」创建。" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-  ) : (
-    <>
-      <Row gutter={16} align="middle" style={{ marginBottom: 16 }}>
-        <Col>
-          <Space><span>月份：</span><Select style={{ width: 160 }} placeholder="选择月份" loading={snapshotsLoading} value={selectedSnapshotMonth} onChange={setSelectedSnapshotMonth} options={snapshotMonthOptions} /></Space>
-        </Col>
-      </Row>
-      {selectedSnapshotMonth && (
-        <Row gutter={16} style={{ marginBottom: 12 }}>
-          <Col span={4}><Statistic title="总条数" value={filteredSnapshotEntries.length} /></Col>
-          <Col span={4}><Statistic title="例外数" value={snapshotEntries.filter(e => e.is_seconded === 1).length} valueStyle={{ color: snapshotEntries.some(e => e.is_seconded === 1) ? COLORS.danger : undefined }} /></Col>
-        </Row>
-      )}
-      {selectedSnapshotMonth && <Input prefix={<SearchOutlined />} placeholder="搜索号码/部门" allowClear value={snapshotSearch} onChange={e => setSnapshotSearch(e.target.value)} style={{ width: 400, marginBottom: 12 }} />}
-      {selectedSnapshotMonth && filteredSnapshotEntries.length > 0 ? (
-        <Table columns={columns} dataSource={filteredSnapshotEntries} rowKey="id" size="small" loading={snapshotEntriesLoading}
-          pagination={{ pageSize, showSizeChanger: true, pageSizeOptions: ['25', '50', '100'], showTotal: (total) => `共 ${total} 条`, onChange: (_p, s) => setPageSize(s) }} scroll={{ x: 1200 }} />
-      ) : (!snapshotEntriesLoading && <Empty description={selectedSnapshotMonth ? '该月份无数据' : '请选择月份'} />)}
-    </>
-  );
-
-  return (
-    <Card title="通讯录" styles={{ body: { padding: '16px 20px' } }}>
-      <Tabs items={[
-        { key: 'current', label: '当前数据', children: currentDataContent },
-        { key: 'exception', label: `例外号码 (${exceptionEntries.length})`, children: exceptionContent },
-        { key: 'snapshot', label: '快照', children: snapshotContent },
-      ]} />
-      <Modal title="制作快照" open={snapshotModalOpen} onOk={handleCreateSnapshot} onCancel={() => { setSnapshotModalOpen(false); setSnapshotMonth(''); }} okText="确定" okButtonProps={{ disabled: !snapshotMonth }}>
-        <div style={{ marginBottom: 12 }}>将当前选中批次的通讯录数据标记为指定月份的快照，方便后续按月查看。</div>
-        <DatePicker picker="month" style={{ width: '100%' }} placeholder="选择年月" onChange={(_, dateString) => setSnapshotMonth(typeof dateString === 'string' ? dateString : '')} disabledDate={(current) => current && current > dayjs()} />
-      </Modal>
-      <Modal title="编辑例外原因" open={editModalOpen} onOk={handleUpdateReason} onCancel={() => { setEditModalOpen(false); setEditingEntry(null); setEditReason(''); }} okText="保存">
-        {editingEntry && (
-          <div>
-            <div style={{ marginBottom: 8, color: COLORS.textMuted }}>
-              号码：{editingEntry.phone_number}
-            </div>
-            <Input.TextArea rows={3} placeholder="输入例外原因" value={editReason} onChange={e => setEditReason(e.target.value)} maxLength={200} showCount />
+      {!selectedBatch && batches.length === 0 && (
+        <Card style={{ marginTop: 16 }}>
+          <div style={{ textAlign: 'center', padding: 24, color: COLORS.textMuted }}>
+            {t('directory.noBatchHint')}
           </div>
-        )}
+        </Card>
+      )}
+
+      {/* Add entry modal */}
+      <Modal
+        title={t('directory.addTitle')}
+        open={addModalOpen}
+        onOk={handleAddOk}
+        onCancel={() => { setAddModalOpen(false); addForm.resetFields(); }}
+        okText={t('common.confirm')}
+        cancelText={t('common.cancel')}
+        confirmLoading={addLoading}
+        width={560}
+        destroyOnClose
+      >
+        <Form form={addForm} layout="vertical" preserve={false}>
+          <Form.Item name="dept_path" label={t('directory.deptPathCol')} rules={[{ required: true }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="username" label={t('directory.usernameCol')}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="extension" label={t('directory.extensionCol')}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="phone_number" label={t('directory.phoneCol')}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="remark" label={t('directory.remarkCol')}>
+            <Input />
+          </Form.Item>
+        </Form>
       </Modal>
-    </Card>
+
+      {/* Edit entry modal */}
+      <Modal
+        title={t('directory.editTitle')}
+        open={editModalOpen}
+        onOk={handleEditOk}
+        onCancel={() => { setEditModalOpen(false); setEditingEntry(null); }}
+        okText={t('common.confirm')}
+        cancelText={t('common.cancel')}
+        confirmLoading={editLoading}
+        width={560}
+        destroyOnClose
+      >
+        <Form form={editForm} layout="vertical" preserve={false}>
+          <Form.Item name="dept_path" label={t('directory.deptPathCol')} rules={[{ required: true }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="username" label={t('directory.usernameCol')}>
+            <Input disabled />
+          </Form.Item>
+          <Form.Item name="extension" label={t('directory.extensionCol')}>
+            <Input disabled />
+          </Form.Item>
+          <Form.Item name="phone_number" label={t('directory.phoneCol')}>
+            <Input disabled />
+          </Form.Item>
+          <Form.Item name="remark" label={t('directory.remarkCol')}>
+            <Input />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* Import month picker modal */}
+      <Modal
+        title={t('directory.importMonthTitle')}
+        open={importMonthModal}
+        onOk={handleConfirmMonth}
+        onCancel={() => setImportMonthModal(false)}
+        okText={t('common.confirm')}
+        okButtonProps={{ disabled: !importBillingMonth }}
+      >
+        <p style={{ marginBottom: 12 }}>{t('directory.importMonthHint')}</p>
+        <DatePicker
+          picker="month"
+          style={{ width: '100%' }}
+          format="YYYY年MM月"
+          value={importBillingMonth ? dayjs(importBillingMonth, 'YYYY-MM') : null}
+          onChange={(date) => setImportBillingMonth(date ? date.format('YYYY-MM') : '')}
+          allowClear={false}
+        />
+      </Modal>
+    </div>
   );
 };
 

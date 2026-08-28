@@ -3,15 +3,11 @@ import { Card, Table, Select, Button, Descriptions, Row, Col, Tabs, message, Emp
 import { DownloadOutlined, SearchOutlined, FileTextOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import type { BillBatch } from '../types/bill';
-import type { AllocationResult, AllocationDetailRow } from '../types/allocation';
-import { getAllocationResults, getL3DetailData } from '../api/allocation';
+import type { L3SummaryRow, AllocationDetailRow } from '../types/allocation';
+import { getL1SummaryData, getL2SummaryData, getL3SummaryData, getL3DetailData } from '../api/allocation';
 import { getBillBatches } from '../api/import';
-import { getOrgTree } from '../api/org';
 import { useAbortableEffect } from '../hooks/useAbortableEffect';
-import type { Organization } from '../types/organization';
-import { ORG_TYPE_LABELS } from '../types/organization';
 import { exportCSV } from '../lib/export';
-import { useAuthStore } from '../store/auth';
 
 /** 安全将 typed 数组转换为 Record<string,unknown>[] 供 exportCSV 使用 */
 const toPlainRecords = (data: object[]): Record<string, unknown>[] => data as Record<string, unknown>[];
@@ -24,11 +20,13 @@ export default function L3SubBranchPage() {
 
   const [batches, setBatches] = useState<BillBatch[]>([]);
   const [selectedBatchId, setSelectedBatchId] = useState<number | null>(null);
-  const [selectedSubBranchId, setSelectedSubBranchId] = useState<number | null>(null);
-  const [results, setResults] = useState<AllocationResult[]>([]);
-  const [orgList, setOrgList] = useState<Organization[]>([]);
+  const [l1Branches, setL1Branches] = useState<string[]>([]);
+  const [selectedL1Branch, setSelectedL1Branch] = useState<string | null>(null);
+  const [l2Branches, setL2Branches] = useState<string[]>([]);
+  const [selectedL2Branch, setSelectedL2Branch] = useState<string | null>(null);
+  const [summaryRows, setSummaryRows] = useState<L3SummaryRow[]>([]);
   const [loading, setLoading] = useState(false);
-  const [resultsLoading, setResultsLoading] = useState(false);
+  const [summaryLoading, setSummaryLoading] = useState(false);
 
   // 分摊明细数据
   const [detailData, setDetailData] = useState<Record<SheetType, AllocationDetailRow[]>>({
@@ -44,12 +42,9 @@ export default function L3SubBranchPage() {
     try { setBatches(await getBillBatches()); } catch { message.error(t('l3SubBranch.fetchFailed')); } finally { setLoading(false); }
   }, [t]);
 
-  const fetchOrgs = useCallback(async () => {
-    try { setOrgList(await getOrgTree()); } catch { /* silent */ }
-  }, []);
+  useEffect(() => { fetchBatches(); }, [fetchBatches]);
 
-  useEffect(() => { fetchBatches(); fetchOrgs(); }, [fetchBatches, fetchOrgs]);
-
+  // 自动选最近月份
   useEffect(() => {
     if (batches.length > 0 && !selectedBatchId) {
       const sorted = [...batches].sort((a, b) => b.billing_month.localeCompare(a.billing_month));
@@ -57,133 +52,65 @@ export default function L3SubBranchPage() {
     }
   }, [batches, selectedBatchId]);
 
-  const { role, orgId } = useAuthStore();
-
-  // 二级分行列表 (type=3,5,6)，非管理员只显示所属支行
-  const subBranches = useMemo(() => {
-    const all = orgList.filter(o => o.type === 3 || o.type === 5 || o.type === 6).sort((a, b) => a.name.localeCompare(b.name));
-    if (!role || role === 1 || role === 4 || !orgId) return all;
-    // BRANCH: 显示本分行下所有二级分行/支行
-    // DEPARTMENT: 只显示自己所属的二级分行/支行
-    const myOrg = orgList.find(o => o.id === orgId);
-    if (myOrg) {
-      if (role === 2) {
-        // BRANCH: 过滤出parent_id为自己分行ID的子支行
-        return all.filter(sb => myOrg.path === '/' || sb.path.startsWith(myOrg.path));
-      }
-      // DEPARTMENT: 找到所属二级分行/支行，只显示它
-      const segments = myOrg.path.split('/').filter(Boolean).map(Number);
-      for (let i = segments.length - 1; i >= 0; i--) {
-        const ancestor = orgList.find(o => o.id === segments[i]);
-        if (ancestor && (ancestor.type === 3 || ancestor.type === 5 || ancestor.type === 6)) {
-          return all.filter(sb => sb.id === ancestor.id);
-        }
-      }
-    }
-    return all;
-  }, [orgList, role, orgId]);
-
-  // 按一级分行分组
-  const orgMap = useMemo(() => {
-    const m = new Map<number, Organization>();
-    orgList.forEach(o => m.set(o.id, o));
-    return m;
-  }, [orgList]);
-
-  const subBranchGroups = useMemo(() => {
-    const groups = new Map<string, { label: string; options: { label: string; value: number }[] }>();
-    for (const sb of subBranches) {
-      const parent = orgMap.get(sb.parent_id || 0);
-      const groupLabel = parent ? parent.name : '其他';
-      if (!groups.has(groupLabel)) groups.set(groupLabel, { label: groupLabel, options: [] });
-      groups.get(groupLabel)!.options.push({ label: sb.name, value: sb.id });
-    }
-    return Array.from(groups.values());
-  }, [subBranches, orgMap]);
-
-  // 根据用户角色自动选中所属二级分行/支行
-  useEffect(() => {
-    if (subBranches.length === 0 || selectedSubBranchId) return;
-    // 非管理员/财务：根据用户orgId查找所属二级分行/支行
-    if (role && role !== 1 && role !== 4 && orgId) {
-      const myOrg = orgList.find(o => o.id === orgId);
-      if (myOrg) {
-        // 若自身就是二级分行/支行
-        if (myOrg.type === 3 || myOrg.type === 5 || myOrg.type === 6) {
-          setSelectedSubBranchId(myOrg.id);
-          return;
-        }
-        // 从path中查找祖先二级分行/支行：path格式 /1/5/6/19/
-        const segments = myOrg.path.split('/').filter(Boolean).map(Number);
-        for (let i = segments.length - 1; i >= 0; i--) {
-          const ancestor = orgList.find(o => o.id === segments[i]);
-          if (ancestor && (ancestor.type === 3 || ancestor.type === 5 || ancestor.type === 6)) {
-            setSelectedSubBranchId(ancestor.id);
-            return;
-          }
-        }
-      }
-    }
-    // ADMIN/FINANCE 或未找到：选第一个
-    setSelectedSubBranchId(subBranches[0].id);
-  }, [subBranches, selectedSubBranchId, role, orgId, orgList]);
-
+  // 批次变化时加载一级分行列表
   useAbortableEffect((signal) => {
     if (selectedBatchId) {
-      setResults([]); // 立即清空旧数据，让刷新可见
-      setResultsLoading(true);
-      getAllocationResults(selectedBatchId, 0, 500, signal)
-        .then(data => setResults(data.content || []))
-        .catch(() => message.error(t('l3SubBranch.fetchFailed')))
-        .finally(() => setResultsLoading(false));
+      setL1Branches([]);
+      setSelectedL1Branch(null);
+      setL2Branches([]);
+      setSelectedL2Branch(null);
+      setSummaryRows([]);
+      getL1SummaryData(selectedBatchId)
+        .then(data => {
+          if (signal?.aborted) return;
+          const branches = data.map(r => r.l1_branch).filter(Boolean);
+          setL1Branches(branches);
+          if (branches.length > 0) setSelectedL1Branch(branches[0]);
+        })
+        .catch(() => { if (!signal?.aborted) message.error(t('l3SubBranch.fetchFailed')); });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在 selectedBatchId 变化时重新加载，t 为 i18n stable ref
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBatchId]);
 
-  // 切换二级分行/月份时重置明细，若已加载过则自动重新加载
+  // 一级分行变化时加载二级分行列表
   useEffect(() => {
-    const wasDetailLoaded = detailLoaded;
-    setDetailData({ CALL: [], RECORDING: [], CRBT: [], FLASH_MSG: [] });
-    setDetailLoaded(false);
-    setDetailSearch('');
-    if (wasDetailLoaded && selectedBatchId && selectedSubBranchId) fetchAllDetails();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 故意读取 detailLoaded 旧值（闭包快照），fetchAllDetails 为 stable callback
-  }, [selectedSubBranchId, selectedBatchId]);
+    if (selectedBatchId && selectedL1Branch) {
+      setL2Branches([]);
+      setSelectedL2Branch(null);
+      setSummaryRows([]);
+      getL2SummaryData(selectedBatchId, selectedL1Branch)
+        .then(data => {
+          const branches = data.map(r => r.l2_branch).filter(Boolean);
+          setL2Branches(branches);
+          if (branches.length > 0) setSelectedL2Branch(branches[0]);
+        })
+        .catch(() => message.error(t('l3SubBranch.fetchFailed')));
+      // 重置明细
+      setDetailData({ CALL: [], RECORDING: [], CRBT: [], FLASH_MSG: [] });
+      setDetailLoaded(false);
+      setDetailSearch('');
+    }
+  }, [selectedBatchId, selectedL1Branch]);
 
-  const selectedSubBranch = orgMap.get(selectedSubBranchId || 0);
+  // 二级分行变化时加载三级汇总
+  useEffect(() => {
+    if (selectedBatchId && selectedL1Branch && selectedL2Branch) {
+      const wasDetailLoaded = detailLoaded;
+      setSummaryRows([]);
+      setSummaryLoading(true);
+      getL3SummaryData(selectedBatchId, selectedL1Branch, selectedL2Branch)
+        .then(setSummaryRows)
+        .catch(() => message.error(t('l3SubBranch.fetchFailed')))
+        .finally(() => setSummaryLoading(false));
+      // 重置明细
+      setDetailData({ CALL: [], RECORDING: [], CRBT: [], FLASH_MSG: [] });
+      setDetailLoaded(false);
+      setDetailSearch('');
+      if (wasDetailLoaded) fetchAllDetails();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBatchId, selectedL1Branch, selectedL2Branch]);
 
-  // 该二级分行的直属子组织
-  const directChildren = useMemo(() => {
-    if (!selectedSubBranchId) return [];
-    return orgList
-      .filter(o => o.parent_id === selectedSubBranchId)
-      .sort((a, b) => {
-        const ta = a.type || 99, tb = b.type || 99;
-        return ta !== tb ? ta - tb : a.name.localeCompare(b.name);
-      });
-  }, [selectedSubBranchId, orgList]);
-
-  const childSummary = useMemo(() => {
-    return directChildren.map(child => {
-      const childResults = results.filter(r => r.org_id === child.id);
-      const monthlyRent = childResults.reduce((s, r) => s + (r.monthly_rent || 0), 0);
-      const callFee = childResults.reduce((s, r) => s + (r.call_fee || 0), 0);
-      const recordingFee = childResults.reduce((s, r) => s + (r.recording_fee || 0), 0);
-      const crbtFee = childResults.reduce((s, r) => s + (r.crbt_fee || 0), 0);
-      const flashFee = childResults.reduce((s, r) => s + (r.flash_msg_fee || 0), 0);
-      const totalFee = childResults.reduce((s, r) => s + (r.total_fee || 0), 0);
-      const phoneCount = childResults.reduce((s, r) => s + (r.phone_count || 0), 0);
-      return { child, monthlyRent, callFee, recordingFee, crbtFee, flashFee, totalFee, phoneCount };
-    });
-  }, [directChildren, results]);
-
-  const branchMonthlyRent = childSummary.reduce((s, c) => s + c.monthlyRent, 0);
-  const branchCallFee = childSummary.reduce((s, c) => s + c.callFee, 0);
-  const branchRecordingFee = childSummary.reduce((s, c) => s + c.recordingFee, 0);
-  const branchCrbtFee = childSummary.reduce((s, c) => s + c.crbtFee, 0);
-  const branchFlashFee = childSummary.reduce((s, c) => s + c.flashFee, 0);
-  const branchTotal = childSummary.reduce((s, c) => s + c.totalFee, 0);
-  const branchPhones = childSummary.reduce((s, c) => s + c.phoneCount, 0);
   const selectedBatch = batches.find(b => b.id === selectedBatchId);
 
   const money = (v: unknown) => {
@@ -194,15 +121,14 @@ export default function L3SubBranchPage() {
     const n = Number(v);
     return !isNaN(n) && n !== 0 ? n.toFixed(1) : '-';
   };
-  const orgTypeLabel = (type: number) => ORG_TYPE_LABELS[type] || '-';
 
   // ========== 加载全部4种明细数据 ==========
   const fetchAllDetails = useCallback(async () => {
-    if (!selectedBatchId || !selectedSubBranchId) return;
+    if (!selectedBatchId || !selectedL1Branch || !selectedL2Branch) return;
     setDetailLoading(true);
     try {
       const detailResults = await Promise.all(
-        SHEET_TYPES.map(st => getL3DetailData(selectedBatchId, selectedSubBranchId, st).then(d => [st, d] as const))
+        SHEET_TYPES.map(st => getL3DetailData(selectedBatchId, selectedL1Branch, selectedL2Branch, st).then(d => [st, d] as const))
       );
       const newData = { CALL: [], RECORDING: [], CRBT: [], FLASH_MSG: [] } as Record<SheetType, AllocationDetailRow[]>;
       for (const [st, d] of detailResults) newData[st] = d;
@@ -213,31 +139,62 @@ export default function L3SubBranchPage() {
     } finally {
       setDetailLoading(false);
     }
-  }, [selectedBatchId, selectedSubBranchId, t]);
+  }, [selectedBatchId, selectedL1Branch, selectedL2Branch, t]);
 
-  // ========== 分摊汇总 columns ==========
-  const columns = [
-    { title: t('l3SubBranch.seqCol'), key: 'seq', width: 50, render: (_: unknown, __: unknown, i: number) => i + 1 },
-    { title: t('l3SubBranch.orgTypeCol'), key: 'orgType', width: 80, render: (_: unknown, r: typeof childSummary[0]) => orgTypeLabel(r.child.type) },
-    { title: t('l3SubBranch.orgNameCol'), key: 'orgName', width: 140, render: (_: unknown, r: typeof childSummary[0]) => r.child.name },
-    { title: t('l3SubBranch.costCenterCol'), key: 'costCenter', width: 90, render: (_: unknown, r: typeof childSummary[0]) => r.child.cost_center || '-' },
-    { title: t('l3SubBranch.monthlyRentCodeCol'), key: 'monthlyRent', width: 100, dataIndex: 'monthlyRent', render: money },
-    { title: t('l3SubBranch.domesticFeeCol'), key: 'callFee', width: 100, dataIndex: 'callFee', render: money },
-    { title: t('l3SubBranch.recordingFeeCol'), key: 'recordingFee', width: 100, dataIndex: 'recordingFee', render: money },
-    { title: t('l3SubBranch.crbtFeeCol'), key: 'crbtFee', width: 90, dataIndex: 'crbtFee', render: money },
-    { title: t('l3SubBranch.flashFeeCol'), key: 'flashFee', width: 90, dataIndex: 'flashFee', render: money },
-    { title: t('l3SubBranch.totalCol'), key: 'totalFee', width: 120, dataIndex: 'totalFee',
+  // ========== 分摊汇总 ==========
+  const grandTotal = useMemo(() => {
+    if (summaryRows.length === 0) return null;
+    const init: L3SummaryRow = {
+      l1_branch: '', l2_branch: '', alloc_dept: '',
+      platform_fee: 0, monthly_rent_code: 0,
+      domestic_duration: 0, transfer_duration: 0, domestic_fee: 0,
+      international_duration: 0, international_fee: 0, call_subtotal: 0,
+      recording_fee: 0, crbt_fee: 0, flash_fee: 0, total_fee: 0,
+      phone_count: 0,
+    };
+    return summaryRows.reduce((acc, r) => {
+      acc.platform_fee += r.platform_fee;
+      acc.monthly_rent_code += r.monthly_rent_code;
+      acc.domestic_duration += r.domestic_duration;
+      acc.transfer_duration += r.transfer_duration;
+      acc.domestic_fee += r.domestic_fee;
+      acc.international_duration += r.international_duration;
+      acc.international_fee += r.international_fee;
+      acc.call_subtotal += r.call_subtotal;
+      acc.recording_fee += r.recording_fee;
+      acc.crbt_fee += r.crbt_fee;
+      acc.flash_fee += r.flash_fee;
+      acc.total_fee += r.total_fee;
+      acc.phone_count += r.phone_count;
+      return acc;
+    }, init);
+  }, [summaryRows]);
+
+  const summaryColumns = [
+    { title: t('l3SubBranch.orgNameCol'), dataIndex: 'alloc_dept', key: 'alloc_dept', width: 140, fixed: 'left' as const },
+    { title: t('l3SubBranch.platformFeeCol'), dataIndex: 'platform_fee', key: 'platform_fee', width: 100, align: 'right' as const, render: money },
+    { title: t('l3SubBranch.monthlyRentCodeCol'), dataIndex: 'monthly_rent_code', key: 'monthly_rent_code', width: 100, align: 'right' as const, render: money },
+    { title: t('l3SubBranch.domesticDurationCol'), dataIndex: 'domestic_duration', key: 'domestic_duration', width: 110, align: 'right' as const, render: dur },
+    { title: t('l3SubBranch.transferDurationCol'), dataIndex: 'transfer_duration', key: 'transfer_duration', width: 110, align: 'right' as const, render: dur },
+    { title: t('l3SubBranch.domesticFeeCol'), dataIndex: 'domestic_fee', key: 'domestic_fee', width: 100, align: 'right' as const, render: money },
+    { title: t('l3SubBranch.intlDurationCol'), dataIndex: 'international_duration', key: 'international_duration', width: 100, align: 'right' as const, render: dur },
+    { title: t('l3SubBranch.intlFeeCol'), dataIndex: 'international_fee', key: 'international_fee', width: 90, align: 'right' as const, render: money },
+    { title: t('l3SubBranch.callSubtotalCol'), dataIndex: 'call_subtotal', key: 'call_subtotal', width: 100, align: 'right' as const, render: money },
+    { title: t('l3SubBranch.recordingFeeCol'), dataIndex: 'recording_fee', key: 'recording_fee', width: 90, align: 'right' as const, render: money },
+    { title: t('l3SubBranch.crbtFeeCol'), dataIndex: 'crbt_fee', key: 'crbt_fee', width: 80, align: 'right' as const, render: money },
+    { title: t('l3SubBranch.flashFeeCol'), dataIndex: 'flash_fee', key: 'flash_fee', width: 80, align: 'right' as const, render: money },
+    { title: t('l3SubBranch.totalCol'), dataIndex: 'total_fee', key: 'total_fee', width: 110, align: 'right' as const,
       render: (v: number) => <strong>{money(v)}</strong>,
     },
-    { title: t('l3SubBranch.phoneCountCol'), key: 'phoneCount', width: 70, dataIndex: 'phoneCount' },
+    { title: t('l3SubBranch.phoneCountCol'), dataIndex: 'phone_count', key: 'phone_count', width: 70, align: 'right' as const },
   ];
 
   // ========== 分摊明细 columns (same as L1) ==========
   const callColumns = [
     { title: t('l1Detail.phoneCol'), dataIndex: 'phone_number', key: 'phone_number', width: 120, fixed: 'left' as const },
     { title: t('l1Detail.extensionCol'), dataIndex: 'extension', key: 'extension', width: 90 },
-    { title: t('l1Detail.orgCol'), dataIndex: 'org_name', key: 'org_name', width: 180 },
-    { title: t('l1Detail.orgCodeCol'), dataIndex: 'cost_center', key: 'cost_center', width: 100 },
+    { title: t('l1Detail.orgCol'), dataIndex: 'full_path', key: 'full_path', width: 180 },
+    { title: t('l1Detail.orgCodeCol'), dataIndex: 'org_code', key: 'org_code', width: 100 },
     { title: t('l1Detail.platformFeeCol'), dataIndex: 'platform_fee', key: 'platform_fee', width: 100, align: 'right' as const, render: money },
     { title: t('l1Detail.monthlyRentCodeCol'), dataIndex: 'monthly_rent_code', key: 'monthly_rent_code', width: 100, align: 'right' as const, render: money },
     { title: t('l1Detail.domesticDurationCol'), dataIndex: 'domestic_duration', key: 'domestic_duration', width: 110, align: 'right' as const, render: dur },
@@ -252,8 +209,8 @@ export default function L3SubBranchPage() {
   const recordingColumns = [
     { title: t('l1Detail.extensionCol'), dataIndex: 'extension', key: 'extension', width: 90 },
     { title: t('l1Detail.phoneCol'), dataIndex: 'phone_number', key: 'phone_number', width: 120 },
-    { title: t('l1Detail.orgCol'), dataIndex: 'org_name', key: 'org_name', width: 200 },
-    { title: t('l1Detail.orgCodeCol'), dataIndex: 'cost_center', key: 'cost_center', width: 100 },
+    { title: t('l1Detail.orgCol'), dataIndex: 'full_path', key: 'full_path', width: 200 },
+    { title: t('l1Detail.orgCodeCol'), dataIndex: 'org_code', key: 'org_code', width: 100 },
     { title: t('l1Detail.recordingDirCol'), dataIndex: 'recording_dir', key: 'recording_dir', width: 200 },
     { title: t('l1Detail.recordingFeeCol'), dataIndex: 'recording_fee', key: 'recording_fee', width: 100, align: 'right' as const, render: money },
     { title: t('l1Detail.sourceCol'), dataIndex: 'ownership_source', key: 'ownership_source', width: 70 },
@@ -262,8 +219,8 @@ export default function L3SubBranchPage() {
   const crbtColumns = [
     { title: t('l1Detail.phoneCol'), dataIndex: 'phone_number', key: 'phone_number', width: 120 },
     { title: t('l1Detail.extensionCol'), dataIndex: 'extension', key: 'extension', width: 90 },
-    { title: t('l1Detail.orgCol'), dataIndex: 'org_name', key: 'org_name', width: 200 },
-    { title: t('l1Detail.orgCodeCol'), dataIndex: 'cost_center', key: 'cost_center', width: 100 },
+    { title: t('l1Detail.orgCol'), dataIndex: 'full_path', key: 'full_path', width: 200 },
+    { title: t('l1Detail.orgCodeCol'), dataIndex: 'org_code', key: 'org_code', width: 100 },
     { title: t('l1Detail.crbtFeeCol'), dataIndex: 'crbt_fee', key: 'crbt_fee', width: 100, align: 'right' as const, render: money },
     { title: t('l1Detail.sourceCol'), dataIndex: 'ownership_source', key: 'ownership_source', width: 70 },
   ];
@@ -271,8 +228,8 @@ export default function L3SubBranchPage() {
   const flashColumns = [
     { title: t('l1Detail.phoneCol'), dataIndex: 'phone_number', key: 'phone_number', width: 120 },
     { title: t('l1Detail.extensionCol'), dataIndex: 'extension', key: 'extension', width: 90 },
-    { title: t('l1Detail.orgCol'), dataIndex: 'org_name', key: 'org_name', width: 200 },
-    { title: t('l1Detail.orgCodeCol'), dataIndex: 'cost_center', key: 'cost_center', width: 100 },
+    { title: t('l1Detail.orgCol'), dataIndex: 'full_path', key: 'full_path', width: 200 },
+    { title: t('l1Detail.orgCodeCol'), dataIndex: 'org_code', key: 'org_code', width: 100 },
     { title: t('l1Detail.flashMonthCol'), dataIndex: 'flash_month', key: 'flash_month', width: 90 },
     { title: t('l1Detail.flashCountCol'), dataIndex: 'flash_count', key: 'flash_count', width: 90, align: 'right' as const, render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? String(Math.round(n)) : '-'; } },
     { title: t('l1Detail.flashFeeCol'), dataIndex: 'flash_msg_fee', key: 'flash_msg_fee', width: 100, align: 'right' as const, render: money },
@@ -287,9 +244,9 @@ export default function L3SubBranchPage() {
       rows.filter(r =>
         String(r.phone_number || '').toLowerCase().includes(kw) ||
         String(r.extension || '').toLowerCase().includes(kw) ||
-        String(r.org_name || '').toLowerCase().includes(kw) ||
-        String(r.cost_center || '').toLowerCase().includes(kw) ||
-        String(r.org_code || '').toLowerCase().includes(kw)
+        String(r.full_path || '').toLowerCase().includes(kw) ||
+        String(r.org_code || '').toLowerCase().includes(kw) ||
+        String(r.alloc_dept || '').toLowerCase().includes(kw)
       );
     return {
       CALL: filter(detailData.CALL),
@@ -314,6 +271,8 @@ export default function L3SubBranchPage() {
       flashTotal: sum(filteredDetailData.FLASH_MSG, 'flash_msg_fee'),
     };
   }, [filteredDetailData]);
+
+  const summaryDataSource = summaryRows.map((r, i) => ({ ...r, key: i }));
 
   const renderDetailTab = (sheetType: SheetType) => {
     const data = filteredDetailData[sheetType];
@@ -340,11 +299,11 @@ export default function L3SubBranchPage() {
 
   // ========== 报销单数据 ==========
   const reimbursementData = useMemo(() => {
-    return childSummary
-      .filter(c => c.child.cost_center && c.child.type !== 2 && c.child.type !== 3)
-      .map((c, i) => ({ key: i, cost_center: c.child.cost_center!, fee_subtotal: c.totalFee }))
+    return summaryRows
+      .filter(r => r.alloc_dept)
+      .map((r, i) => ({ key: i, cost_center: r.alloc_dept, fee_subtotal: r.total_fee }))
       .sort((a, b) => a.cost_center.localeCompare(b.cost_center));
-  }, [childSummary]);
+  }, [summaryRows]);
 
   const reimbursementTotal = reimbursementData.reduce((s, r) => s + r.fee_subtotal, 0);
 
@@ -362,62 +321,71 @@ export default function L3SubBranchPage() {
       label: t('l3SubBranch.summaryTab'),
       children: (
         <>
-          {selectedBatchId && selectedSubBranchId && childSummary.length > 0 && (
+          {selectedBatchId && selectedL1Branch && selectedL2Branch && summaryRows.length > 0 && grandTotal && (
             <Descriptions size="small" column={4} style={{ marginBottom: 16 }}>
               <Descriptions.Item label={t('l3SubBranch.descMonth')}>{selectedBatch?.billing_month}</Descriptions.Item>
-              <Descriptions.Item label={t('l3SubBranch.descSubBranch')}>{selectedSubBranch?.name}</Descriptions.Item>
-              <Descriptions.Item label={t('l3SubBranch.descChildCount')}>{directChildren.length}</Descriptions.Item>
-              <Descriptions.Item label={t('l3SubBranch.descTotalFee')}>¥{branchTotal.toFixed(2)}</Descriptions.Item>
+              <Descriptions.Item label={t('l3SubBranch.descSubBranch')}>{selectedL2Branch}</Descriptions.Item>
+              <Descriptions.Item label={t('l3SubBranch.descBranchCount')}>{summaryRows.length}</Descriptions.Item>
+              <Descriptions.Item label={t('l3SubBranch.descTotalFee')}>¥{grandTotal.total_fee.toFixed(2)}</Descriptions.Item>
             </Descriptions>
           )}
-          {selectedBatchId && selectedSubBranchId && childSummary.length > 0 && (
+          {selectedBatchId && selectedL1Branch && selectedL2Branch && summaryRows.length > 0 && (
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
               <Button icon={<DownloadOutlined />} onClick={() => {
                 const batch = batches.find(b => b.id === selectedBatchId);
-                const subBranch = selectedSubBranch?.name || '';
                 exportCSV(
-                  `分摊汇总_${subBranch}_${batch?.billing_month || ''}`,
+                  `分摊汇总_${selectedL2Branch}_${batch?.billing_month || ''}`,
                   [
-                    { title: t('l3SubBranch.seqCol'), dataIndex: 'seq', render: (_: unknown, __: unknown, i: number) => i + 1 },
-                    { title: t('l3SubBranch.orgTypeCol'), dataIndex: 'orgType', render: (_: unknown, r: typeof childSummary[0]) => orgTypeLabel(r.child.type) },
-                    { title: t('l3SubBranch.orgNameCol'), dataIndex: 'orgName', render: (_: unknown, r: typeof childSummary[0]) => r.child.name },
-                    { title: t('l3SubBranch.costCenterCol'), dataIndex: 'costCenter', render: (_: unknown, r: typeof childSummary[0]) => r.child.cost_center || '-' },
-                    { title: t('l3SubBranch.monthlyRentCodeCol'), dataIndex: 'monthlyRent', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
-                    { title: t('l3SubBranch.domesticFeeCol'), dataIndex: 'callFee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
-                    { title: t('l3SubBranch.recordingFeeCol'), dataIndex: 'recordingFee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
-                    { title: t('l3SubBranch.crbtFeeCol'), dataIndex: 'crbtFee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
-                    { title: t('l3SubBranch.flashFeeCol'), dataIndex: 'flashFee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
-                    { title: t('l3SubBranch.totalCol'), dataIndex: 'totalFee', render: (v: number) => v != null ? v.toFixed(2) : '' },
-                    { title: t('l3SubBranch.phoneCountCol'), dataIndex: 'phoneCount' },
+                    { title: t('l3SubBranch.orgNameCol'), dataIndex: 'alloc_dept' },
+                    { title: t('l3SubBranch.platformFeeCol'), dataIndex: 'platform_fee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
+                    { title: t('l3SubBranch.monthlyRentCodeCol'), dataIndex: 'monthly_rent_code', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
+                    { title: t('l3SubBranch.domesticDurationCol'), dataIndex: 'domestic_duration', render: (v: number) => v != null && v !== 0 ? v.toFixed(1) : '' },
+                    { title: t('l3SubBranch.transferDurationCol'), dataIndex: 'transfer_duration', render: (v: number) => v != null && v !== 0 ? v.toFixed(1) : '' },
+                    { title: t('l3SubBranch.domesticFeeCol'), dataIndex: 'domestic_fee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
+                    { title: t('l3SubBranch.intlDurationCol'), dataIndex: 'international_duration', render: (v: number) => v != null && v !== 0 ? v.toFixed(1) : '' },
+                    { title: t('l3SubBranch.intlFeeCol'), dataIndex: 'international_fee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
+                    { title: t('l3SubBranch.callSubtotalCol'), dataIndex: 'call_subtotal', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
+                    { title: t('l3SubBranch.recordingFeeCol'), dataIndex: 'recording_fee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
+                    { title: t('l3SubBranch.crbtFeeCol'), dataIndex: 'crbt_fee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
+                    { title: t('l3SubBranch.flashFeeCol'), dataIndex: 'flash_fee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
+                    { title: t('l3SubBranch.totalCol'), dataIndex: 'total_fee', render: (v: number) => v != null ? v.toFixed(2) : '' },
+                    { title: t('l3SubBranch.phoneCountCol'), dataIndex: 'phone_count' },
                   ],
-                  toPlainRecords(childSummary),
+                  toPlainRecords(summaryRows),
                 );
               }}>{t('l3SubBranch.exportSummary')}</Button>
             </div>
           )}
-          {selectedBatchId && selectedSubBranchId && childSummary.length > 0 ? (
+          {selectedBatchId && selectedL1Branch && selectedL2Branch && summaryRows.length > 0 ? (
             <Table
-              columns={columns}
-              dataSource={childSummary}
-              rowKey={r => r.child.id}
+              columns={summaryColumns}
+              dataSource={summaryDataSource}
+              rowKey="key"
               size="small"
-              loading={resultsLoading}
+              loading={summaryLoading}
               pagination={false}
-              summary={() => (
+              scroll={{ x: 1700 }}
+              summary={() => grandTotal ? (
                 <Table.Summary.Row>
-                  <Table.Summary.Cell index={0} colSpan={4}><strong>{t('l3SubBranch.totalRow')}</strong></Table.Summary.Cell>
-                  <Table.Summary.Cell index={4} align="right">{money(branchMonthlyRent)}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={5} align="right">{money(branchCallFee)}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={6} align="right">{money(branchRecordingFee)}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={7} align="right">{money(branchCrbtFee)}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={8} align="right">{money(branchFlashFee)}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={9}><strong>¥{branchTotal.toFixed(2)}</strong></Table.Summary.Cell>
-                  <Table.Summary.Cell index={10}><strong>{branchPhones}</strong></Table.Summary.Cell>
+                  <Table.Summary.Cell index={0}><strong>{t('l3SubBranch.totalRow')}</strong></Table.Summary.Cell>
+                  <Table.Summary.Cell index={1} align="right">{money(grandTotal.platform_fee)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={2} align="right">{money(grandTotal.monthly_rent_code)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={3} align="right">{dur(grandTotal.domestic_duration)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={4} align="right">{dur(grandTotal.transfer_duration)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={5} align="right">{money(grandTotal.domestic_fee)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={6} align="right">{dur(grandTotal.international_duration)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={7} align="right">{money(grandTotal.international_fee)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={8} align="right">{money(grandTotal.call_subtotal)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={9} align="right">{money(grandTotal.recording_fee)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={10} align="right">{money(grandTotal.crbt_fee)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={11} align="right">{money(grandTotal.flash_fee)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={12} align="right"><strong>¥{grandTotal.total_fee.toFixed(2)}</strong></Table.Summary.Cell>
+                  <Table.Summary.Cell index={13} align="right"><strong>{grandTotal.phone_count}</strong></Table.Summary.Cell>
                 </Table.Summary.Row>
-              )}
+              ) : null}
             />
           ) : (
-            !resultsLoading && <Empty description={t('l3SubBranch.noData')} />
+            !summaryLoading && selectedL1Branch && selectedL2Branch && <Empty description={t('l3SubBranch.noData')} />
           )}
         </>
       ),
@@ -447,7 +415,6 @@ export default function L3SubBranchPage() {
             {detailLoaded && detailData.CALL.length + detailData.RECORDING.length + detailData.CRBT.length + detailData.FLASH_MSG.length > 0 && (
               <Button icon={<DownloadOutlined />} onClick={() => {
                 const batch = batches.find(b => b.id === selectedBatchId);
-                const subBranch = selectedSubBranch?.name || '';
                 const allRows: Record<string, unknown>[] = [];
                 const sheetLabels: Record<string, string> = { CALL: t('l1Detail.callTab'), RECORDING: t('l1Detail.recordingTab'), CRBT: t('l1Detail.crbtTab'), FLASH_MSG: t('l1Detail.flashTab') };
                 for (const st of SHEET_TYPES) {
@@ -456,13 +423,13 @@ export default function L3SubBranchPage() {
                   }
                 }
                 exportCSV(
-                  `分摊明细_${subBranch}_${batch?.billing_month || ''}`,
+                  `分摊明细_${selectedL2Branch || ''}_${batch?.billing_month || ''}`,
                   [
                     { title: t('l3SubBranch.detailSheetType'), dataIndex: '_sheet_type' },
                     { title: t('l1Detail.phoneCol'), dataIndex: 'phone_number' },
                     { title: t('l1Detail.extensionCol'), dataIndex: 'extension' },
-                    { title: t('l1Detail.orgCol'), dataIndex: 'org_name' },
-                    { title: t('l1Detail.orgCodeCol'), dataIndex: 'cost_center' },
+                    { title: t('l1Detail.orgCol'), dataIndex: 'full_path' },
+                    { title: t('l1Detail.orgCodeCol'), dataIndex: 'org_code' },
                     { title: t('l1Detail.platformFeeCol'), dataIndex: 'platform_fee', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? n.toFixed(2) : ''; } },
                     { title: t('l1Detail.monthlyRentCodeCol'), dataIndex: 'monthly_rent_code', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? n.toFixed(2) : ''; } },
                     { title: t('l1Detail.domesticDurationCol'), dataIndex: 'domestic_duration', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? n.toFixed(1) : ''; } },
@@ -505,10 +472,9 @@ export default function L3SubBranchPage() {
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
             <Button icon={<DownloadOutlined />} onClick={() => {
               const batch = batches.find(b => b.id === selectedBatchId);
-              const subBranch = selectedSubBranch?.name || '';
               const data = [...reimbursementData, { key: reimbursementData.length, cost_center: t('l3SubBranch.reimbursementTotal'), fee_subtotal: reimbursementTotal }];
               exportCSV(
-                `报销单_${subBranch}_${batch?.billing_month || ''}`,
+                `报销单_${selectedL2Branch || ''}_${batch?.billing_month || ''}`,
                 [
                   { title: t('l3SubBranch.reimbursementCostCenter'), dataIndex: 'cost_center' },
                   { title: t('l3SubBranch.reimbursementFeeSubtotal'), dataIndex: 'fee_subtotal', render: (v: number) => v.toFixed(2) },
@@ -544,14 +510,17 @@ export default function L3SubBranchPage() {
               <span>{t('l3SubBranch.selectMonth')}</span>
               <Select style={{ width: 220 }} placeholder={t('l3SubBranch.selectMonthPlaceholder')} loading={loading} value={selectedBatchId} onChange={setSelectedBatchId}
                 options={[...batches].sort((a, b) => b.billing_month.localeCompare(a.billing_month)).map(b => ({ label: `${b.billing_month}`, value: b.id }))} />
+              <span>{t('l3SubBranch.selectBranch')}</span>
+              <Select style={{ width: 180 }} placeholder={t('l3SubBranch.selectBranchPlaceholder')} value={selectedL1Branch} onChange={setSelectedL1Branch}
+                options={l1Branches.map(b => ({ label: b, value: b }))} />
               <span>{t('l3SubBranch.selectSubBranch')}</span>
-              <Select style={{ width: 200 }} placeholder={t('l3SubBranch.selectSubBranchPlaceholder')} value={selectedSubBranchId} onChange={setSelectedSubBranchId}
-                options={subBranchGroups} showSearch optionFilterProp="label" />
+              <Select style={{ width: 200 }} placeholder={t('l3SubBranch.selectSubBranchPlaceholder')} value={selectedL2Branch} onChange={setSelectedL2Branch}
+                options={l2Branches.map(b => ({ label: b, value: b }))} showSearch optionFilterProp="label" />
             </Space>
           </Col>
         </Row>
 
-        {selectedBatchId && selectedSubBranchId && (
+        {selectedBatchId && selectedL1Branch && selectedL2Branch && (
           <Tabs
             type="card"
             onChange={(key) => { if (key === 'detail' && !detailLoaded) fetchAllDetails(); }}

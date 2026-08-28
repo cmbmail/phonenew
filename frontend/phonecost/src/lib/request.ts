@@ -55,7 +55,7 @@ instance.interceptors.response.use(
     }
     // 后端强制改密拦截：403 + data=MUST_CHANGE_PASSWORD
     if (error.response?.status === 403 && error.response?.data?.data === 'MUST_CHANGE_PASSWORD') {
-      useAuthStore.getState().set({ mustChangePwd: true } as Partial<import('../store/auth').AuthState>);
+      useAuthStore.getState().setMustChangePwd(true);
     }
     return Promise.reject(error);
   }
@@ -71,12 +71,6 @@ export function getApiBaseUrl(): string {
   return globalThis.__API_BASE__ || API_BASE_URL;
 }
 
-// ============ AbortController 工厂 ============
-// 为 React Query 等场景提供统一的信号管理，页面卸载时自动取消请求
-export function createAbortController(): AbortController {
-  const controller = new AbortController();
-  return controller;
-}
 
 export async function apiGet<T>(url: string, params?: object, signal?: AbortSignal): Promise<T> {
   const { data } = await instance.get<ApiResponse<T>>(url, { params, signal });
@@ -95,7 +89,16 @@ export async function apiDelete<T>(url: string, signal?: AbortSignal): Promise<T
   return data.data;
 }
 export async function apiUpload<T>(url: string, formData: FormData, signal?: AbortSignal): Promise<T> {
-  const { data } = await instance.post<ApiResponse<T>>(url, formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000, signal });
+  // Use transformRequest to delete Content-Type so browser auto-sets
+  // multipart/form-data with boundary; instance default is application/json
+  const { data } = await instance.post<ApiResponse<T>>(url, formData, {
+    timeout: 600000,
+    signal,
+    transformRequest: [(data, headers) => {
+      delete headers['Content-Type'];
+      return data;
+    }]
+  });
   return data.data;
 }
 

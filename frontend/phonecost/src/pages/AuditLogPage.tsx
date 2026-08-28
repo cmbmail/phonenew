@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Card, Table, Select, Input, Tag, Row, Col, Space, DatePicker, Popover, Typography } from 'antd';
+import { Card, Table, Select, Input, Tag, Row, Col, Space, DatePicker, Popover, message } from 'antd';
 import { SearchOutlined, ReloadOutlined } from '@ant-design/icons';
 import { COLORS } from '../theme/morandi';
-import { apiGet } from '../lib/request';
+import { getAuditLogs } from '../api/auditLog';
 import dayjs from 'dayjs';
+import { useTranslation } from 'react-i18next';
 
 const ACTION_MAP: Record<string, string> = {
   IMPORT_OWNERSHIP: '导入号码归属',
@@ -53,6 +54,24 @@ const ACTION_MAP: Record<string, string> = {
   UPGRADE_FAILED: '升级失败',
   UPGRADE_ROLLBACK: '回滚升级',
   UPGRADE_PACKAGE_DELETE: '删除升级包',
+  // 缺少的操作类型补全
+  DELETE_OWNERSHIP_BATCH: '删除号码归属批次',
+  DELETE_DIRECTORY_BATCH: '删除通讯录批次',
+  DELETE_BILL_BATCH: '删除账单批次',
+  DELETE_RECORDING_DATA: '删除录音数据',
+  UPDATE_BILL_MONTH: '修改账单月份',
+  UPDATE_DIR_ENTRY: '编辑通讯录条目',
+  IMPORT_RECORDING_DATA: '导入录音数据',
+  CREATE_ANNOUNCEMENT: '新建公告',
+  UPDATE_ANNOUNCEMENT: '编辑公告',
+  PUBLISH_ANNOUNCEMENT: '发布公告',
+  ARCHIVE_ANNOUNCEMENT: '归档公告',
+  DELETE_ANNOUNCEMENT: '删除公告',
+  FILE_UPLOADED: '上传文件',
+  FILE_DELETED: '删除文件',
+  FILE_DOWNLOADED: '下载文件',
+  BACKUP_FILE_DOWNLOADED: '下载备份文件',
+  RESTART_SERVICE: '重启服务',
 };
 
 const ACTION_COLOR: Record<string, string> = {
@@ -103,6 +122,24 @@ const ACTION_COLOR: Record<string, string> = {
   UPGRADE_FAILED: COLORS.danger,
   UPGRADE_ROLLBACK: COLORS.danger,
   UPGRADE_PACKAGE_DELETE: COLORS.danger,
+  // 缺少的操作类型颜色补全
+  DELETE_OWNERSHIP_BATCH: COLORS.danger,
+  DELETE_DIRECTORY_BATCH: COLORS.danger,
+  DELETE_BILL_BATCH: COLORS.danger,
+  DELETE_RECORDING_DATA: COLORS.danger,
+  UPDATE_BILL_MONTH: COLORS.pending,
+  UPDATE_DIR_ENTRY: COLORS.pending,
+  IMPORT_RECORDING_DATA: COLORS.sage,
+  CREATE_ANNOUNCEMENT: COLORS.confirmed,
+  UPDATE_ANNOUNCEMENT: COLORS.pending,
+  PUBLISH_ANNOUNCEMENT: COLORS.confirmed,
+  ARCHIVE_ANNOUNCEMENT: COLORS.slate,
+  DELETE_ANNOUNCEMENT: COLORS.danger,
+  FILE_UPLOADED: COLORS.sage,
+  FILE_DELETED: COLORS.danger,
+  FILE_DOWNLOADED: COLORS.slate,
+  BACKUP_FILE_DOWNLOADED: COLORS.slate,
+  RESTART_SERVICE: COLORS.mauve,
 };
 
 interface AuditLogEntry {
@@ -117,13 +154,7 @@ interface AuditLogEntry {
   created_at: string;
 }
 
-interface PagedResult {
-  content: AuditLogEntry[];
-  totalElements: number;
-  totalPages: number;
-  number: number;
-  size: number;
-}
+
 
 /** 详情 JSON 字段名 → 中文标签 */
 const DETAIL_KEY_MAP: Record<string, string> = {
@@ -235,6 +266,38 @@ function renderDetailSummary(action: string, obj: Record<string, unknown>): stri
       return `激活模板「${obj.name ?? '?'}」`;
     case 'BATCH_CLEAR_EXCEPTION':
       return `批量解除例外（${obj.count ?? '?'} 条）`;
+    case 'DELETE_OWNERSHIP_BATCH':
+      return '删除号码归属批次';
+    case 'DELETE_DIRECTORY_BATCH':
+      return '删除通讯录批次';
+    case 'DELETE_BILL_BATCH':
+      return `删除账单批次${obj.month ? '（' + obj.month + '）' : ''}`;
+    case 'DELETE_RECORDING_DATA':
+      return '删除录音数据批次';
+    case 'UPDATE_BILL_MONTH':
+      return `修改账单月份${obj.month ? '→' + obj.month : ''}`;
+    case 'UPDATE_DIR_ENTRY':
+      return '编辑通讯录条目';
+    case 'CREATE_ANNOUNCEMENT':
+      return `新建公告「${obj.name ?? obj.title ?? '?'}」`;
+    case 'UPDATE_ANNOUNCEMENT':
+      return `编辑公告「${obj.name ?? obj.title ?? '?'}」`;
+    case 'PUBLISH_ANNOUNCEMENT':
+      return `发布公告「${obj.name ?? obj.title ?? '?'}」`;
+    case 'ARCHIVE_ANNOUNCEMENT':
+      return '归档公告';
+    case 'DELETE_ANNOUNCEMENT':
+      return '删除公告';
+    case 'FILE_UPLOADED':
+      return `上传文件${obj.file_name ? '：' + obj.file_name : ''}`;
+    case 'FILE_DELETED':
+      return `删除文件${obj.file_name ? '：' + obj.file_name : ''}`;
+    case 'FILE_DOWNLOADED':
+      return `下载文件${obj.file_name ? '：' + obj.file_name : ''}`;
+    case 'BACKUP_FILE_DOWNLOADED':
+      return `下载备份文件${obj.file_name ? '：' + obj.file_name : ''}`;
+    case 'RESTART_SERVICE':
+      return '重启后端服务';
     case 'UPGRADE_PACKAGE_DELETE':
       return '删除升级包';
     case 'CLEAR_EXCEPTION':
@@ -257,6 +320,8 @@ function renderDetailSummary(action: string, obj: Record<string, unknown>): stri
       return `导入通讯录（${obj.count ?? obj.total ?? '?'} 条）`;
     case 'IMPORT_BILL':
       return `导入电信账单（${obj.count ?? obj.total ?? '?'} 条）`;
+    case 'IMPORT_RECORDING_DATA':
+      return `导入录音数据（${obj.count ?? '?'} 条）`;
     case 'MATCH_OWNERSHIP':
       return '执行归属匹配';
     default: {
@@ -284,47 +349,52 @@ function renderDetailPopover(obj: Record<string, unknown>): React.ReactNode {
 }
 
 const AuditLogPage: React.FC = () => {
+  const { t } = useTranslation();
   const [data, setData] = useState<AuditLogEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(20);
   const [actionFilter, setActionFilter] = useState<string | undefined>();
+  const [entityTypeFilter, setEntityTypeFilter] = useState<string | undefined>();
   const [usernameFilter, setUsernameFilter] = useState('');
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null] | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ page: String(page), size: String(pageSize) });
-      if (actionFilter) params.set('action', actionFilter);
-      if (usernameFilter) params.set('username', usernameFilter);
-      if (dateRange && dateRange[0]) params.set('startDate', dateRange[0].format('YYYY-MM-DD'));
-      if (dateRange && dateRange[1]) params.set('endDate', dateRange[1].format('YYYY-MM-DD'));
-      const result = await apiGet<PagedResult>(`/audit-logs?${params.toString()}`);
+      const result = await getAuditLogs({
+        page,
+        size: pageSize,
+        action: actionFilter,
+        username: usernameFilter || undefined,
+        entityType: entityTypeFilter,
+        startDate: dateRange?.[0]?.format('YYYY-MM-DD') || undefined,
+        endDate: dateRange?.[1]?.format('YYYY-MM-DD') || undefined,
+      });
       setData(result.content);
       setTotal(result.totalElements);
     } catch {
       // FE-M-07 fix: show error instead of silent swallow
-      message.error('加载操作日志失败');
+      message.error(t('auditLog.fetchFailed'));
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, actionFilter, usernameFilter, dateRange]);
+  }, [page, pageSize, actionFilter, entityTypeFilter, usernameFilter, dateRange, t]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const columns = [
-    { title: '时间', dataIndex: 'created_at', key: 'created_at', width: 170,
+    { title: t('auditLog.colTime'), dataIndex: 'created_at', key: 'created_at', width: 170,
       render: (v: string) => dayjs(v).format('YYYY-MM-DD HH:mm:ss') },
-    { title: '操作人', dataIndex: 'username', key: 'username', width: 100 },
-    { title: '操作类型', dataIndex: 'action', key: 'action', width: 150,
+    { title: t('auditLog.colOperator'), dataIndex: 'username', key: 'username', width: 100 },
+    { title: t('auditLog.colAction'), dataIndex: 'action', key: 'action', width: 150,
       render: (v: string) => <Tag color={ACTION_COLOR[v] || COLORS.sage}>{ACTION_MAP[v] || v}</Tag> },
-    { title: '对象类型', dataIndex: 'entity_type', key: 'entity_type', width: 120,
+    { title: t('auditLog.colEntityType'), dataIndex: 'entity_type', key: 'entity_type', width: 120,
       render: (v: string) => v || '-' },
-    { title: '对象ID', dataIndex: 'entity_id', key: 'entity_id', width: 80,
+    { title: t('auditLog.colEntityId'), dataIndex: 'entity_id', key: 'entity_id', width: 80,
       render: (v: number | null) => v ?? '-' },
-    { title: '详情', dataIndex: 'detail', key: 'detail', width: 300, ellipsis: true,
+    { title: t('auditLog.colDetail'), dataIndex: 'detail', key: 'detail', width: 300, ellipsis: true,
       render: (v: string | null, record: AuditLogEntry) => {
         if (!v) return '-';
         try {
@@ -332,7 +402,7 @@ const AuditLogPage: React.FC = () => {
           const summary = renderDetailSummary(record.action, obj);
           const popoverContent = renderDetailPopover(obj);
           return (
-            <Popover content={popoverContent} title="操作详情" trigger="hover" placement="left">
+            <Popover content={popoverContent} title={t('auditLog.detailTitle')} trigger="hover" placement="left">
               <span style={{ fontSize: 12, color: COLORS.textDark, cursor: 'pointer' }}>{summary}</span>
             </Popover>
           );
@@ -340,19 +410,32 @@ const AuditLogPage: React.FC = () => {
           return <span style={{ fontSize: 12, color: COLORS.textMuted }}>{v}</span>;
         }
       }},
-    { title: 'IP地址', dataIndex: 'ip_address', key: 'ip_address', width: 130,
+    { title: t('auditLog.colIpAddress'), dataIndex: 'ip_address', key: 'ip_address', width: 130,
       render: (v: string) => v || '-' },
+  ];
+
+  const entityTypeOptions = [
+    { label: t('auditLog.entityTypeSysUser'), value: 'sys_user' },
+    { label: t('auditLog.entityTypeSysOrg'), value: 'sys_organization' },
+    { label: t('auditLog.entityTypeOwnership'), value: 'phone_ownership' },
+    { label: t('auditLog.entityTypeDirectory'), value: 'directory' },
+    { label: t('auditLog.entityTypeBill'), value: 'bill' },
+    { label: t('auditLog.entityTypeAllocation'), value: 'allocation' },
+    { label: t('auditLog.entityTypeAnnouncement'), value: 'announcement' },
+    { label: t('auditLog.entityTypeBackup'), value: 'backup' },
+    { label: t('auditLog.entityTypeUpgrade'), value: 'upgrade' },
   ];
 
   const actionOptions = Object.entries(ACTION_MAP).map(([k, v]) => ({ label: v, value: k }));
 
   return (
-    <Card title="操作日志" styles={{ body: { padding: '16px 20px' } }}>
+    <Card title={t('auditLog.title')} styles={{ body: { padding: '16px 20px' } }}>
       <Row gutter={16} align="middle" style={{ marginBottom: 16 }}>
         <Col>
           <Space>
-            <Select style={{ width: 180 }} placeholder="操作类型" allowClear value={actionFilter} onChange={v => { setActionFilter(v); setPage(0); }} options={actionOptions} />
-            <Input prefix={<SearchOutlined />} placeholder="搜索用户名" allowClear style={{ width: 160 }} value={usernameFilter} onChange={e => { setUsernameFilter(e.target.value); setPage(0); }} onPressEnter={() => fetchData()} />
+            <Select style={{ width: 180 }} placeholder={t('auditLog.actionPlaceholder')} allowClear value={actionFilter} onChange={v => { setActionFilter(v); setPage(0); }} options={actionOptions} />
+            <Select style={{ width: 150 }} placeholder={t('auditLog.entityTypePlaceholder')} allowClear value={entityTypeFilter} onChange={v => { setEntityTypeFilter(v); setPage(0); }} options={entityTypeOptions} />
+            <Input prefix={<SearchOutlined />} placeholder={t('auditLog.searchUsername')} allowClear style={{ width: 160 }} value={usernameFilter} onChange={e => { setUsernameFilter(e.target.value); setPage(0); }} onPressEnter={() => fetchData()} />
             <DatePicker.RangePicker style={{ width: 260 }} value={dateRange} onChange={v => setDateRange(v)} />
             <ReloadOutlined style={{ color: COLORS.sage, cursor: 'pointer' }} onClick={fetchData} />
           </Space>
@@ -365,7 +448,7 @@ const AuditLogPage: React.FC = () => {
           total,
           showSizeChanger: true,
           pageSizeOptions: ['20', '50', '100'],
-          showTotal: (t) => `共 ${t} 条`,
+          showTotal: (total) => t('common.paginationTotal', { total }),
           onChange: (p, ps) => { setPage(p - 1); setPageSize(ps); },
         }}
         scroll={{ x: 1100 }} />

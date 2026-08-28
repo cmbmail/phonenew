@@ -101,7 +101,7 @@ public class PhoneOwnershipImportService {
      * 导入号码归属（异步模式）
      * API 立即返回批次信息，后台线程执行实际导入
      */
-    public PhoneOwnershipBatch importOwnership(MultipartFile file, Long userId) throws IOException {
+    public PhoneOwnershipBatch importOwnership(MultipartFile file, Long userId, String billingMonth) throws IOException {
         String batchNo = "OWN-" + LocalDateTime.now().format(DTF);
         String fileName = file.getOriginalFilename();
 
@@ -121,6 +121,7 @@ public class PhoneOwnershipImportService {
                     .fileName(fileName != null ? fileName : "")
                     .totalCount(0)
                     .exceptionCount(0)
+                    .billingMonth(billingMonth)
                     .importStatus((byte) 0)
                     .importedBy(userId)
                     .build();
@@ -193,26 +194,35 @@ public class PhoneOwnershipImportService {
             @Override
             public void invoke(Map<Integer, String> row, AnalysisContext context) {
                 String phoneNumber = row.getOrDefault(0, "");
-                String description = row.getOrDefault(1, "");
+                String l1Branch = row.getOrDefault(1, "");
+                String l2Branch = row.getOrDefault(2, "");
+                String statusStr = row.getOrDefault(3, "");
 
                 // Skip empty/AIGC rows
                 if (phoneNumber == null || phoneNumber.isEmpty() || phoneNumber.startsWith("AIGC:")) return;
 
-                // Check for exception marker
-                byte isException = (byte) 0;
-                String matchLevel = "P2";
-                if (description != null && description.startsWith(EXCEPTION_PREFIX)) {
-                    isException = (byte) 1;
-                    matchLevel = "P0";
-                    exceptionCounter[0]++;
+                // Parse status: 默认0=正常, 1=拆机
+                byte status = (byte) 0;
+                if (statusStr != null) {
+                    String s = statusStr.trim();
+                    if ("1".equals(s) || "拆机".equals(s)) {
+                        status = (byte) 1;
+                    }
                 }
 
+                // l1_branch/l2_branch are the new primary data columns
+                // extension and full_path are left empty for branch ownership imports
                 allRows.add(new Object[]{
                         batchId,
                         phoneNumber.trim(),
-                        description != null ? description.trim() : "",
-                        isException,
-                        matchLevel
+                        "", // extension - not used in branch ownership
+                        "", // full_path - not used in branch ownership
+                        "", // description
+                        (byte) 0, // is_exception
+                        "P2",  // match_level
+                        l1Branch != null ? l1Branch.trim() : "",
+                        l2Branch != null ? l2Branch.trim() : "",
+                        status
                 });
             }
 
@@ -232,8 +242,8 @@ public class PhoneOwnershipImportService {
         long writeStart = System.currentTimeMillis();
 
         String insertSql = "INSERT INTO phone_ownership_entry " +
-                "(batch_id, phone_number, description, is_exception, match_level, created_at, updated_at) " +
-                "VALUES (?, ?, ?, ?, ?, NOW(), NOW())";
+                "(batch_id, phone_number, extension, full_path, description, is_exception, match_level, l1_branch, l2_branch, status, created_at, updated_at) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
 
         for (int offset = 0; offset < totalCount; offset += BATCH_SIZE) {
             int end = Math.min(offset + BATCH_SIZE, totalCount);

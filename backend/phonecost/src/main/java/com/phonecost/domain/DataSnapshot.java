@@ -25,6 +25,9 @@ public class DataSnapshot extends BaseEntity {
     @Column(name = "directory_batch_id")
     private Long directoryBatchId;
 
+    @Column(name = "allocation_dept_batch_id")
+    private Long allocationDeptBatchId;
+
     @Column(name = "matched_count")
     @ColumnDefault("0")
     private Integer matchedCount;

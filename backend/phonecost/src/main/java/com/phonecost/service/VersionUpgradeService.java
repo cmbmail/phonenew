@@ -72,7 +72,7 @@ public class VersionUpgradeService {
     private static final String BACKEND_SERVICE_NAME = "phonecost-backend";
 
     /** 当前构建版本号，用于新建安装时初始化 system_version */
-    public static final String BUILD_VERSION = "1.5.0";
+    public static final String BUILD_VERSION = "1.12.28";
 
     /**
      * 上传升级包
@@ -118,6 +118,13 @@ public class VersionUpgradeService {
             if (targetVersionRef.get() == null || targetVersionRef.get().isBlank()) {
                 Files.deleteIfExists(zipPath);
                 throw new IllegalArgumentException("manifest.json 缺少 version 字段");
+            }
+
+            // Normalize version: strip leading "v"/"V" prefix to avoid duplicate records like "v1.12.44" vs "1.12.44"
+            String rawVersion = targetVersionRef.get();
+            if (rawVersion.toLowerCase().startsWith("v")) {
+                targetVersionRef.set(rawVersion.substring(1));
+                log.info("Normalized version: '{}' -> '{}'", rawVersion, targetVersionRef.get());
             }
 
             // Check for duplicate
@@ -167,7 +174,7 @@ public class VersionUpgradeService {
         }
 
         // Get current version
-        SystemVersion currentVersion = versionRepository.findByIsCurrentTrueAndDeletedAtIsNull().orElse(null);
+        SystemVersion currentVersion = versionRepository.findTopByIsCurrentTrueAndDeletedAtIsNullOrderByIdDesc().orElse(null);
         String previousVersion = currentVersion != null ? currentVersion.getVersion() : "0.0.0";
 
         // Step 1: Auto backup before upgrade
@@ -195,14 +202,15 @@ public class VersionUpgradeService {
             stagingPath = Files.createTempDirectory(Paths.get(stagingDirPath), "apply_");
             Map<String, String> extracted = extractZip(Paths.get(pkg.getFilePath()), stagingPath);
 
-            // 2a: Execute SQL (required)
+            // 2a: Execute SQL (optional — skip if no upgrade.sql in package)
             String sqlPath = extracted.get("upgrade.sql");
-            if (sqlPath == null) {
-                throw new IllegalArgumentException("升级包缺少 upgrade.sql");
+            if (sqlPath != null) {
+                String sqlContent = Files.readString(Paths.get(sqlPath));
+                executedStatements = executeSqlScript(sqlContent);
+                log.info("Upgrade SQL executed: {} statements", executedStatements.size());
+            } else {
+                log.info("No upgrade.sql in package, skipping SQL execution");
             }
-            String sqlContent = Files.readString(Paths.get(sqlPath));
-            executedStatements = executeSqlScript(sqlContent);
-            log.info("Upgrade SQL executed: {} statements", executedStatements.size());
 
             // 2b: Replace frontend dist (optional, if frontend-dist/ exists in ZIP)
             String frontendDir = findExtractedPrefix(extracted, "frontend-dist/");
@@ -384,7 +392,7 @@ public class VersionUpgradeService {
         }
 
         // Step 2 (continued): DB is restored — refresh JPA state from the now-restored database
-        SystemVersion previousVersion = versionRepository.findByIsCurrentTrueAndDeletedAtIsNull().orElse(null);
+        SystemVersion previousVersion = versionRepository.findTopByIsCurrentTrueAndDeletedAtIsNullOrderByIdDesc().orElse(null);
         if (previousVersion != null) {
             log.info("Current version after rollback: v{}", previousVersion.getVersion());
         }
@@ -409,7 +417,7 @@ public class VersionUpgradeService {
      * 获取当前版本
      */
     public Map<String, Object> getCurrentVersion() {
-        SystemVersion current = versionRepository.findByIsCurrentTrueAndDeletedAtIsNull().orElse(null);
+        SystemVersion current = versionRepository.findTopByIsCurrentTrueAndDeletedAtIsNullOrderByIdDesc().orElse(null);
         if (current == null) {
             // Initialize if no version record exists (handle concurrent creation)
             try {
@@ -422,7 +430,7 @@ public class VersionUpgradeService {
                 return versionToMap(initial);
             } catch (Exception e) {
                 // Concurrent creation — just query again
-                current = versionRepository.findByIsCurrentTrueAndDeletedAtIsNull().orElse(null);
+                current = versionRepository.findTopByIsCurrentTrueAndDeletedAtIsNullOrderByIdDesc().orElse(null);
                 if (current != null) return versionToMap(current);
                 throw new RuntimeException("初始化系统版本失败: " + e.getMessage(), e);
             }
@@ -545,16 +553,21 @@ public class VersionUpgradeService {
             "SHUTDOWN", "KILL", "LOAD_FILE", "INTO OUTFILE", "INTO DUMPFILE"
     );
 
-    /** Allowed SQL statement prefixes for upgrade scripts (M-31: restrict UPDATE/INSERT to specific tables) */
+    /** Allowed SQL statement prefixes for upgrade scripts (M-31: restrict to migration-safe operations only) */
     private static final Set<String> ALLOWED_SQL_PREFIXES = Set.of(
             "CREATE", "ALTER", "SET", "RENAME",
             "ADD", "MODIFY", "CHANGE", "DROP COLUMN", "DROP INDEX", "DROP TABLE IF EXISTS",
             "COMMENT",
-            // M-31: INSERT/UPDATE only allowed on specific migration tables
-            "INSERT INTO flyway", "INSERT  INTO flyway",
-            "UPDATE sys_organization", "UPDATE sys_user", "UPDATE allocation_result",
-            "UPDATE bill_detail", "UPDATE bill_batch", "UPDATE directory_entry",
-            "UPDATE phone_ownership_entry", "UPDATE backup_record"
+            "INSERT INTO flyway", "INSERT  INTO flyway"
+            // C-02: Removed UPDATE on sys_user, sys_organization — upgrade scripts should not modify auth/org data
+            // Allowed UPDATE tables limited to allocation_result, bill_detail, bill_batch, directory_entry,
+            // phone_ownership_entry, backup_record
+    );
+
+    /** Tables where UPDATE is allowed in upgrade scripts */
+    private static final Set<String> ALLOWED_UPDATE_TABLES = Set.of(
+            "allocation_result", "bill_detail", "bill_batch", "directory_entry",
+            "phone_ownership_entry", "backup_record"
     );
 
     private List<String> executeSqlScript(String sqlContent) throws Exception {
@@ -592,6 +605,38 @@ public class VersionUpgradeService {
                 }
                 throw new IllegalArgumentException("升级脚本包含不允许的SQL语句: " + blocked + " (语句: " + sql.substring(0, Math.min(sql.length(), 100)) + ")");
             }
+        }
+
+        // C-01: Enforce whitelist — SQL must match an allowed prefix or an allowed UPDATE table
+        boolean prefixAllowed = false;
+        for (String prefix : ALLOWED_SQL_PREFIXES) {
+            if (upper.startsWith(prefix)) {
+                prefixAllowed = true;
+                break;
+            }
+        }
+        // Special handling for UPDATE: check table name against whitelist
+        if (!prefixAllowed && upper.startsWith("UPDATE ")) {
+            // Extract table name: "UPDATE table_name SET ..."
+            String afterUpdate = upper.substring("UPDATE ".length()).trim();
+            // Table name is the first word before SET
+            int setIdx = afterUpdate.indexOf(" SET");
+            if (setIdx > 0) {
+                String tableName = afterUpdate.substring(0, setIdx).trim().toLowerCase();
+                if (ALLOWED_UPDATE_TABLES.contains(tableName)) {
+                    prefixAllowed = true;
+                }
+            }
+        }
+        // Special handling for INSERT INTO: allow flyway schema history only
+        if (!prefixAllowed && (upper.startsWith("INSERT INTO ") || upper.startsWith("INSERT  INTO "))) {
+            String afterInsert = upper.contains("INSERT  INTO ") ? upper.substring("INSERT  INTO ".length()) : upper.substring("INSERT INTO ".length());
+            if (afterInsert.toLowerCase().startsWith("flyway")) {
+                prefixAllowed = true;
+            }
+        }
+        if (!prefixAllowed) {
+            throw new IllegalArgumentException("升级脚本包含未授权的SQL操作: " + sql.substring(0, Math.min(sql.length(), 100)));
         }
     }
 

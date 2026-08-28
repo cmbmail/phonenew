@@ -21,14 +21,21 @@ const FeeAnalysisPage = React.lazy(() => import('./pages/FeeAnalysisPage'));
 const Organization = React.lazy(() => import('./pages/Organization'));
 const PhoneNumberOwnership = React.lazy(() => import('./pages/PhoneNumberOwnership'));
 const DepartmentOwnership = React.lazy(() => import('./pages/DepartmentOwnership'));
-const RecordingDataPage = React.lazy(() => import('./pages/RecordingDataPage'));
 const DirectoryPage = React.lazy(() => import('./pages/DirectoryPage'));
+const ExceptionNumberPage = React.lazy(() => import('./pages/ExceptionNumberPage'));
+const BranchOwnershipPage = React.lazy(() => import('./pages/BranchOwnershipPage'));
+const RecordingDataPage = React.lazy(() => import('./pages/RecordingDataPage'));
 const UserManagement = React.lazy(() => import('./pages/UserManagement'));
 const TemplateManagement = React.lazy(() => import('./pages/TemplateManagement'));
 const RoleManagement = React.lazy(() => import('./pages/RoleManagement'));
 const AuditLogPage = React.lazy(() => import('./pages/AuditLogPage'));
 const DataMaintenancePage = React.lazy(() => import('./pages/DataMaintenancePage'));
 const AnnouncementPage = React.lazy(() => import('./pages/AnnouncementPage'));
+const DataComparisonPage = React.lazy(() => import('./pages/DataComparisonPage'));
+const AllocationPhoneOwnership = React.lazy(() => import('./pages/AllocationPhoneOwnership'));
+const BranchNumberPage = React.lazy(() => import('./pages/BranchNumberPage'));
+const AllocationOrgPage = React.lazy(() => import('./pages/AllocationOrgPage'));
+const OrgCodeMappingPage = React.lazy(() => import('./pages/OrgCodeMappingPage'));
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30000 } } });
 
@@ -98,14 +105,21 @@ const App: React.FC = () => (
             <Route path="org" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><Organization /></PrivateRoute></LazyRoute>} />
             <Route path="base/phone-ownership" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><PhoneNumberOwnership /></PrivateRoute></LazyRoute>} />
             <Route path="base/dept-ownership" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><DepartmentOwnership /></PrivateRoute></LazyRoute>} />
-            <Route path="base/recording-data" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><RecordingDataPage /></PrivateRoute></LazyRoute>} />
             <Route path="base/directory" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><DirectoryPage /></PrivateRoute></LazyRoute>} />
+            <Route path="base/exceptions" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><ExceptionNumberPage /></PrivateRoute></LazyRoute>} />
+            <Route path="base/branch-ownership" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><BranchOwnershipPage /></PrivateRoute></LazyRoute>} />
+            <Route path="base/recording-data" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><RecordingDataPage /></PrivateRoute></LazyRoute>} />
             {/* 系统管理页面：仅管理员(1)和运维(2)可访问 */}
             <Route path="settings/users" element={<LazyRoute><PrivateRoute allowedRoles={[1]}><UserManagement /></PrivateRoute></LazyRoute>} />
             <Route path="settings/roles" element={<LazyRoute><PrivateRoute allowedRoles={[1]}><RoleManagement /></PrivateRoute></LazyRoute>} />
             <Route path="settings/announcements" element={<LazyRoute><PrivateRoute allowedRoles={[1]}><AnnouncementPage /></PrivateRoute></LazyRoute>} />
-            <Route path="settings/audit-log" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><AuditLogPage /></PrivateRoute></LazyRoute>} />
+            <Route path="settings/audit-log" element={<LazyRoute><PrivateRoute allowedRoles={[1]}><AuditLogPage /></PrivateRoute></LazyRoute>} />
             <Route path="settings/data-maintenance" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><DataMaintenancePage /></PrivateRoute></LazyRoute>} />
+            <Route path="data-comparison" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><DataComparisonPage /></PrivateRoute></LazyRoute>} />
+            <Route path="maintenance/allocation-ownership" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><AllocationPhoneOwnership /></PrivateRoute></LazyRoute>} />
+            <Route path="maintenance/branch-number" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><BranchNumberPage /></PrivateRoute></LazyRoute>} />
+            <Route path="maintenance/allocation-org" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><AllocationOrgPage /></PrivateRoute></LazyRoute>} />
+            <Route path="maintenance/org-code-mapping" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><OrgCodeMappingPage /></PrivateRoute></LazyRoute>} />
             <Route path="templates" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><TemplateManagement /></PrivateRoute></LazyRoute>} />
             {/* Redirect old paths */}
             <Route path="settings" element={<Navigate to="/settings/users" replace />} />

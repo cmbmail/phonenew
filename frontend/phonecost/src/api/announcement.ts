@@ -39,12 +39,6 @@ export const getAnnouncements = (params: {
   return apiGet<PagedAnnouncements>(`/announcements?${qs.toString()}`);
 };
 
-export const getLatestAnnouncements = () =>
-  apiGet<AnnouncementItem[]>('/announcements/latest');
-
-export const getAnnouncement = (id: number) =>
-  apiGet<AnnouncementItem>(`/announcements/${id}`);
-
 export const createAnnouncement = (data: {
   title: string;
   content: string;

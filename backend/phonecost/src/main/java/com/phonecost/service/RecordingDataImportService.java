@@ -62,9 +62,10 @@ public class RecordingDataImportService {
         CLEANUP_SCHEDULER.shutdownNow();
     }
 
-    public RecordingDataBatch importRecordingData(MultipartFile file, Long userId) throws IOException {
+    public RecordingDataBatch importRecordingData(MultipartFile file, Long userId, String billingMonth) throws IOException {
         String batchNo = "REC-" + LocalDateTime.now().format(DTF);
         String fileName = file.getOriginalFilename();
+        String month = (billingMonth != null && !billingMonth.isBlank()) ? billingMonth.trim() : "";
 
         long activeImports = progressMap.values().stream()
                 .filter(p -> "PENDING".equals(p.getStatus()) || "READING".equals(p.getStatus()) || "WRITING".equals(p.getStatus()))
@@ -77,6 +78,7 @@ public class RecordingDataImportService {
         RecordingDataBatch batch = txTemplate.execute(status -> {
             RecordingDataBatch b = new RecordingDataBatch();
             b.setBatchNo(batchNo);
+            b.setBillingMonth(month);
             b.setFileName(fileName != null ? fileName : "");
             b.setTotalCount(0);
             b.setImportStatus((byte) 0);
@@ -135,18 +137,48 @@ public class RecordingDataImportService {
         List<Object[]> allRows = new ArrayList<>(50000);
         int[] totalCountRef = {0};
 
-        // Excel columns: 分机号(0), 外线号码(1), 所属部门(2), 备注(3)
+        // Excel columns: 分机号(0), 号码(1), 部门(2), 当前状态(3), 关闭时间(4), 备注(5)
         EasyExcel.read(tempFile.toFile(), new AnalysisEventListener<Map<Integer, String>>() {
+            private String safeGet(Map<Integer, String> row, int key) {
+                String val = row.get(key);
+                return val != null ? val.trim() : "";
+            }
+
+            private Integer parseStatus(String statusStr) {
+                if (statusStr == null || statusStr.isEmpty()) return 0;
+                if ("关闭".equals(statusStr) || "1".equals(statusStr)) return 1;
+                return 0;
+            }
+
             @Override
             public void invoke(Map<Integer, String> row, AnalysisContext context) {
-                String extension = row.getOrDefault(0, "").trim();
-                String phoneNumber = row.getOrDefault(1, "").trim();
-                String deptName = row.getOrDefault(2, "").trim();
-                String remark = row.getOrDefault(3, "").trim();
+                String extension = safeGet(row, 0);
+                String phoneNumber = safeGet(row, 1);
+                String deptName = safeGet(row, 2);
+                String statusStr = safeGet(row, 3);
+                String closeTimeStr = safeGet(row, 4);
+                String remark = safeGet(row, 5);
 
                 if (extension.isEmpty() && phoneNumber.isEmpty()) return;
 
-                allRows.add(new Object[]{batchId, extension, phoneNumber, deptName, remark});
+                Integer status = parseStatus(statusStr);
+                LocalDateTime closeTime = null;
+                if (closeTimeStr != null && !closeTimeStr.isEmpty()) {
+                    try {
+                        closeTime = LocalDateTime.parse(closeTimeStr, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+                    } catch (Exception e1) {
+                        try {
+                            closeTime = LocalDateTime.parse(closeTimeStr, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
+                        } catch (Exception e2) {
+                            try {
+                                closeTime = LocalDateTime.parse(closeTimeStr, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+                            } catch (Exception e3) {
+                                log.warn("Cannot parse close_time '{}', setting null", closeTimeStr);
+                            }
+                        }
+                    }
+                }
+                allRows.add(new Object[]{batchId, extension, phoneNumber, deptName, status, closeTime, remark});
                 totalCountRef[0]++;
             }
 
@@ -161,8 +193,8 @@ public class RecordingDataImportService {
         progress.setStatus("WRITING");
 
         String insertSql = "INSERT INTO recording_data_entry " +
-                "(batch_id, extension, phone_number, dept_name, remark, created_at, updated_at) " +
-                "VALUES (?, ?, ?, ?, ?, NOW(), NOW())";
+                "(batch_id, extension, phone_number, dept_name, status, close_time, remark, created_at, updated_at) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
 
         for (int offset = 0; offset < totalCount; offset += BATCH_SIZE) {
             int end = Math.min(offset + BATCH_SIZE, totalCount);

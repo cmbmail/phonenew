@@ -2,6 +2,8 @@ server:
   port: 8080
   servlet:
     context-path: /api
+  tomcat:
+    max-swallow-size: -1
 
 spring:
   application:
@@ -106,8 +108,8 @@ logging:
   level:
     root: INFO
     com.phonecost: DEBUG
-    org.hibernate.SQL: DEBUG
-    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+    org.hibernate.SQL: WARN
+    org.hibernate.type.descriptor.sql.BasicBinder: WARN
   file:
     name: /data/apps/phonecost/logs/application.log
   pattern:

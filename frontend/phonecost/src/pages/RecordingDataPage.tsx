@@ -1,40 +1,50 @@
 import { useState, useEffect, useCallback } from 'react';
 import { COLORS } from '../theme/morandi';
-import { Card, Table, Select, Tag, Row, Col, message, Input, Statistic, Button, Dropdown, Progress, Popconfirm } from 'antd';
-import { SearchOutlined, CameraOutlined, UploadOutlined, DownloadOutlined, DeleteOutlined } from '@ant-design/icons';
+import { Card, Table, Tag, Row, Col, message, Input, Button, Dropdown, Progress, Popconfirm, DatePicker, Space, Modal, Select, Form } from 'antd';
+import { SearchOutlined, UploadOutlined, DownloadOutlined, DeleteOutlined, PlusOutlined, ExportOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import type { RecordingDataBatch, RecordingDataEntry, ImportProgress } from '../types/import';
-import { IMPORT_STATUS_MAP } from '../types/import';
+
 import {
   getRecordingDataBatches,
+  getRecordingDataMonths,
   importRecordingData,
   downloadRecordingDataTemplate,
   getRecordingDataProgress,
-  getRecordingDataEntries,
+  getRecordingDataEntriesByMonth,
   deleteRecordingDataBatch,
+  addRecordingDataEntry,
+  exportRecordingData,
 } from '../api/import';
 import { useImportProgress } from '../hooks/useImportProgress';
 import { useAuthStore } from '../store/auth';
+import dayjs from 'dayjs';
 
 export default function RecordingDataPage() {
   const { t } = useTranslation();
   const isAdmin = useAuthStore((s) => s.role === 1);
 
+  // ==================== Batch list state ====================
   const [batches, setBatches] = useState<RecordingDataBatch[]>([]);
-  const [selectedBatchId, setSelectedBatchId] = useState<number | null>(null);
-  const [entries, setEntries] = useState<RecordingDataEntry[]>([]);
-  const [entriesTotal, setEntriesTotal] = useState(0);
-  const [entriesPage, setEntriesPage] = useState(0);
-  const [entriesPageSize, setEntriesPageSize] = useState(50);
   const [loading, setLoading] = useState(false);
-  const [entriesLoading, setEntriesLoading] = useState(false);
-  const [search, setSearch] = useState('');
-  const [uploading, setUploading] = useState(false);
+  const [selectedBatch, setSelectedBatch] = useState<RecordingDataBatch | null>(null);
+  const [batchPageSize, setBatchPageSize] = useState(6);
 
+  // Month filter
+  const [availableMonths, setAvailableMonths] = useState<string[]>([]);
+  const [selectedMonth, setSelectedMonth] = useState<string | undefined>(undefined);
+
+  // Import
+  const [uploading, setUploading] = useState(false);
+  const [importMonthModal, setImportMonthModal] = useState(false);
+  const [importBillingMonth, setImportBillingMonth] = useState<string>(dayjs().format('YYYY-MM'));
+
+  // Async import progress
   const { progress: importProgress, polling: importPolling, startPolling, percent: importPercent } = useImportProgress({
     onComplete: (p: ImportProgress) => {
       message.success(t('recordingData.importSuccess', { count: p.total }));
       fetchBatches();
+      fetchMonths();
       setUploading(false);
     },
     onError: (p: ImportProgress) => {
@@ -43,36 +53,65 @@ export default function RecordingDataPage() {
     },
   });
 
+  // ==================== Entry detail state ====================
+  const [entries, setEntries] = useState<RecordingDataEntry[]>([]);
+  const [_entriesTotal, setEntriesTotal] = useState(0);
+  const [entriesPage, setEntriesPage] = useState(0);
+  const [entriesPageSize, setEntriesPageSize] = useState(50);
+  const [entriesLoading, setEntriesLoading] = useState(false);
+  const [search, setSearch] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
+  const [filteredCount, setFilteredCount] = useState(0);
+
+  // Add modal
+  const [addModal, setAddModal] = useState(false);
+  const [addLoading, setAddLoading] = useState(false);
+  const [addForm] = Form.useForm();
+
+  // ==================== Data fetching ====================
+
+  const fetchMonths = useCallback(async () => {
+    try {
+      const data = await getRecordingDataMonths();
+      setAvailableMonths(data);
+    } catch { /* silent */ }
+  }, []);
+
   const fetchBatches = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await getRecordingDataBatches();
+      const data = await getRecordingDataBatches(selectedMonth);
       setBatches(data);
-      if (!selectedBatchId && data.length > 0) {
-        const sorted = [...data].sort((a, b) => b.id - a.id);
-        setSelectedBatchId(sorted[0].id);
+      if (!selectedBatch && data.length > 0) {
+        setSelectedBatch(data[data.length - 1]);
       }
     } catch {
       message.error(t('recordingData.fetchFailed'));
     } finally {
       setLoading(false);
     }
-  }, [t, selectedBatchId]);
+  }, [t, selectedMonth]);
 
   useEffect(() => { fetchBatches(); }, [fetchBatches]);
+  useEffect(() => { fetchMonths(); }, [fetchMonths]);
 
-  useEffect(() => {
-    if (selectedBatchId) {
-      fetchEntries(selectedBatchId, entriesPage, entriesPageSize);
-    }
-  }, [selectedBatchId]);
-
-  const fetchEntries = async (batchId: number, page = 0, size = 50) => {
+  // Fetch entries for the selected batch
+  const fetchEntries = useCallback(async (batchId: number, keyword = '', page = 0, size = 50) => {
     setEntriesLoading(true);
     try {
-      const data = await getRecordingDataEntries(batchId, page, size);
+      const batch = batches.find(b => b.id === batchId);
+      const billingMonth = batch?.billing_month || '';
+      if (!billingMonth) {
+        setEntries([]);
+        setEntriesTotal(0);
+        setFilteredCount(0);
+        setEntriesLoading(false);
+        return;
+      }
+      const data = await getRecordingDataEntriesByMonth(billingMonth, keyword || undefined, page, size);
       setEntries(data.entries);
       setEntriesTotal(data.total);
+      setFilteredCount(data.filtered ?? data.total);
       setEntriesPage(data.page);
       setEntriesPageSize(data.size);
     } catch {
@@ -80,12 +119,42 @@ export default function RecordingDataPage() {
     } finally {
       setEntriesLoading(false);
     }
+  }, [batches]);
+
+  // When a batch is selected, load entries
+  useEffect(() => {
+    if (selectedBatch) {
+      fetchEntries(selectedBatch.id, appliedSearch);
+    } else {
+      setEntries([]);
+      setEntriesTotal(0);
+      setFilteredCount(0);
+    }
+  }, [selectedBatch, fetchEntries]);
+
+  // ==================== Handlers ====================
+
+  const handleImportClick = () => {
+    setImportMonthModal(true);
   };
 
-  const handleUpload = async (file: File) => {
+  const handleConfirmMonth = () => {
+    if (!importBillingMonth) {
+      message.warning(t('recordingData.selectMonthFirst'));
+      return;
+    }
+    setImportMonthModal(false);
+    // Trigger file picker after closing modal
+    setTimeout(() => {
+      document.getElementById('recording-upload-input')?.click();
+    }, 100);
+  };
+
+  const handleFileSelected = async (file: File) => {
+    const month = importBillingMonth;
     setUploading(true);
     try {
-      const result = await importRecordingData(file);
+      const result = await importRecordingData(file, month);
       startPolling(result.batch_id, getRecordingDataProgress);
     } catch (err) {
       message.error(t('recordingData.importFailed', { error: err instanceof Error ? err.message : t('common.unknown') }));
@@ -97,35 +166,112 @@ export default function RecordingDataPage() {
     try {
       await deleteRecordingDataBatch(batchId);
       message.success(t('recordingData.deleteSuccess'));
-      if (selectedBatchId === batchId) {
-        setSelectedBatchId(null);
+      if (selectedBatch?.id === batchId) {
+        setSelectedBatch(null);
         setEntries([]);
       }
       fetchBatches();
-    } catch (err) {
+      fetchMonths();
+    } catch (_err) {
       message.error(t('recordingData.deleteFailed'));
     }
   };
 
-  // Filter entries by search
-  const filteredEntries = search.trim()
-    ? entries.filter(e =>
-        (e.extension || '').includes(search.trim()) ||
-        (e.phone_number || '').includes(search.trim()) ||
-        (e.dept_name || '').includes(search.trim()) ||
-        (e.remark || '').includes(search.trim()))
-    : entries;
+  const handleSearch = () => {
+    setAppliedSearch(search);
+    if (selectedBatch) {
+      fetchEntries(selectedBatch.id, search, 0, entriesPageSize);
+    }
+  };
 
-  // Table columns
-  const columns = [
+  // Add
+  const handleAddOk = async () => {
+    try {
+      const values = await addForm.validateFields();
+      setAddLoading(true);
+      await addRecordingDataEntry(values);
+      message.success(t('recordingData.addSuccess'));
+      setAddModal(false);
+      addForm.resetFields();
+      fetchBatches();
+      fetchMonths();
+    } catch (err) {
+      if (err instanceof Error) {
+        message.error(t('recordingData.addFailed', { error: err.message }));
+      }
+    } finally {
+      setAddLoading(false);
+    }
+  };
+
+  const handleExport = () => {
+    exportRecordingData();
+    message.info(t('recordingData.exportStarted'));
+  };
+
+  // ==================== Batch list columns ====================
+
+  const batchColumns = [
     {
-      title: t('recordingData.extension'), dataIndex: 'extension', key: 'extension', width: 120,
+      title: t('recordingData.month'), dataIndex: 'billing_month', key: 'billing_month', width: 140,
+      render: (month: string) => (
+        <span style={{ fontWeight: selectedBatch?.billing_month === month ? 600 : 400 }}>
+          {month || t('recordingData.monthNotSet')}
+        </span>
+      ),
     },
     {
-      title: t('recordingData.phoneNumber'), dataIndex: 'phone_number', key: 'phone_number', width: 150,
+      title: t('recordingData.recordCount'), dataIndex: 'total_count', key: 'total_count', width: 120,
+      render: (v: number) => (
+        <span style={{ fontWeight: 500 }}>
+          {v != null ? v.toLocaleString() : '-'}
+          <span style={{ color: COLORS.textMuted, fontSize: 12, marginLeft: 6 }}>
+            {t('recordingData.countUnit')}
+          </span>
+        </span>
+      ),
     },
     {
-      title: t('recordingData.deptName'), dataIndex: 'dept_name', key: 'dept_name', width: 200,
+      title: t('recordingData.batchNo'), dataIndex: 'batch_no', key: 'batch_no', width: 200,
+      render: (v: string) => <span style={{ color: COLORS.textMuted, fontSize: 12 }}>{v}</span>,
+    },
+    {
+      title: t('recordingData.importTime'), dataIndex: 'created_at', key: 'created_at', width: 130,
+      render: (v: string) => dayjs(v).format('MM-DD HH:mm'),
+    },
+    {
+      title: t('common.delete'), key: 'delete', width: 70,
+      render: (_: unknown, record: RecordingDataBatch) => isAdmin ? (
+        <Popconfirm
+          title={t('recordingData.deleteConfirm')}
+          onConfirm={(e) => { e?.stopPropagation(); handleDelete(record.id); }}
+          onCancel={(e) => e?.stopPropagation()}
+          okText={t('common.confirm')}
+          cancelText={t('common.cancel')}
+          okButtonProps={{ danger: true }}
+        >
+          <Button size="small" danger type="text" icon={<DeleteOutlined />}
+            onClick={(e) => e.stopPropagation()} />
+        </Popconfirm>
+      ) : null,
+    },
+  ];
+
+  // ==================== Detail columns ====================
+
+  const detailColumns = [
+    { title: t('recordingData.extension'), dataIndex: 'extension', key: 'extension', width: 120 },
+    { title: t('recordingData.phoneNumber'), dataIndex: 'phone_number', key: 'phone_number', width: 150 },
+    { title: t('recordingData.deptName'), dataIndex: 'dept_name', key: 'dept_name', width: 200 },
+    {
+      title: t('recordingData.statusCol'), dataIndex: 'status', key: 'status', width: 100,
+      render: (v: number | null) => v === 1
+        ? <Tag color={COLORS.danger}>{t('recordingData.statusClosed')}</Tag>
+        : <Tag color={COLORS.confirmed}>{t('recordingData.statusActive')}</Tag>,
+    },
+    {
+      title: t('recordingData.closeTimeCol'), dataIndex: 'close_time', key: 'close_time', width: 160,
+      render: (v: string | null) => v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '-',
     },
     {
       title: t('recordingData.remark'), dataIndex: 'remark', key: 'remark', width: 200,
@@ -133,108 +279,182 @@ export default function RecordingDataPage() {
     },
   ];
 
-  // Batch select
-  const selectedBatch = batches.find(b => b.id === selectedBatchId);
+  // ==================== Render ====================
 
   return (
     <div>
-      <Row gutter={16} style={{ marginBottom: 16 }}>
+      {/* Top toolbar: month filter + import/add/export buttons */}
+      <Row gutter={16} align="middle" style={{ marginBottom: 16 }}>
         <Col>
           <Select
-            style={{ width: 300 }}
-            placeholder={t('recordingData.selectBatch')}
-            value={selectedBatchId}
-            onChange={(v) => { setSelectedBatchId(v); setEntriesPage(0); }}
-            loading={loading}
-            options={batches.sort((a, b) => b.id - a.id).map(b => ({
-              label: `${b.batch_no} (${b.total_count}${t('recordingData.countUnit')})`,
-              value: b.id,
-            }))}
+            style={{ width: 150 }}
+            placeholder={t('recordingData.filterByMonth')}
+            allowClear
+            value={selectedMonth}
+            onChange={(v) => setSelectedMonth(v)}
+            options={availableMonths.map(m => ({ label: m, value: m }))}
           />
-        </Col>
-        <Col>
-          {isAdmin && selectedBatchId && (
-            <Popconfirm
-              title={t('recordingData.deleteConfirm')}
-              onConfirm={() => handleDelete(selectedBatchId)}
-              okText={t('common.confirm')}
-              cancelText={t('common.cancel')}
-              okButtonProps={{ danger: true }}
-            >
-              <Button size="small" danger icon={<DeleteOutlined />}>{t('common.delete')}</Button>
-            </Popconfirm>
-          )}
         </Col>
         <Col flex="auto" />
         <Col>
-          <Dropdown menu={{ items: [
-            { key: 'import', icon: <UploadOutlined />, label: t('recordingData.importMenu'), disabled: uploading },
-            { key: 'template', icon: <DownloadOutlined />, label: t('import.downloadTemplate') },
-          ], onClick: ({ key }) => {
-            if (key === 'import') document.getElementById('recording-upload-input')?.click();
-            if (key === 'template') downloadRecordingDataTemplate();
-          } }}>
-            <Button type="primary" icon={<UploadOutlined />} loading={uploading && !importPolling}>
-              {t('recordingData.importMenu')}
+          <Space>
+            {isAdmin && (
+              <Button icon={<PlusOutlined />} onClick={() => setAddModal(true)}>
+                {t('recordingData.addLabel')}
+              </Button>
+            )}
+            <Button icon={<UploadOutlined />} onClick={handleImportClick} loading={uploading && !importPolling} disabled={uploading}>
+              {t('recordingData.importShortLabel')}
             </Button>
-          </Dropdown>
-          <input type="file" accept=".xlsx,.xls" id="recording-upload-input" style={{ display: 'none' }}
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) { handleUpload(f); e.target.value = ''; } }} />
-          {importPolling && importProgress && (
-            <Progress
-              percent={importPercent}
-              size="small"
-              style={{ width: 200, marginLeft: 12, display: 'inline-block', verticalAlign: 'middle' }}
-              format={() => `${importProgress.processed}/${importProgress.total}`}
-            />
-          )}
+            <Button icon={<DownloadOutlined />} onClick={() => downloadRecordingDataTemplate()}>
+              {t('recordingData.downloadTemplate')}
+            </Button>
+            <input type="file" accept=".xlsx,.xls" id="recording-upload-input" style={{ display: 'none' }}
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) { handleFileSelected(f); e.target.value = ''; } }} />
+            {importPolling && importProgress && (
+              <Progress
+                percent={importPercent}
+                size="small"
+                style={{ width: 200, display: 'inline-block', verticalAlign: 'middle' }}
+                format={() => `${importProgress.processed}/${importProgress.total}`}
+              />
+            )}
+            <Button icon={<ExportOutlined />} onClick={handleExport}>
+              {t('recordingData.exportLabel')}
+            </Button>
+          </Space>
         </Col>
       </Row>
 
-      {/* Stats */}
+      {/* Batch list card */}
+      <Card>
+        <Table
+          columns={batchColumns}
+          dataSource={batches}
+          rowKey="id"
+          size="small"
+          loading={loading}
+          pagination={{
+            pageSize: batchPageSize,
+            showSizeChanger: true,
+            pageSizeOptions: ['6', '10', '20'],
+            showTotal: (total) => t('common.paginationTotal', { total }),
+            onChange: (_p, s) => setBatchPageSize(s),
+          }}
+          onRow={(record) => ({
+            onClick: () => {
+              setSelectedBatch(record);
+              setSearch('');
+              setAppliedSearch('');
+            },
+            style: {
+              cursor: 'pointer',
+              background: selectedBatch?.id === record.id ? 'rgba(139, 157, 158, 0.08)' : undefined,
+            },
+          })}
+        />
+      </Card>
+
+      {/* Entry detail below selected batch */}
       {selectedBatch && (
-        <Row gutter={16} style={{ marginBottom: 16 }}>
-          <Col><Statistic title={t('recordingData.totalCount')} value={selectedBatch.total_count} /></Col>
-          <Col>
-            <Statistic
-              title={t('recordingData.importStatus')}
-              value={IMPORT_STATUS_MAP[selectedBatch.import_status]?.label || t('common.unknown')}
-              valueStyle={{ color: IMPORT_STATUS_MAP[selectedBatch.import_status]?.color }}
-            />
-          </Col>
-        </Row>
+        <Card
+          style={{ marginTop: 16 }}
+          title={selectedBatch.billing_month
+            ? t('recordingData.monthResults', { month: selectedBatch.billing_month })
+            : t('recordingData.batchResults', { batch: selectedBatch.batch_no })}
+          extra={
+            <Space>
+              <Input
+                prefix={<SearchOutlined />}
+                placeholder={t('recordingData.searchPlaceholder')}
+                allowClear
+                size="small"
+                style={{ width: 200 }}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onPressEnter={handleSearch}
+              />
+              <Button size="small" type="primary" onClick={handleSearch} icon={<SearchOutlined />}>
+                {t('common.search')}
+              </Button>
+              {appliedSearch && (
+                <span style={{ color: COLORS.textMuted, fontSize: 12 }}>
+                  {t('recordingData.searchResult', { count: filteredCount })}
+                </span>
+              )}
+            </Space>
+          }
+        >
+          <Table
+            columns={detailColumns}
+            dataSource={entries}
+            rowKey="id"
+            size="small"
+            loading={entriesLoading}
+            pagination={{
+              current: entriesPage + 1,
+              pageSize: entriesPageSize,
+              total: filteredCount,
+              showSizeChanger: true,
+              pageSizeOptions: ['20', '50', '100'],
+              showTotal: (total) => t('common.paginationTotal', { total }),
+              onChange: (p, s) => {
+                if (selectedBatch) fetchEntries(selectedBatch.id, appliedSearch, p - 1, s);
+              },
+            }}
+          />
+        </Card>
       )}
 
-      {/* Search */}
-      <Input
-        prefix={<SearchOutlined />}
-        placeholder={t('recordingData.searchPlaceholder')}
-        allowClear
-        size="small"
-        style={{ width: 240, marginBottom: 12 }}
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-      />
+      {/* Import month picker modal */}
+      <Modal
+        title={t('recordingData.selectImportMonth')}
+        open={importMonthModal}
+        onOk={handleConfirmMonth}
+        onCancel={() => setImportMonthModal(false)}
+        okText={t('recordingData.confirmImport')}
+        okButtonProps={{ disabled: !importBillingMonth }}
+      >
+        <p style={{ marginBottom: 12 }}>{t('recordingData.selectMonthHint')}</p>
+        <DatePicker
+          picker="month"
+          style={{ width: '100%' }}
+          format="YYYY年MM月"
+          value={importBillingMonth ? dayjs(importBillingMonth, 'YYYY-MM') : null}
+          onChange={(date) => setImportBillingMonth(date ? date.format('YYYY-MM') : '')}
+          allowClear={false}
+        />
+      </Modal>
 
-      {/* Entry table */}
-      <Table
-        columns={columns}
-        dataSource={filteredEntries}
-        rowKey="id"
-        size="small"
-        loading={entriesLoading}
-        pagination={{
-          current: entriesPage + 1,
-          pageSize: entriesPageSize,
-          total: entriesTotal,
-          showSizeChanger: true,
-          pageSizeOptions: ['20', '50', '100'],
-          showTotal: (total) => t('common.paginationTotal', { total }),
-          onChange: (p, s) => {
-            if (selectedBatchId) fetchEntries(selectedBatchId, p - 1, s);
-          },
-        }}
-      />
+      {/* Add modal */}
+      <Modal
+        title={t('recordingData.addTitle')}
+        open={addModal}
+        onOk={handleAddOk}
+        onCancel={() => { setAddModal(false); addForm.resetFields(); }}
+        okText={t('common.confirm')}
+        cancelText={t('common.cancel')}
+        confirmLoading={addLoading}
+        destroyOnClose
+      >
+        <Form form={addForm} layout="vertical" preserve={false}>
+          <Form.Item name="billing_month" label={t('recordingData.month')} rules={[{ required: true }]}>
+            <DatePicker picker="month" style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="extension" label={t('recordingData.extension')}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="phone_number" label={t('recordingData.phoneNumber')}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="dept_name" label={t('recordingData.deptName')}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="remark" label={t('recordingData.remark')}>
+            <Input />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 }

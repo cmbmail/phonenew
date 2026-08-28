@@ -38,8 +38,14 @@ public class DataScopeService {
         Byte role = user.getRole();
         Long orgId = user.getOrgId();
 
+        // Null role safety: treat null as no-permission
+        if (role == null) {
+            log.warn("DataScope: userId={} has null role, defaulting to empty scope", userId);
+            return DataScope.singleOrgScope(-999L);
+        }
+
         // ADMIN 和 FINANCE 拥有全量权限
-        if (role == 1 || role == 4) {
+        if (role == (byte)1 || role == (byte)4) {
             log.debug("DataScope: userId={}, role={}, scope=ALL", userId, role);
             return DataScope.allScope();
         }
@@ -56,7 +62,7 @@ public class DataScopeService {
             return DataScope.singleOrgScope(-999L);
         }
 
-        if (role == 2) {
+        if (role == (byte)2) {
             // BRANCH: 本分行及所有下级
             List<SysOrganization> descendants = orgRepository
                     .findByPathStartingWithAndDeletedAtIsNull(org.getPath());
@@ -65,7 +71,7 @@ public class DataScopeService {
             return DataScope.subtreeScope(org.getPath(), orgIds);
         }
 
-        if (role == 3) {
+        if (role == (byte)3) {
             // DEPARTMENT: 本部门及所有下级子组织
             List<SysOrganization> descendants = orgRepository
                     .findByPathStartingWithAndDeletedAtIsNull(org.getPath());
@@ -80,11 +86,41 @@ public class DataScopeService {
     }
 
     /**
+     * 解析用户所属一级分行（type=2）组织ID。
+     * 从用户的 org_id 沿 parent 链向上查找第一个 type=2 的组织；
+     * 用户自身即一级分行则直接返回；找不到返回 null（视为全量/未归属）。
+     */
+    public Long resolveBranchOrgId(Long userId) {
+        try {
+            SysUser user = userRepository.findByIdAndDeletedAtIsNull(userId).orElse(null);
+            if (user == null || user.getOrgId() == null) return null;
+            java.util.Set<Long> visited = new java.util.HashSet<>();
+            Long cur = user.getOrgId();
+            while (cur != null && !visited.contains(cur)) {
+                visited.add(cur);
+                SysOrganization org = orgRepository.findByIdAndDeletedAtIsNull(cur).orElse(null);
+                if (org == null) break;
+                if (org.getType() != null && org.getType() == 2) return org.getId();
+                if (org.getType() != null && org.getType() == 1) return null;
+                if (org.getParentId() == null || org.getParentId() == 0L) break;
+                cur = org.getParentId();
+            }
+        } catch (Exception e) {
+            log.warn("resolveBranchOrgId failed for userId={}: {}", userId, e.getMessage());
+        }
+        return null;
+    }
+
+    /**
      * 快捷方法：从请求属性(role, orgId)直接构建DataScope，不需要查库
      * 适用于已经从JWT中获取了role和orgId的场景
      */
     public DataScope getDataScopeFromContext(Byte role, Long orgId) {
-        if (role == 1 || role == 4) {
+        if (role == null) {
+            return DataScope.singleOrgScope(-999L);
+        }
+
+        if (role == (byte)1 || role == (byte)4) {
             return DataScope.allScope();
         }
 
@@ -97,29 +133,21 @@ public class DataScopeService {
             return DataScope.singleOrgScope(-999L);
         }
 
-        if (role == 2) {
+        if (role == (byte)2) {
             List<SysOrganization> descendants = orgRepository
                     .findByPathStartingWithAndDeletedAtIsNull(org.getPath());
             List<Long> orgIds = descendants.stream().map(SysOrganization::getId).toList();
             return DataScope.subtreeScope(org.getPath(), orgIds);
         }
 
-        if (role == 3) {
+        if (role == (byte)3) {
             // DEPARTMENT: 本部门及所有下级子组织
-            List<SysOrganization> descendants = orgRepository
+            List<SysOrganization> descendants2 = orgRepository
                     .findByPathStartingWithAndDeletedAtIsNull(org.getPath());
-            List<Long> orgIds = descendants.stream().map(SysOrganization::getId).toList();
-            return DataScope.subtreeScope(org.getPath(), orgIds);
+            List<Long> orgIds2 = descendants2.stream().map(SysOrganization::getId).toList();
+            return DataScope.subtreeScope(org.getPath(), orgIds2);
         }
 
         return DataScope.singleOrgScope(-999L);
-    }
-
-    /**
-     * 验证用户是否有权操作指定组织的数据
-     * 用于 confirm/withdraw 等操作的场景校验
-     */
-    public boolean canOperateOrg(DataScope scope, Long targetOrgId) {
-        return scope.isOrgVisible(targetOrgId);
     }
 }

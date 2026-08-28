@@ -1,9 +1,10 @@
 import { useState, useCallback, useEffect } from 'react';
-import { Card, Table, Button, Tag, Popconfirm, message, Row, Col, Statistic, Tooltip, Modal, Steps, Typography, Tabs, Upload, Empty, Badge, Spin } from 'antd';
-import { SafetyCertificateOutlined, DatabaseOutlined, ReloadOutlined, CloudUploadOutlined, CloudDownloadOutlined, DeleteOutlined, UndoOutlined, CheckCircleOutlined, RocketOutlined, HistoryOutlined, UploadOutlined, RollbackOutlined, ThunderboltOutlined, FileTextOutlined, FolderOpenOutlined, SettingOutlined, FileOutlined, PaperClipOutlined } from '@ant-design/icons';
-import { apiGet, apiPost, apiDelete, apiUpload } from '../lib/request';
+import { Card, Table, Button, Tag, Popconfirm, message, Row, Col, Statistic, Tooltip, Modal, Steps, Typography, Tabs, Upload, Empty, Badge, Spin, Progress } from 'antd';
+import { SafetyCertificateOutlined, DatabaseOutlined, ReloadOutlined, CloudUploadOutlined, CloudDownloadOutlined, DeleteOutlined, UndoOutlined, CheckCircleOutlined, RocketOutlined, HistoryOutlined, UploadOutlined, RollbackOutlined, ThunderboltOutlined, FileTextOutlined, FolderOpenOutlined, SettingOutlined, FileOutlined, PaperClipOutlined, PoweroffOutlined, DashboardOutlined, ClockCircleOutlined } from '@ant-design/icons';
+import { apiGet, apiPost, apiDelete, apiUpload, getApiBaseUrl } from '../lib/request';
 import { useAuthStore } from '../store/auth';
 import { COLORS } from '../theme/morandi';
+import { useTranslation } from 'react-i18next';
 
 const { Text } = Typography;
 
@@ -462,12 +463,13 @@ function VersionUpgradeTab() {
               title="确定回滚此版本？"
               description="将恢复升级前的数据库备份，当前版本数据将被覆盖。"
               onConfirm={() => {
-                // Find the version history entry for this target version to get its ID
+                setRollbackVersionId(r.id);
                 const versionEntry = versionHistory.find(v => v.version === r.target_version);
                 if (versionEntry) {
                   handleRollback(versionEntry.id);
                 } else {
                   message.error('未找到版本记录');
+                  setRollbackVersionId(null);
                 }
               }}
               okText="确定回滚"
@@ -576,6 +578,233 @@ function VersionUpgradeTab() {
   );
 }
 
+// ==================== Service Management Tab ====================
+interface ServiceStatus {
+  up_since: string;
+  java_version: string;
+  os_name: string;
+  os_arch: string;
+  max_memory_mb: number;
+  used_memory_mb: number;
+  free_memory_mb: number;
+  available_processors: number;
+}
+
+function ServiceManagementTab() {
+  const { t } = useTranslation();
+  const [status, setStatus] = useState<ServiceStatus | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const [polling, setPolling] = useState(false);
+
+  const fetchStatus = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await apiGet<ServiceStatus>('/system/status');
+      setStatus(res);
+    } catch {
+      message.error(t('serviceMgmt.fetchStatusFailed'));
+    } finally {
+      setLoading(false);
+    }
+  }, [t]);
+
+  useEffect(() => { fetchStatus(); }, [fetchStatus]);
+
+  const handleRestart = async () => {
+    setRestarting(true);
+    try {
+      await apiPost('/system/restart');
+      message.success(t('serviceMgmt.restartSuccess'));
+      // Start polling for service recovery
+      setPolling(true);
+      let attempts = 0;
+      const maxAttempts = 30; // 30 * 2s = 60s max wait
+      const poll = setInterval(async () => {
+        attempts++;
+        try {
+          const res = await apiGet<ServiceStatus>('/system/status');
+          // If we get a response with a new up_since, service has recovered
+          if (res?.up_since) {
+            clearInterval(poll);
+            setPolling(false);
+            setRestarting(false);
+            setStatus(res);
+            message.success(t('serviceMgmt.serviceRecovered'));
+          }
+        } catch {
+          // Service still down, keep polling
+        }
+        if (attempts >= maxAttempts) {
+          clearInterval(poll);
+          setPolling(false);
+          setRestarting(false);
+          fetchStatus();
+        }
+      }, 2000);
+    } catch {
+      message.error(t('serviceMgmt.restartFailed'));
+      setRestarting(false);
+    }
+  };
+
+  const memoryUsagePercent = status && status.max_memory_mb > 0
+    ? Math.round((status.used_memory_mb / status.max_memory_mb) * 100)
+    : 0;
+
+  const getMemoryColor = (pct: number) => {
+    if (pct < 60) return COLORS.confirmed;
+    if (pct < 80) return COLORS.pending;
+    return COLORS.danger;
+  };
+
+  return (
+    <div>
+      {/* Service Status */}
+      <Card
+        size="small"
+        title={<><DashboardOutlined style={{ color: COLORS.sage, marginRight: 6 }} />{t('serviceMgmt.statusTitle')}</>}
+        style={{ marginBottom: 16 }}
+        styles={{ header: { background: COLORS.cream, borderRadius: '8px 8px 0 0' } }}
+        extra={
+          <Button size="small" icon={<ReloadOutlined />} onClick={fetchStatus} loading={loading}>
+            {t('bill.refresh')}
+          </Button>
+        }
+      >
+        {loading && !status ? (
+          <div style={{ textAlign: 'center', padding: 40 }}><Spin tip={t('serviceMgmt.statusLoading')} /></div>
+        ) : status ? (
+          <Row gutter={[24, 16]}>
+            <Col span={12}>
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+                  <ClockCircleOutlined style={{ color: COLORS.sage, marginRight: 8 }} />
+                  <Text strong style={{ fontSize: 13, color: COLORS.charcoal }}>{t('serviceMgmt.upSince')}</Text>
+                </div>
+                <div style={{ padding: '8px 12px', background: '#fafafa', borderRadius: 6, fontFamily: 'monospace', fontSize: 14 }}>
+                  {status.up_since || '-'}
+                </div>
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <Text strong style={{ fontSize: 13, color: COLORS.charcoal }}>{t('serviceMgmt.javaVersion')}</Text>
+                <div style={{ padding: '8px 12px', background: '#fafafa', borderRadius: 6, fontFamily: 'monospace', fontSize: 13, marginTop: 4 }}>
+                  {status.java_version || '-'}
+                </div>
+              </div>
+              <div>
+                <Text strong style={{ fontSize: 13, color: COLORS.charcoal }}>{t('serviceMgmt.osInfo')}</Text>
+                <div style={{ padding: '8px 12px', background: '#fafafa', borderRadius: 6, fontSize: 13, marginTop: 4 }}>
+                  {status.os_name || '-'} ({status.os_arch || '-'})
+                </div>
+              </div>
+            </Col>
+            <Col span={12}>
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <Text strong style={{ fontSize: 13, color: COLORS.charcoal }}>{t('serviceMgmt.memoryUsage')}</Text>
+                  <Text style={{ fontSize: 12, color: COLORS.textMuted }}>
+                    {status.used_memory_mb} / {status.max_memory_mb} {t('serviceMgmt.memoryUnit')}
+                  </Text>
+                </div>
+                <Progress
+                  percent={memoryUsagePercent}
+                  strokeColor={getMemoryColor(memoryUsagePercent)}
+                  format={(pct) => `${pct}%`}
+                  size="default"
+                />
+              </div>
+              <Row gutter={16}>
+                <Col span={8}>
+                  <Statistic
+                    title={t('serviceMgmt.maxMemory')}
+                    value={status.max_memory_mb}
+                    suffix={t('serviceMgmt.memoryUnit')}
+                    valueStyle={{ fontSize: 16, color: COLORS.charcoal }}
+                  />
+                </Col>
+                <Col span={8}>
+                  <Statistic
+                    title={t('serviceMgmt.usedMemory')}
+                    value={status.used_memory_mb}
+                    suffix={t('serviceMgmt.memoryUnit')}
+                    valueStyle={{ fontSize: 16, color: getMemoryColor(memoryUsagePercent) }}
+                  />
+                </Col>
+                <Col span={8}>
+                  <Statistic
+                    title={t('serviceMgmt.freeMemory')}
+                    value={status.free_memory_mb}
+                    suffix={t('serviceMgmt.memoryUnit')}
+                    valueStyle={{ fontSize: 16, color: COLORS.sage }}
+                  />
+                </Col>
+              </Row>
+              <div style={{ marginTop: 16 }}>
+                <Statistic
+                  title={t('serviceMgmt.processors')}
+                  value={status.available_processors}
+                  suffix="cores"
+                  valueStyle={{ fontSize: 16, color: COLORS.charcoal }}
+                />
+              </div>
+            </Col>
+          </Row>
+        ) : null}
+      </Card>
+
+      {/* Restart Service */}
+      <Card
+        size="small"
+        title={<><PoweroffOutlined style={{ color: COLORS.danger, marginRight: 6 }} />{t('serviceMgmt.restartTitle')}</>}
+        style={{ marginBottom: 16 }}
+        styles={{ header: { background: COLORS.cream, borderRadius: '8px 8px 0 0' } }}
+      >
+        {polling ? (
+          <div style={{ textAlign: 'center', padding: 24 }}>
+            <Spin size="large" />
+            <div style={{ marginTop: 12, color: COLORS.textMuted, fontSize: 13 }}>
+              {t('serviceMgmt.pollingWait')}
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <Text style={{ fontSize: 13, color: COLORS.textMuted }}>
+                重启后端服务将导致系统短暂不可用（约15秒），请确保没有正在进行的操作。
+              </Text>
+            </div>
+            <Popconfirm
+              title={t('serviceMgmt.restartConfirm')}
+              description={t('serviceMgmt.restartDesc')}
+              onConfirm={handleRestart}
+              okText={t('serviceMgmt.restartOkText')}
+              cancelText={t('common.cancel')}
+              okButtonProps={{ danger: true }}
+            >
+              <Button
+                icon={<PoweroffOutlined />}
+                danger
+                loading={restarting}
+                disabled={polling}
+              >
+                {t('serviceMgmt.restartBtn')}
+              </Button>
+            </Popconfirm>
+          </div>
+        )}
+      </Card>
+
+      {/* Tips */}
+      <div style={{ marginTop: 16, padding: 12, background: COLORS.cream, borderRadius: 8, fontSize: 12, color: COLORS.textMuted }}>
+        <p style={{ margin: '4px 0' }}><strong>服务重启：</strong>点击重启按钮后，系统将在3秒后自动重启后端服务，预计15秒后恢复正常访问。</p>
+        <p style={{ margin: '4px 0' }}><strong>内存监控：</strong>内存使用率超过60%显示为警告色，超过80%显示为危险色，请关注并考虑重启服务释放内存。</p>
+        <p style={{ margin: '4px 0' }}><strong>注意事项：</strong>重启服务不会丢失数据，但重启期间所有用户将无法访问系统。</p>
+      </div>
+    </div>
+  );
+}
+
 // ==================== File Management Tab ====================
 interface BackupFileInfo {
   file_name: string;
@@ -658,7 +887,7 @@ function FileManagementTab() {
   const handleDownloadUploaded = async (fileName: string) => {
     try {
       const token = useAuthStore.getState().token;
-      const resp = await fetch(`/api/file-management/uploads/download?name=${encodeURIComponent(fileName)}`, {
+      const resp = await fetch(`${getApiBaseUrl()}/file-management/uploads/download?name=${encodeURIComponent(fileName)}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!resp.ok) throw new Error('下载失败');
@@ -704,7 +933,7 @@ function FileManagementTab() {
   const handleDownloadBackup = async (filePath: string) => {
     try {
       const token = useAuthStore.getState().token;
-      const resp = await fetch(`/api/file-management/backups/download?path=${encodeURIComponent(filePath)}`, {
+      const resp = await fetch(`${getApiBaseUrl()}/file-management/backups/download?path=${encodeURIComponent(filePath)}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!resp.ok) throw new Error('下载失败');
@@ -981,6 +1210,11 @@ export default function DataMaintenancePage() {
       key: 'files',
       label: <span><FolderOpenOutlined style={{ marginRight: 6 }} />文件管理</span>,
       children: <FileManagementTab />,
+    },
+    {
+      key: 'service',
+      label: <span><SettingOutlined style={{ marginRight: 6 }} />服务管理</span>,
+      children: <ServiceManagementTab />,
     },
   ];
 

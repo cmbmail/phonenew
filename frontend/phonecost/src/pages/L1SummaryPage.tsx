@@ -50,7 +50,7 @@ export default function L1SummaryPage() {
     }
   }, [batches, selectedBatchId]);
 
-  useAbortableEffect((signal) => {
+  useAbortableEffect((_signal) => {
     if (selectedBatchId) {
       const wasDetailLoaded = detailLoaded;
       setRows([]); // 立即清空旧数据，让刷新可见
@@ -103,11 +103,11 @@ export default function L1SummaryPage() {
   const grandTotal = useMemo(() => {
     if (rows.length === 0) return null;
     const init: L1SummaryRow = {
-      branch_name: '', cost_center: '', platform_fee: 0, monthly_rent_code: 0,
+      l1_branch: '', platform_fee: 0, monthly_rent_code: 0,
       domestic_duration: 0, transfer_duration: 0, domestic_fee: 0,
       international_duration: 0, international_fee: 0, call_subtotal: 0,
       recording_fee: 0, crbt_fee: 0, flash_fee: 0, total_fee: 0,
-      phone_count: 0, confirmed: 0, pending: 0,
+      phone_count: 0,
     };
     return rows.reduce((acc, r) => {
       acc.platform_fee += r.platform_fee;
@@ -123,15 +123,12 @@ export default function L1SummaryPage() {
       acc.flash_fee += r.flash_fee;
       acc.total_fee += r.total_fee;
       acc.phone_count += r.phone_count;
-      acc.confirmed += r.confirmed;
-      acc.pending += r.pending;
       return acc;
     }, init);
   }, [rows]);
 
   const summaryColumns = [
-    { title: t('l1Summary.branchCol'), dataIndex: 'branch_name', key: 'branch_name', width: 120, fixed: 'left' as const },
-    { title: t('l1Summary.costCenterCol'), dataIndex: 'cost_center', key: 'cost_center', width: 100 },
+    { title: t('l1Summary.branchCol'), dataIndex: 'l1_branch', key: 'l1_branch', width: 120, fixed: 'left' as const },
     { title: t('l1Summary.platformFeeCol'), dataIndex: 'platform_fee', key: 'platform_fee', width: 100, align: 'right' as const, render: money },
     { title: t('l1Summary.monthlyRentCodeCol'), dataIndex: 'monthly_rent_code', key: 'monthly_rent_code', width: 100, align: 'right' as const, render: money },
     { title: t('l1Summary.domesticDurationCol'), dataIndex: 'domestic_duration', key: 'domestic_duration', width: 110, align: 'right' as const, render: dur },
@@ -147,16 +144,14 @@ export default function L1SummaryPage() {
       render: (v: number) => <strong>{money(v)}</strong>,
     },
     { title: t('l1Summary.phoneCountCol'), dataIndex: 'phone_count', key: 'phone_count', width: 70, align: 'right' as const },
-    { title: t('l1Summary.confirmedCol'), dataIndex: 'confirmed', key: 'confirmed', width: 70, align: 'right' as const },
-    { title: t('l1Summary.pendingCol'), dataIndex: 'pending', key: 'pending', width: 70, align: 'right' as const },
   ];
 
   // ========== 分摊明细 - 按号码费用 (CALL) ==========
   const callColumns = [
     { title: t('l1Detail.phoneCol'), dataIndex: 'phone_number', key: 'phone_number', width: 120, fixed: 'left' as const },
     { title: t('l1Detail.extensionCol'), dataIndex: 'extension', key: 'extension', width: 90 },
-    { title: t('l1Detail.orgCol'), dataIndex: 'org_name', key: 'org_name', width: 180 },
-    { title: t('l1Detail.orgCodeCol'), dataIndex: 'cost_center', key: 'cost_center', width: 100 },
+    { title: t('l1Detail.orgCol'), dataIndex: 'full_path', key: 'full_path', width: 180 },
+    { title: t('l1Detail.orgCodeCol'), dataIndex: 'org_code', key: 'org_code', width: 100 },
     { title: t('l1Detail.platformFeeCol'), dataIndex: 'platform_fee', key: 'platform_fee', width: 100, align: 'right' as const, render: money },
     { title: t('l1Detail.monthlyRentCodeCol'), dataIndex: 'monthly_rent_code', key: 'monthly_rent_code', width: 100, align: 'right' as const, render: money },
     { title: t('l1Detail.domesticDurationCol'), dataIndex: 'domestic_duration', key: 'domestic_duration', width: 110, align: 'right' as const, render: dur },
@@ -172,8 +167,8 @@ export default function L1SummaryPage() {
   const recordingColumns = [
     { title: t('l1Detail.extensionCol'), dataIndex: 'extension', key: 'extension', width: 90 },
     { title: t('l1Detail.phoneCol'), dataIndex: 'phone_number', key: 'phone_number', width: 120 },
-    { title: t('l1Detail.orgCol'), dataIndex: 'org_name', key: 'org_name', width: 200 },
-    { title: t('l1Detail.orgCodeCol'), dataIndex: 'cost_center', key: 'cost_center', width: 100 },
+    { title: t('l1Detail.orgCol'), dataIndex: 'full_path', key: 'full_path', width: 200 },
+    { title: t('l1Detail.orgCodeCol'), dataIndex: 'org_code', key: 'org_code', width: 100 },
     { title: t('l1Detail.recordingDirCol'), dataIndex: 'recording_dir', key: 'recording_dir', width: 200 },
     { title: t('l1Detail.recordingFeeCol'), dataIndex: 'recording_fee', key: 'recording_fee', width: 100, align: 'right' as const, render: money },
     { title: t('l1Detail.sourceCol'), dataIndex: 'ownership_source', key: 'ownership_source', width: 70 },
@@ -183,8 +178,8 @@ export default function L1SummaryPage() {
   const crbtColumns = [
     { title: t('l1Detail.phoneCol'), dataIndex: 'phone_number', key: 'phone_number', width: 120 },
     { title: t('l1Detail.extensionCol'), dataIndex: 'extension', key: 'extension', width: 90 },
-    { title: t('l1Detail.orgCol'), dataIndex: 'org_name', key: 'org_name', width: 200 },
-    { title: t('l1Detail.orgCodeCol'), dataIndex: 'cost_center', key: 'cost_center', width: 100 },
+    { title: t('l1Detail.orgCol'), dataIndex: 'full_path', key: 'full_path', width: 200 },
+    { title: t('l1Detail.orgCodeCol'), dataIndex: 'org_code', key: 'org_code', width: 100 },
     { title: t('l1Detail.crbtFeeCol'), dataIndex: 'crbt_fee', key: 'crbt_fee', width: 100, align: 'right' as const, render: money },
     { title: t('l1Detail.sourceCol'), dataIndex: 'ownership_source', key: 'ownership_source', width: 70 },
   ];
@@ -193,8 +188,8 @@ export default function L1SummaryPage() {
   const flashColumns = [
     { title: t('l1Detail.phoneCol'), dataIndex: 'phone_number', key: 'phone_number', width: 120 },
     { title: t('l1Detail.extensionCol'), dataIndex: 'extension', key: 'extension', width: 90 },
-    { title: t('l1Detail.orgCol'), dataIndex: 'org_name', key: 'org_name', width: 200 },
-    { title: t('l1Detail.orgCodeCol'), dataIndex: 'cost_center', key: 'cost_center', width: 100 },
+    { title: t('l1Detail.orgCol'), dataIndex: 'full_path', key: 'full_path', width: 200 },
+    { title: t('l1Detail.orgCodeCol'), dataIndex: 'org_code', key: 'org_code', width: 100 },
     { title: t('l1Detail.flashMonthCol'), dataIndex: 'flash_month', key: 'flash_month', width: 90 },
     { title: t('l1Detail.flashCountCol'), dataIndex: 'flash_count', key: 'flash_count', width: 90, align: 'right' as const, render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? String(Math.round(n)) : '-'; } },
     { title: t('l1Detail.flashFeeCol'), dataIndex: 'flash_msg_fee', key: 'flash_msg_fee', width: 100, align: 'right' as const, render: money },
@@ -209,9 +204,9 @@ export default function L1SummaryPage() {
       rows.filter(r =>
         String(r.phone_number || '').toLowerCase().includes(kw) ||
         String(r.extension || '').toLowerCase().includes(kw) ||
-        String(r.org_name || '').toLowerCase().includes(kw) ||
-        String(r.cost_center || '').toLowerCase().includes(kw) ||
-        String(r.org_code || '').toLowerCase().includes(kw)
+        String(r.full_path || '').toLowerCase().includes(kw) ||
+        String(r.org_code || '').toLowerCase().includes(kw) ||
+        String(r.l1_branch || '').toLowerCase().includes(kw)
       );
     return {
       CALL: filter(detailData.CALL),
@@ -288,22 +283,19 @@ export default function L1SummaryPage() {
               summary={() => grandTotal ? (
                 <Table.Summary.Row>
                   <Table.Summary.Cell index={0}><strong>{t('l1Summary.grandTotalRow')}</strong></Table.Summary.Cell>
-                  <Table.Summary.Cell index={1} />
-                  <Table.Summary.Cell index={2} align="right">{money(grandTotal.platform_fee)}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={3} align="right">{money(grandTotal.monthly_rent_code)}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={4} align="right">{dur(grandTotal.domestic_duration)}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={5} align="right">{dur(grandTotal.transfer_duration)}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={6} align="right">{money(grandTotal.domestic_fee)}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={7} align="right">{dur(grandTotal.international_duration)}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={8} align="right">{money(grandTotal.international_fee)}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={9} align="right">{money(grandTotal.call_subtotal)}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={10} align="right">{money(grandTotal.recording_fee)}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={11} align="right">{money(grandTotal.crbt_fee)}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={12} align="right">{money(grandTotal.flash_fee)}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={13} align="right"><strong>¥{grandTotal.total_fee.toFixed(2)}</strong></Table.Summary.Cell>
-                  <Table.Summary.Cell index={14} align="right"><strong>{grandTotal.phone_count}</strong></Table.Summary.Cell>
-                  <Table.Summary.Cell index={15} align="right">{grandTotal.confirmed}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={16} align="right">{grandTotal.pending}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={1} align="right">{money(grandTotal.platform_fee)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={2} align="right">{money(grandTotal.monthly_rent_code)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={3} align="right">{dur(grandTotal.domestic_duration)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={4} align="right">{dur(grandTotal.transfer_duration)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={5} align="right">{money(grandTotal.domestic_fee)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={6} align="right">{dur(grandTotal.international_duration)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={7} align="right">{money(grandTotal.international_fee)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={8} align="right">{money(grandTotal.call_subtotal)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={9} align="right">{money(grandTotal.recording_fee)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={10} align="right">{money(grandTotal.crbt_fee)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={11} align="right">{money(grandTotal.flash_fee)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={12} align="right"><strong>¥{grandTotal.total_fee.toFixed(2)}</strong></Table.Summary.Cell>
+                  <Table.Summary.Cell index={13} align="right"><strong>{grandTotal.phone_count}</strong></Table.Summary.Cell>
                 </Table.Summary.Row>
               ) : null}
             />

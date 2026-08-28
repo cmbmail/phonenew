@@ -13,4 +13,5 @@ public class AllocationCalculateRequest {
     private Long billBatchId;
     private Long ownershipBatchId;
     private Long directoryBatchId;
+    private Long allocationDeptBatchId;
 }

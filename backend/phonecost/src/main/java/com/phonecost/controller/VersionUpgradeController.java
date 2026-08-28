@@ -51,13 +51,9 @@ public class VersionUpgradeController {
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<ApiResponse<VersionUpgradePackage>> uploadPackage(
             @RequestParam("file") MultipartFile file,
-            @RequestAttribute("userId") Long userId) {
-        try {
-            VersionUpgradePackage pkg = versionUpgradeService.uploadPackage(file, userId);
-            return ResponseEntity.ok(ApiResponse.ok(pkg));
-        } catch (Exception e) {
-            throw new RuntimeException(e.getMessage(), e);
-        }
+            @RequestAttribute("userId") Long userId) throws Exception {
+        VersionUpgradePackage pkg = versionUpgradeService.uploadPackage(file, userId);
+        return ResponseEntity.ok(ApiResponse.ok(pkg));
     }
 
     /** 应用升级 */

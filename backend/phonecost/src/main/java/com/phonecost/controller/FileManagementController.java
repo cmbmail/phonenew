@@ -35,7 +35,7 @@ public class FileManagementController {
             Map<String, Object> result = fileManagementService.uploadFile(file, userId);
             return ResponseEntity.ok(ApiResponse.ok(result));
         } catch (Exception e) {
-            throw new RuntimeException(e.getMessage(), e);
+            throw new IllegalArgumentException(e.getMessage());
         }
     }
 

@@ -51,6 +51,11 @@ public class DirectoryImportService {
     private final PlatformTransactionManager transactionManager;
     private final JdbcTemplate jdbcTemplate;
 
+    /** Lazy-injected to avoid circular dependency */
+    @org.springframework.context.annotation.Lazy
+    @org.springframework.beans.factory.annotation.Autowired
+    private PhoneOwnershipGeneratorService ownershipGeneratorService;
+
     /** 借调关键词 */
     private static final List<String> SECONDED_KEYWORDS = List.of(
             "借调", "挂职", "交流", "轮岗", "代管", "派驻", "协助"
@@ -109,7 +114,7 @@ public class DirectoryImportService {
      *
      * 注意：不加 @Transactional，避免与异步线程的 REQUIRES_NEW 产生竞态
      */
-    public DirectoryBatch importDirectory(MultipartFile file, Long userId) throws IOException {
+    public DirectoryBatch importDirectory(MultipartFile file, Long userId, String billingMonth) throws IOException {
         String batchNo = "DIR-" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
         String fileName = file.getOriginalFilename();
 
@@ -129,6 +134,7 @@ public class DirectoryImportService {
                     .fileName(fileName != null ? fileName : "")
                     .totalCount(0)
                     .secondedCount(0)
+                    .billingMonth(billingMonth)
                     .importStatus((byte) 0)
                     .importedBy(userId)
                     .build();
@@ -155,7 +161,7 @@ public class DirectoryImportService {
             asyncTx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
 
             try {
-                doImportAsync(tempFile, batchId, batchNo, progress, asyncTx);
+                doImportAsync(tempFile, batchId, batchNo, progress, asyncTx, billingMonth, userId);
             } catch (Exception e) {
                 log.error("Async directory import failed: batch={}", batchNo, e);
                 progress.setStatus("FAILED");
@@ -191,7 +197,8 @@ public class DirectoryImportService {
      * 阶段2: JdbcTemplate 批量 INSERT 入库（每 BATCH_SIZE 条一个事务）
      */
     private void doImportAsync(Path tempFile, Long batchId, String batchNo,
-                               ImportProgress progress, TransactionTemplate txTemplate) {
+                               ImportProgress progress, TransactionTemplate txTemplate,
+                               String billingMonth, Long importedBy) {
         long startTime = System.currentTimeMillis();
 
         // === 阶段1: 流式读取 Excel，解析为数据列表 ===
@@ -213,42 +220,97 @@ public class DirectoryImportService {
         List<Object[]> allRows = new ArrayList<>(100000);
         // 使用 mutable counter for lambda
         int[] secondedCounter = {0};
+        // Auto-detect format by reading header row
+        // New format (v1.12.14+): 部门全路径(0), 用户名称(1), 分机号(2), 号码(3), 备注(4)
+        // Cost center format: 一级分行(0), 部门路径(1), 分摊部门(2), 组织代码(3), 成本中心(4), 备注(5)
+        // Old format: 号码(0), 部门路径(1), 分摊部门(2), 组织代码(3), 成本中心(4), 例外(5), 备注(6)
+        final int[] formatType = {0}; // 0=old, 1=new, 2=cost-center
 
         EasyExcel.read(tempFile.toFile(), new AnalysisEventListener<Map<Integer, String>>() {
             @Override
+            public void invokeHeadMap(Map<Integer, String> headMap, AnalysisContext context) {
+                // Detect format by header columns
+                String firstHeader = headMap != null ? headMap.getOrDefault(0, "") : "";
+                String secondHeader = headMap != null ? headMap.getOrDefault(1, "") : "";
+                if (firstHeader.contains("一级分行") || firstHeader.contains("L1 Branch")) {
+                    formatType[0] = 2; // cost-center format
+                } else if (firstHeader.contains("部门全路径") || firstHeader.contains("Dept Full Path")) {
+                    formatType[0] = 1; // new format (directory)
+                } else {
+                    formatType[0] = 0; // old format
+                }
+                log.info("Directory import format detected: {} (firstHeader='{}', secondHeader='{}')",
+                        formatType[0] == 2 ? "COST_CENTER" : (formatType[0] == 1 ? "NEW" : "OLD"),
+                        firstHeader, secondHeader);
+            }
+
+            @Override
             public void invoke(Map<Integer, String> row, AnalysisContext context) {
-                // New format: 号码(0), 部门路径(1), 分摊部门(2), 组织代码(3), 成本中心(4), 例外(5), 备注(6)
-                String phoneNumber = row.getOrDefault(0, "");
-                String deptPath = row.getOrDefault(1, "");
-                String allocDept = row.getOrDefault(2, "");
-                String orgCode = row.getOrDefault(3, "");
-                String costCenter = row.getOrDefault(4, "");
-                String exception = row.getOrDefault(5, "");
-                String remark = row.getOrDefault(6, "");
+                String deptPath, username, extension, phoneNumber, allocDept, orgCode, costCenter, remark;
 
-                if (phoneNumber == null || phoneNumber.isEmpty() || phoneNumber.startsWith("AIGC:")) return;
+                if (formatType[0] == 2) {
+                    // Cost center format: 一级分行(0), 部门路径(1), 分摊部门(2), 组织代码(3), 成本中心(4), 备注(5)
+                    // l1Branch is column 0, used for reference; dept_path is the authoritative field
+                    deptPath = row.getOrDefault(1, "");
+                    allocDept = row.getOrDefault(2, "");
+                    orgCode = row.getOrDefault(3, "");
+                    costCenter = row.getOrDefault(4, "");
+                    remark = row.getOrDefault(5, "");
+                    username = "";
+                    extension = "";
+                    phoneNumber = "";
+                } else if (formatType[0] == 1) {
+                    // New format: 部门全路径(0), 用户名称(1), 分机号(2), 号码(3), 备注(4)
+                    deptPath = row.getOrDefault(0, "");
+                    username = row.getOrDefault(1, "");
+                    extension = row.getOrDefault(2, "");
+                    phoneNumber = row.getOrDefault(3, "");
+                    remark = row.getOrDefault(4, "");
+                    allocDept = "";
+                    orgCode = "";
+                    costCenter = "";
+                } else {
+                    // Old format: 号码(0), 部门路径(1), 分摊部门(2), 组织代码(3), 成本中心(4), 例外(5), 备注(6)
+                    phoneNumber = row.getOrDefault(0, "");
+                    deptPath = row.getOrDefault(1, "");
+                    allocDept = row.getOrDefault(2, "");
+                    orgCode = row.getOrDefault(3, "");
+                    costCenter = row.getOrDefault(4, "");
+                    remark = row.getOrDefault(6, "");
+                    username = "";
+                    extension = "";
+                }
 
-                // Detect seconded from 例外 column: "是" = 1, otherwise 0
-                byte isSeconded = "是".equals(exception != null ? exception.trim() : "") ? (byte) 1 : (byte) 0;
+                // Skip completely empty rows
+                if ((phoneNumber == null || phoneNumber.isEmpty()) &&
+                    (deptPath == null || deptPath.isEmpty())) return;
+
+                // Skip AIGC watermark rows
+                if (phoneNumber != null && phoneNumber.startsWith("AIGC:")) return;
+                if (deptPath != null && deptPath.startsWith("AIGC:")) return;
+
+                // Detect seconded from dept_path keywords
+                byte isSeconded = 0;
                 String secondedKeyword = "";
-                if (isSeconded == 1) {
-                    secondedCounter[0]++;
-                    // Use remark as keyword if available, otherwise default
-                    secondedKeyword = (remark != null && !remark.trim().isEmpty()) ? remark.trim() : "例外";
+                if (deptPath != null) {
+                    for (String kw : SECONDED_KEYWORDS) {
+                        if (deptPath.contains(kw)) {
+                            isSeconded = 1;
+                            secondedKeyword = kw;
+                            secondedCounter[0]++;
+                            break;
+                        }
+                    }
                 }
 
                 Long orgId = matchOrgFromPathFast(deptPath, orgCodeMap);
-                // Also try matching by org_code column if orgId not found from dept_path
-                if (orgId == null && orgCode != null && !orgCode.trim().isEmpty()) {
-                    orgId = orgCodeMap.get(orgCode.trim());
-                }
 
                 // 收集为 Object[] 供 JdbcTemplate 批量插入
                 allRows.add(new Object[]{
                         batchId,
                         deptPath != null ? deptPath.trim() : "",
-                        "", // username - no longer imported
-                        "", // extension - no longer imported
+                        username != null ? username.trim() : "",
+                        extension != null ? extension.trim() : "",
                         phoneNumber != null ? phoneNumber.trim() : "",
                         allocDept != null ? allocDept.trim() : "",
                         orgCode != null ? orgCode.trim() : "",
@@ -315,6 +377,18 @@ public class DirectoryImportService {
         log.info("Directory import completed: batch={}, total={}, seconded={}, time={}ms (read={}ms, write={}ms)",
                 batchNo, totalCount, finalSecondedCount, elapsed,
                 writeStart - startTime, System.currentTimeMillis() - writeStart);
+
+        // Auto-trigger ownership generation after directory import
+        if (billingMonth != null && !billingMonth.isEmpty()) {
+            try {
+                log.info("Auto-triggering ownership generation for month={} after directory import", billingMonth);
+                Map<String, Object> genResult = ownershipGeneratorService.generate(billingMonth, importedBy);
+                log.info("Auto-generated ownership: {}", genResult);
+            } catch (Exception e) {
+                log.warn("Auto ownership generation failed (non-blocking): {}", e.getMessage());
+                // Don't fail the directory import if ownership generation fails
+            }
+        }
     }
 
     /**
