@@ -272,18 +272,37 @@ export default function L2BranchPage() {
     );
   };
 
-  // ========== 报销单数据（按一级分行维度，与分摊汇总数据源一致） ==========
+  // ========== 报销单数据（按分摊部门汇总，数据源为 4 类分摊明细） ==========
   const reimbursementData = useMemo(() => {
-    return summaryRows
-      .filter(r => r.l1_branch)
-      .map((r, i) => ({ key: i, cost_center: r.l1_branch, fee_subtotal: r.total_fee }))
-      .sort((a, b) => a.cost_center.localeCompare(b.cost_center));
-  }, [summaryRows]);
+    const feeOf = (row: AllocationDetailRow) =>
+      (Number(row.total_fee) || 0) + (Number(row.recording_fee) || 0) + (Number(row.crbt_fee) || 0) + (Number(row.flash_msg_fee) || 0);
+    const map = new Map<string, { l1_branch: string; alloc_dept: string; cost_center: string; fee_subtotal: number }>();
+    for (const st of SHEET_TYPES) {
+      for (const row of detailData[st]) {
+        const dept = (row.alloc_dept || '').trim();
+        if (!dept) continue;
+        const key = dept;
+        const prev = map.get(key);
+        const costCenter = (row.cost_center || '').trim();
+        if (prev) {
+          prev.fee_subtotal += feeOf(row);
+          if (!prev.cost_center && costCenter) prev.cost_center = costCenter;
+        } else {
+          map.set(key, { l1_branch: selectedL1Branch || '', alloc_dept: dept, cost_center: costCenter, fee_subtotal: feeOf(row) });
+        }
+      }
+    }
+    return Array.from(map.values())
+      .map((r, i) => ({ key: i, ...r }))
+      .sort((a, b) => a.alloc_dept.localeCompare(b.alloc_dept));
+  }, [detailData, selectedL1Branch]);
 
   const reimbursementTotal = reimbursementData.reduce((s, r) => s + r.fee_subtotal, 0);
 
   const reimbursementColumns = [
-    { title: t('l1Summary.branchCol'), dataIndex: 'cost_center', key: 'cost_center', width: 200 },
+    { title: t('l1Summary.branchCol'), dataIndex: 'l1_branch', key: 'l1_branch', width: 180 },
+    { title: t('l1Detail.orgCol'), dataIndex: 'alloc_dept', key: 'alloc_dept', width: 200 },
+    { title: t('l1Summary.costCenterCol'), dataIndex: 'cost_center', key: 'cost_center', width: 150 },
     {
       title: t('l2Branch.reimbursementFeeSubtotal'), dataIndex: 'fee_subtotal', key: 'fee_subtotal', width: 150, align: 'right' as const,
       render: (v: number) => <strong>¥{v.toFixed(2)}</strong>,
@@ -447,11 +466,13 @@ export default function L2BranchPage() {
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
             <Button icon={<DownloadOutlined />} onClick={() => {
               const batch = batches.find(b => b.id === selectedBatchId);
-              const data = [...reimbursementData, { key: reimbursementData.length, cost_center: t('l2Branch.reimbursementTotal'), fee_subtotal: reimbursementTotal }];
+              const data = [...reimbursementData, { key: reimbursementData.length, l1_branch: '', alloc_dept: t('l2Branch.reimbursementTotal'), cost_center: '', fee_subtotal: reimbursementTotal }];
               exportCSV(
                 `报销单_${selectedL1Branch || ''}_${batch?.billing_month || ''}`,
                 [
-                  { title: t('l1Summary.branchCol'), dataIndex: 'cost_center' },
+                  { title: t('l1Summary.branchCol'), dataIndex: 'l1_branch' },
+                  { title: t('l1Detail.orgCol'), dataIndex: 'alloc_dept' },
+                  { title: t('l1Summary.costCenterCol'), dataIndex: 'cost_center' },
                   { title: t('l2Branch.reimbursementFeeSubtotal'), dataIndex: 'fee_subtotal', render: (v: number) => v.toFixed(2) },
                 ],
                 data,
@@ -466,8 +487,10 @@ export default function L2BranchPage() {
           pagination={false}
           summary={() => (
             <Table.Summary.Row>
-              <Table.Summary.Cell index={0}><strong>{t('l2Branch.reimbursementTotal')}</strong></Table.Summary.Cell>
-              <Table.Summary.Cell index={1} align="right"><strong>¥{reimbursementTotal.toFixed(2)}</strong></Table.Summary.Cell>
+              <Table.Summary.Cell index={0} />
+              <Table.Summary.Cell index={1}><strong>{t('l2Branch.reimbursementTotal')}</strong></Table.Summary.Cell>
+              <Table.Summary.Cell index={2} />
+              <Table.Summary.Cell index={3} align="right"><strong>¥{reimbursementTotal.toFixed(2)}</strong></Table.Summary.Cell>
             </Table.Summary.Row>
           )}
          />
