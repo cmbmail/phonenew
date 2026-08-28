@@ -20,9 +20,6 @@ const L3SubBranchPage = React.lazy(() => import('./pages/L3SubBranchPage'));
 const FeeAnalysisPage = React.lazy(() => import('./pages/FeeAnalysisPage'));
 const Organization = React.lazy(() => import('./pages/Organization'));
 const PhoneNumberOwnership = React.lazy(() => import('./pages/PhoneNumberOwnership'));
-const DepartmentOwnership = React.lazy(() => import('./pages/DepartmentOwnership'));
-const DirectoryPage = React.lazy(() => import('./pages/DirectoryPage'));
-const ExceptionNumberPage = React.lazy(() => import('./pages/ExceptionNumberPage'));
 const BranchOwnershipPage = React.lazy(() => import('./pages/BranchOwnershipPage'));
 const RecordingDataPage = React.lazy(() => import('./pages/RecordingDataPage'));
 const UserManagement = React.lazy(() => import('./pages/UserManagement'));
@@ -104,9 +101,6 @@ const App: React.FC = () => (
             <Route path="allocation/analysis" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2, 3]}><FeeAnalysisPage /></PrivateRoute></LazyRoute>} />
             <Route path="org" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><Organization /></PrivateRoute></LazyRoute>} />
             <Route path="base/phone-ownership" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><PhoneNumberOwnership /></PrivateRoute></LazyRoute>} />
-            <Route path="base/dept-ownership" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><DepartmentOwnership /></PrivateRoute></LazyRoute>} />
-            <Route path="base/directory" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><DirectoryPage /></PrivateRoute></LazyRoute>} />
-            <Route path="base/exceptions" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><ExceptionNumberPage /></PrivateRoute></LazyRoute>} />
             <Route path="base/branch-ownership" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><BranchOwnershipPage /></PrivateRoute></LazyRoute>} />
             <Route path="base/recording-data" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><RecordingDataPage /></PrivateRoute></LazyRoute>} />
             {/* 系统管理页面：仅管理员(1)和运维(2)可访问 */}

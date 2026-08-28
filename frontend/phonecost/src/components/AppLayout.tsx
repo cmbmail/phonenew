@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Layout, Menu, Avatar, Dropdown, Typography, Popconfirm, Modal, Form, Input, message } from 'antd';
-import { DashboardOutlined, FileTextOutlined, PhoneOutlined, TeamOutlined, SettingOutlined, LogoutOutlined, ToolOutlined, BankOutlined, BranchesOutlined, DatabaseOutlined, NumberOutlined, UserSwitchOutlined, UserOutlined, AuditOutlined, BarChartOutlined, SafetyCertificateOutlined, NotificationOutlined, ContactsOutlined, WarningOutlined, VideoCameraOutlined, SwapOutlined, CloudServerOutlined } from '@ant-design/icons';
+import { DashboardOutlined, FileTextOutlined, PhoneOutlined, TeamOutlined, SettingOutlined, LogoutOutlined, ToolOutlined, BankOutlined, BranchesOutlined, DatabaseOutlined, NumberOutlined, UserOutlined, AuditOutlined, BarChartOutlined, SafetyCertificateOutlined, NotificationOutlined, VideoCameraOutlined, SwapOutlined, CloudServerOutlined } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
 import { getErrorMessage } from '../types/api';
@@ -39,9 +39,6 @@ const allMenuItems: MenuItemDef[] = [
       { key: '/org', icon: <TeamOutlined />, label: '组织架构' },
       { key: '/base/phone-ownership', icon: <NumberOutlined />, label: '号码归属' },
       { key: '/base/branch-ownership', icon: <BankOutlined />, label: '归属分行' },
-      { key: '/base/dept-ownership', icon: <UserSwitchOutlined />, label: '成本中心' },
-      { key: '/base/directory', icon: <ContactsOutlined />, label: '通讯录' },
-      { key: '/base/exceptions', icon: <WarningOutlined />, label: '例外号码' },
       { key: '/base/recording-data', icon: <VideoCameraOutlined />, label: '录音数据' },
     ],
   },
