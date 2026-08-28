@@ -242,6 +242,8 @@ export default {
     summaryTab: '分摊汇总',
     // Summary table columns
     orgNameCol: '二级分行',
+    allocDeptCol: '分摊部门',
+    costCenterCodeCol: '成本中心代码',
     platformFeeCol: '平台使用费',
     monthlyRentCodeCol: '码号月租费',
     domesticDurationCol: '国内呼时长(分)',

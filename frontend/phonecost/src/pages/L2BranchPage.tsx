@@ -68,21 +68,20 @@ export default function L2BranchPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBatchId]);
 
-  // 月份/一级分行变化时加载分摊汇总（数据源与方法与「分摊汇总」页面一致：getL1SummaryData 按一级分行聚合）
+  // 月份/一级分行变化时加载分摊汇总（数据源为分摊明细，需自动加载明细）
   useEffect(() => {
     if (selectedBatchId && selectedL1Branch) {
-      const wasDetailLoaded = detailLoaded;
       setSummaryRows([]);
       setSummaryLoading(true);
       getL1SummaryData(selectedBatchId)
         .then(data => setSummaryRows(data.filter(r => r.l1_branch === selectedL1Branch)))
         .catch(() => message.error(t('l2Branch.fetchFailed')))
         .finally(() => setSummaryLoading(false));
-      // 重置明细
+      // 重置并自动加载明细（分摊汇总和报销单都依赖明细数据）
       setDetailData({ CALL: [], RECORDING: [], CRBT: [], FLASH_MSG: [] });
       setDetailLoaded(false);
       setDetailSearch('');
-      if (wasDetailLoaded) fetchAllDetails();
+      fetchAllDetails();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBatchId, selectedL1Branch]);
@@ -117,17 +116,59 @@ export default function L2BranchPage() {
     }
   }, [selectedBatchId, selectedL1Branch, t]);
 
-  // ========== 分摊汇总 ==========
+  // ========== 分摊汇总（按分摊部门聚合，数据源为 4 类分摊明细） ==========
+  const summaryRowsFromDetail = useMemo(() => {
+    const feeFields: Array<{ sheet: SheetType; fields: string[] }> = [
+      { sheet: 'CALL', fields: ['platform_fee', 'monthly_rent_code', 'domestic_duration', 'transfer_duration', 'domestic_fee', 'international_duration', 'international_fee', 'total_fee'] },
+      { sheet: 'RECORDING', fields: ['recording_fee'] },
+      { sheet: 'CRBT', fields: ['crbt_fee'] },
+      { sheet: 'FLASH_MSG', fields: ['flash_msg_fee'] },
+    ];
+    const map = new Map<string, { l1_branch: string; alloc_dept: string; cost_center: string; platform_fee: number; monthly_rent_code: number; domestic_duration: number; transfer_duration: number; domestic_fee: number; international_duration: number; international_fee: number; call_subtotal: number; recording_fee: number; crbt_fee: number; flash_fee: number; total_fee: number; phone_count: number }>();
+
+    for (const { sheet, fields } of feeFields) {
+      for (const row of detailData[sheet]) {
+        const dept = (row.alloc_dept || '').trim();
+        if (!dept) continue;
+        const key = dept;
+        const costCenter = (row.cost_center || '').trim();
+        let entry = map.get(key);
+        if (!entry) {
+          entry = {
+            l1_branch: selectedL1Branch || '', alloc_dept: dept, cost_center: costCenter,
+            platform_fee: 0, monthly_rent_code: 0, domestic_duration: 0, transfer_duration: 0,
+            domestic_fee: 0, international_duration: 0, international_fee: 0, call_subtotal: 0,
+            recording_fee: 0, crbt_fee: 0, flash_fee: 0, total_fee: 0, phone_count: 0,
+          };
+          map.set(key, entry);
+        }
+        if (!entry.cost_center && costCenter) entry.cost_center = costCenter;
+        for (const f of fields) {
+          entry[f as keyof typeof entry] = (Number(entry[f as keyof typeof entry]) || 0) + (Number(row[f as keyof AllocationDetailRow]) || 0);
+        }
+        if (sheet === 'CALL') entry.phone_count++;
+      }
+    }
+    // call_subtotal = platform_fee + monthly_rent_code + domestic_fee + international_fee
+    for (const entry of map.values()) {
+      entry.call_subtotal = entry.platform_fee + entry.monthly_rent_code + entry.domestic_fee + entry.international_fee;
+      entry.total_fee = entry.call_subtotal + entry.recording_fee + entry.crbt_fee + entry.flash_fee;
+    }
+    return Array.from(map.values())
+      .map((r, i) => ({ ...r, key: i }))
+      .sort((a, b) => a.alloc_dept.localeCompare(b.alloc_dept));
+  }, [detailData, selectedL1Branch]);
+
   const grandTotal = useMemo(() => {
-    if (summaryRows.length === 0) return null;
-    const init: L1SummaryRow = {
-      l1_branch: '', platform_fee: 0, monthly_rent_code: 0,
+    if (summaryRowsFromDetail.length === 0) return null;
+    const init = {
+      platform_fee: 0, monthly_rent_code: 0,
       domestic_duration: 0, transfer_duration: 0, domestic_fee: 0,
       international_duration: 0, international_fee: 0, call_subtotal: 0,
       recording_fee: 0, crbt_fee: 0, flash_fee: 0, total_fee: 0,
       phone_count: 0,
     };
-    return summaryRows.reduce((acc, r) => {
+    return summaryRowsFromDetail.reduce((acc, r) => {
       acc.platform_fee += r.platform_fee;
       acc.monthly_rent_code += r.monthly_rent_code;
       acc.domestic_duration += r.domestic_duration;
@@ -143,10 +184,12 @@ export default function L2BranchPage() {
       acc.phone_count += r.phone_count;
       return acc;
     }, init);
-  }, [summaryRows]);
+  }, [summaryRowsFromDetail]);
 
   const summaryColumns = [
     { title: t('l1Summary.branchCol'), dataIndex: 'l1_branch', key: 'l1_branch', width: 140, fixed: 'left' as const },
+    { title: t('l2Branch.allocDeptCol'), dataIndex: 'alloc_dept', key: 'alloc_dept', width: 180, fixed: 'left' as const },
+    { title: t('l2Branch.costCenterCodeCol'), dataIndex: 'cost_center', key: 'cost_center', width: 140 },
     { title: t('l1Summary.platformFeeCol'), dataIndex: 'platform_fee', key: 'platform_fee', width: 100, align: 'right' as const, render: money },
     { title: t('l1Summary.monthlyRentCodeCol'), dataIndex: 'monthly_rent_code', key: 'monthly_rent_code', width: 100, align: 'right' as const, render: money },
     { title: t('l1Summary.domesticDurationCol'), dataIndex: 'domestic_duration', key: 'domestic_duration', width: 110, align: 'right' as const, render: dur },
@@ -247,7 +290,7 @@ export default function L2BranchPage() {
     };
   }, [filteredDetailData]);
 
-  const summaryDataSource = summaryRows.map((r, i) => ({ ...r, key: i }));
+  const summaryDataSource = summaryRowsFromDetail;
 
   const renderDetailTab = (sheetType: SheetType) => {
     const data = filteredDetailData[sheetType];
@@ -315,15 +358,15 @@ export default function L2BranchPage() {
       label: t('l2Branch.summaryTab'),
       children: (
         <>
-          {selectedBatchId && selectedL1Branch && summaryRows.length > 0 && grandTotal && (
+          {selectedBatchId && selectedL1Branch && summaryRowsFromDetail.length > 0 && grandTotal && (
             <Descriptions size="small" column={4} style={{ marginBottom: 16 }}>
               <Descriptions.Item label={t('l2Branch.descMonth')}>{selectedBatch?.billing_month}</Descriptions.Item>
               <Descriptions.Item label={t('l2Branch.descBranch')}>{selectedL1Branch}</Descriptions.Item>
-              <Descriptions.Item label={t('l1Summary.descBranchCount')}>{summaryRows.length}</Descriptions.Item>
+              <Descriptions.Item label={t('l1Summary.descBranchCount')}>{summaryRowsFromDetail.length}</Descriptions.Item>
               <Descriptions.Item label={t('l2Branch.descTotalFee')}>¥{grandTotal.total_fee.toFixed(2)}</Descriptions.Item>
             </Descriptions>
           )}
-          {selectedBatchId && selectedL1Branch && summaryRows.length > 0 && (
+          {selectedBatchId && selectedL1Branch && summaryRowsFromDetail.length > 0 && (
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
               <Button icon={<DownloadOutlined />} onClick={() => {
                 const batch = batches.find(b => b.id === selectedBatchId);
@@ -331,6 +374,8 @@ export default function L2BranchPage() {
                   `分摊汇总_${batch?.billing_month || ''}`,
                   [
                     { title: t('l1Summary.branchCol'), dataIndex: 'l1_branch' },
+                    { title: t('l2Branch.allocDeptCol'), dataIndex: 'alloc_dept' },
+                    { title: t('l2Branch.costCenterCodeCol'), dataIndex: 'cost_center' },
                     { title: t('l1Summary.platformFeeCol'), dataIndex: 'platform_fee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
                     { title: t('l1Summary.monthlyRentCodeCol'), dataIndex: 'monthly_rent_code', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
                     { title: t('l1Summary.domesticDurationCol'), dataIndex: 'domestic_duration', render: (v: number) => v != null && v !== 0 ? v.toFixed(1) : '' },
@@ -345,41 +390,43 @@ export default function L2BranchPage() {
                     { title: t('l1Summary.totalCol'), dataIndex: 'total_fee', render: (v: number) => v != null ? v.toFixed(2) : '' },
                     { title: t('l1Summary.phoneCountCol'), dataIndex: 'phone_count' },
                   ],
-                  toPlainRecords(summaryRows),
+                  toPlainRecords(summaryRowsFromDetail),
                 );
               }}>{t('l2Branch.exportSummary')}</Button>
             </div>
           )}
-          {selectedBatchId && selectedL1Branch && summaryRows.length > 0 ? (
+          {selectedBatchId && selectedL1Branch && summaryRowsFromDetail.length > 0 ? (
             <Table
               columns={summaryColumns}
               dataSource={summaryDataSource}
               rowKey="key"
               size="small"
-              loading={summaryLoading}
+              loading={summaryLoading || detailLoading}
               pagination={false}
-              scroll={{ x: 1700 }}
+              scroll={{ x: 1900 }}
               summary={() => grandTotal ? (
                 <Table.Summary.Row>
                   <Table.Summary.Cell index={0}><strong>{t('l2Branch.totalRow')}</strong></Table.Summary.Cell>
-                  <Table.Summary.Cell index={1} align="right">{money(grandTotal.platform_fee)}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={2} align="right">{money(grandTotal.monthly_rent_code)}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={3} align="right">{dur(grandTotal.domestic_duration)}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={4} align="right">{dur(grandTotal.transfer_duration)}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={5} align="right">{money(grandTotal.domestic_fee)}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={6} align="right">{dur(grandTotal.international_duration)}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={7} align="right">{money(grandTotal.international_fee)}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={8} align="right">{money(grandTotal.call_subtotal)}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={9} align="right">{money(grandTotal.recording_fee)}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={10} align="right">{money(grandTotal.crbt_fee)}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={11} align="right">{money(grandTotal.flash_fee)}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={12} align="right"><strong>¥{grandTotal.total_fee.toFixed(2)}</strong></Table.Summary.Cell>
-                  <Table.Summary.Cell index={13} align="right"><strong>{grandTotal.phone_count}</strong></Table.Summary.Cell>
+                  <Table.Summary.Cell index={1} />
+                  <Table.Summary.Cell index={2} />
+                  <Table.Summary.Cell index={3} align="right">{money(grandTotal.platform_fee)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={4} align="right">{money(grandTotal.monthly_rent_code)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={5} align="right">{dur(grandTotal.domestic_duration)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={6} align="right">{dur(grandTotal.transfer_duration)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={7} align="right">{money(grandTotal.domestic_fee)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={8} align="right">{dur(grandTotal.international_duration)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={9} align="right">{money(grandTotal.international_fee)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={10} align="right">{money(grandTotal.call_subtotal)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={11} align="right">{money(grandTotal.recording_fee)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={12} align="right">{money(grandTotal.crbt_fee)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={13} align="right">{money(grandTotal.flash_fee)}</Table.Summary.Cell>
+                  <Table.Summary.Cell index={14} align="right"><strong>¥{grandTotal.total_fee.toFixed(2)}</strong></Table.Summary.Cell>
+                  <Table.Summary.Cell index={15} align="right"><strong>{grandTotal.phone_count}</strong></Table.Summary.Cell>
                 </Table.Summary.Row>
               ) : null}
             />
           ) : (
-            !summaryLoading && selectedL1Branch && <Empty description={t('l2Branch.noData')} />
+            !(summaryLoading || detailLoading) && selectedL1Branch && <Empty description={t('l2Branch.noData')} />
           )}
         </>
       ),
