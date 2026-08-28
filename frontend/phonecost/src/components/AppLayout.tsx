@@ -29,6 +29,7 @@ const allMenuItems: MenuItemDef[] = [
       { key: '/allocation/branch', icon: <BankOutlined />, label: '一级分行', roles: [1, 2, 4] },
       { key: '/allocation/sub-branch', icon: <BranchesOutlined />, label: '二级分行', roles: [1, 2, 3, 4] },
       { key: '/allocation/analysis', icon: <BarChartOutlined />, label: '费用分析' },
+      { key: '/maintenance/allocation-ownership', icon: <NumberOutlined />, label: '分摊号码归属', roles: [1, 2] },
     ],
   },
   {
@@ -38,6 +39,10 @@ const allMenuItems: MenuItemDef[] = [
     children: [
       { key: '/org', icon: <TeamOutlined />, label: '组织架构' },
       { key: '/base/recording-data', icon: <VideoCameraOutlined />, label: '录音数据' },
+      { key: '/data-comparison', icon: <SwapOutlined />, label: '数据对比', roles: [1, 2] },
+      { key: '/maintenance/branch-number', icon: <BankOutlined />, label: '分行号码', roles: [1, 2] },
+      { key: '/maintenance/allocation-org', icon: <BranchesOutlined />, label: '号码分摊机构', roles: [1, 2] },
+      { key: '/maintenance/org-code-mapping', icon: <SafetyCertificateOutlined />, label: '组织机构对照表', roles: [1, 2] },
     ],
   },
   {
@@ -60,11 +65,6 @@ const allMenuItems: MenuItemDef[] = [
     roles: [1, 2],
     children: [
       { key: '/settings/data-maintenance', icon: <SafetyCertificateOutlined />, label: '数据维护' },
-      { key: '/data-comparison', icon: <SwapOutlined />, label: '数据对比' },
-      { key: '/maintenance/allocation-ownership', icon: <NumberOutlined />, label: '分摊号码归属' },
-      { key: '/maintenance/branch-number', icon: <BankOutlined />, label: '分行号码' },
-      { key: '/maintenance/allocation-org', icon: <BranchesOutlined />, label: '号码分摊机构' },
-      { key: '/maintenance/org-code-mapping', icon: <SafetyCertificateOutlined />, label: '组织机构对照表' },
     ],
   },
 ];
