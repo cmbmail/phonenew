@@ -1,5 +1,6 @@
 import React from 'react';
 import { Result, Button } from 'antd';
+import i18n from 'i18next';
 
 interface Props {
   children: React.ReactNode;
@@ -34,14 +35,14 @@ class ErrorBoundary extends React.Component<Props, State> {
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300 }}>
           <Result
             status="error"
-            title="页面出错了"
-            subTitle={this.state.error?.message || '发生未知错误'}
+            title={i18n.t('errorBoundary.title')}
+            subTitle={this.state.error?.message || i18n.t('errorBoundary.unknownError')}
             extra={[
               <Button key="retry" type="primary" onClick={this.handleReset}>
-                重试
+                {i18n.t('errorBoundary.retry')}
               </Button>,
               <Button key="home" onClick={() => { window.location.href = '/'; }}>
-                返回首页
+                {i18n.t('errorBoundary.backHome')}
               </Button>,
             ]}
           />

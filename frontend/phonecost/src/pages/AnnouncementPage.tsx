@@ -62,8 +62,35 @@ const PRIORITY_MAP: Record<number, { label: string; color: string }> = {
   2: { label: '紧急', color: COLORS.danger },
 };
 
+// i18n-aware versions used inside the component
+function useStatusMap(t: (key: string) => string) {
+  return {
+    0: { label: t('announcement.statusDraft'), color: COLORS.textMuted, badge: 'default' as const },
+    1: { label: t('announcement.statusPublished'), color: COLORS.confirmed, badge: 'success' as const },
+    2: { label: t('announcement.statusArchived'), color: COLORS.slate, badge: 'warning' as const },
+  };
+}
+
+function useTypeMap(t: (key: string) => string) {
+  return {
+    0: { label: t('announcement.typeNotice'), color: COLORS.slate },
+    1: { label: t('announcement.typeAnnounce'), color: COLORS.sage },
+  };
+}
+
+function usePriorityMap(t: (key: string) => string) {
+  return {
+    0: { label: t('announcement.priorityNormal'), color: 'default' },
+    1: { label: t('announcement.priorityImportant'), color: COLORS.pending },
+    2: { label: t('announcement.priorityUrgent'), color: COLORS.danger },
+  };
+}
+
 export default function AnnouncementPage() {
   const { t } = useTranslation();
+  const statusMap = useStatusMap(t);
+  const typeMap = useTypeMap(t);
+  const priorityMap = usePriorityMap(t);
 
   const [data, setData] = useState<AnnouncementItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -206,7 +233,7 @@ export default function AnnouncementPage() {
       width: 80,
       align: 'center' as const,
       render: (v: number) => {
-        const m = TYPE_MAP[v] || TYPE_MAP[0];
+        const m = typeMap[v] || typeMap[0];
         return <Tag color={m.color} style={{ fontSize: 12 }}>{m.label}</Tag>;
       },
     },
@@ -217,7 +244,7 @@ export default function AnnouncementPage() {
       width: 80,
       align: 'center' as const,
       render: (v: number) => {
-        const m = PRIORITY_MAP[v] || PRIORITY_MAP[0];
+        const m = priorityMap[v] || priorityMap[0];
         return <Tag color={m.color} style={{ fontSize: 12 }}>{m.label}</Tag>;
       },
     },
@@ -228,7 +255,7 @@ export default function AnnouncementPage() {
       width: 90,
       align: 'center' as const,
       render: (v: number) => {
-        const m = STATUS_MAP[v] || STATUS_MAP[0];
+        const m = statusMap[v] || statusMap[0];
         return <Badge status={m.badge} text={<span style={{ fontSize: 12 }}>{m.label}</span>} />;
       },
     },
@@ -426,8 +453,8 @@ export default function AnnouncementPage() {
             <span>{viewingItem?.title}</span>
             {viewingItem && (
               <>
-                <Tag color={TYPE_MAP[viewingItem.type]?.color} style={{ fontSize: 11 }}>{TYPE_MAP[viewingItem.type]?.label}</Tag>
-                <Tag color={PRIORITY_MAP[viewingItem.priority]?.color} style={{ fontSize: 11 }}>{PRIORITY_MAP[viewingItem.priority]?.label}</Tag>
+                <Tag color={typeMap[viewingItem.type]?.color} style={{ fontSize: 11 }}>{typeMap[viewingItem.type]?.label}</Tag>
+                <Tag color={priorityMap[viewingItem.priority]?.color} style={{ fontSize: 11 }}>{priorityMap[viewingItem.priority]?.label}</Tag>
                 {viewingItem.pinned === 1 && <Tag color={COLORS.pending} style={{ fontSize: 11 }}><PushpinOutlined /> {t('announcement.pinnedYes')}</Tag>}
               </>
             )}
@@ -442,7 +469,7 @@ export default function AnnouncementPage() {
           <div style={{ padding: '8px 0' }}>
             <div style={{ display: 'flex', gap: 24, marginBottom: 12, color: COLORS.textMuted, fontSize: 13 }}>
               <span>{t('announcement.colAuthor')}: {viewingItem.author_name || '-'}</span>
-              <span>{t('announcement.colStatus')}: {STATUS_MAP[viewingItem.status]?.label}</span>
+              <span>{t('announcement.colStatus')}: {statusMap[viewingItem.status]?.label}</span>
               <span>{t('announcement.colCreatedAt')}: {dayjs(viewingItem.created_at).format('YYYY-MM-DD HH:mm')}</span>
               {viewingItem.published_at && (
                 <span>{t('announcement.colPublishedAt')}: {dayjs(viewingItem.published_at).format('YYYY-MM-DD HH:mm')}</span>

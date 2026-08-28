@@ -3,6 +3,7 @@ import { Card, Table, Tag, Descriptions, Drawer, message } from 'antd';
 import { SafetyCertificateOutlined, BankOutlined, EyeOutlined } from '@ant-design/icons';
 import { apiGet } from '../lib/request';
 import { COLORS } from '../theme/morandi';
+import { useTranslation } from 'react-i18next';
 
 interface DataScope {
   scope_type: string;
@@ -53,7 +54,17 @@ const ACCESS_MODE_STYLE: Record<string, { color: string }> = {
   '只读': { color: COLORS.slate },
 };
 
+// i18n-aware versions
+function useAccessModeStyle(t: (k: string) => string) {
+  return {
+    [t('roleMgmt.accessReadWrite')]: { color: COLORS.confirmed },
+    [t('roleMgmt.accessReadOnly')]: { color: COLORS.slate },
+  };
+}
+
 export default function RoleManagement() {
+  const { t } = useTranslation();
+  const accessModeStyle = useAccessModeStyle(t);
   const [roles, setRoles] = useState<RoleItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedRole, setSelectedRole] = useState<RoleItem | null>(null);
@@ -64,11 +75,11 @@ export default function RoleManagement() {
     setLoading(true);
     apiGet<RoleItem[]>('/roles')
       .then(setRoles)
-      .catch(() => { setRoles([]); message.error('加载角色列表失败'); })
+      .catch(() => { setRoles([]); message.error(t('roleMgmt.fetchRolesFailed')); })
       .finally(() => setLoading(false));
     apiGet<PermissionsData>('/roles/permissions')
       .then(setPermissions)
-      .catch(() => { message.error('加载权限矩阵失败'); });
+      .catch(() => { message.error(t('roleMgmt.fetchPermissionsFailed')); });
   }, []);
 
   const columns = [
@@ -80,25 +91,25 @@ export default function RoleManagement() {
       render: (id: number) => <Tag color={ROLE_COLORS[id]}>{id}</Tag>,
     },
     {
-      title: '角色编码',
+      title: t('roleMgmt.colCode'),
       dataIndex: 'code',
       key: 'code',
       width: 120,
       render: (code: string) => <code style={{ background: '#f5f5f5', padding: '2px 8px', borderRadius: 4, fontSize: 12 }}>{code}</code>,
     },
     {
-      title: '角色名称',
+      title: t('roleMgmt.colName'),
       dataIndex: 'name',
       key: 'name',
       width: 140,
     },
     {
-      title: '描述',
+      title: t('roleMgmt.colDescription'),
       dataIndex: 'description',
       key: 'description',
     },
     {
-      title: '用户数',
+      title: t('roleMgmt.colUserCount'),
       dataIndex: 'user_count',
       key: 'user_count',
       width: 90,
@@ -127,11 +138,11 @@ export default function RoleManagement() {
       </Card>
 
       {/* 数据范围 */}
-      <Card title="数据范围（组织机构访问权限）" style={{ marginTop: 16 }}>
+      <Card title={t('roleMgmt.dataScopeTitle')} style={{ marginTop: 16 }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
           {permissions?.data_scopes?.map(ds => {
             const scopeCfg = SCOPE_TYPE_CONFIG[ds.scope_type] || SCOPE_TYPE_CONFIG.SINGLE;
-            const modeStyle = ACCESS_MODE_STYLE[ds.access_mode] || ACCESS_MODE_STYLE['只读'];
+            const modeStyle = accessModeStyle[ds.access_mode] || accessModeStyle[t('roleMgmt.accessReadOnly')];
             const roleInfo = permissions?.roles?.find(r => r.id === ds.role_id);
             return (
               <div
@@ -152,7 +163,7 @@ export default function RoleManagement() {
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                   <Tag color={ROLE_COLORS[ds.role_id]} style={{ margin: 0 }}>
-                    {scopeCfg.icon} {roleInfo?.name || `角色${ds.role_id}`}
+                    {scopeCfg.icon} {roleInfo?.name || t('roleMgmt.roleFallback', { id: ds.role_id })}
                   </Tag>
                   <Tag style={{ margin: 0, color: modeStyle.color, borderColor: modeStyle.color }}>
                     {ds.access_mode}
@@ -189,11 +200,11 @@ export default function RoleManagement() {
 
       {/* 权限矩阵 */}
       {permissions && (
-        <Card title="权限矩阵" style={{ marginTop: 16 }}>
+        <Card title={t('roleMgmt.permissionMatrixTitle')} style={{ marginTop: 16 }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ background: COLORS.cream }}>
-                <th style={{ padding: '8px 12px', borderBottom: `2px solid ${COLORS.border}`, textAlign: 'left', whiteSpace: 'nowrap' }}>功能模块 / 权限</th>
+                <th style={{ padding: '8px 12px', borderBottom: `2px solid ${COLORS.border}`, textAlign: 'left', whiteSpace: 'nowrap' }}>{t('roleMgmt.colModulePermission')}</th>
                 {permissions.roles.map(r => (
                   <th key={r.id} style={{ padding: '8px 12px', borderBottom: `2px solid ${COLORS.border}`, textAlign: 'center', whiteSpace: 'nowrap', minWidth: 80 }}>
                     <Tag color={ROLE_COLORS[r.id]}>{r.name}</Tag>
@@ -249,13 +260,13 @@ export default function RoleManagement() {
           <>
             <Descriptions column={1} size="small" style={{ marginBottom: 24 }}>
               <Descriptions.Item label="ID">{selectedRole.id}</Descriptions.Item>
-              <Descriptions.Item label="角色编码">
+              <Descriptions.Item label={t('roleMgmt.colCode')}>
                 <code style={{ background: '#f5f5f5', padding: '2px 8px', borderRadius: 4 }}>{selectedRole.code}</code>
               </Descriptions.Item>
-              <Descriptions.Item label="角色名称">{selectedRole.name}</Descriptions.Item>
-              <Descriptions.Item label="描述">{selectedRole.description}</Descriptions.Item>
-              <Descriptions.Item label="用户数"><strong>{selectedRole.user_count}</strong></Descriptions.Item>
-              <Descriptions.Item label="权限数"><strong>{selectedRole.permissions.length}</strong></Descriptions.Item>
+              <Descriptions.Item label={t('roleMgmt.colName')}>{selectedRole.name}</Descriptions.Item>
+              <Descriptions.Item label={t('roleMgmt.colDescription')}>{selectedRole.description}</Descriptions.Item>
+              <Descriptions.Item label={t('roleMgmt.colUserCount')}><strong>{selectedRole.user_count}</strong></Descriptions.Item>
+              <Descriptions.Item label={t('roleMgmt.colPermissionCount')}><strong>{selectedRole.permissions.length}</strong></Descriptions.Item>
             </Descriptions>
 
             {/* 数据范围 */}
@@ -263,19 +274,19 @@ export default function RoleManagement() {
               <div style={{ marginBottom: 24 }}>
                 <div style={{ fontWeight: 600, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
                   <BankOutlined style={{ color: ROLE_COLORS[selectedRole.id] }} />
-                  数据范围
+                  {t('roleMgmt.dataScopeLabel')}
                 </div>
                 <div style={{ background: COLORS.cream, borderRadius: 8, padding: 16 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                     <Tag color={ROLE_COLORS[selectedRole.id]}>{selectedRole.data_scope.label}</Tag>
-                    <Tag style={{ color: ACCESS_MODE_STYLE[selectedRole.data_scope.access_mode]?.color, borderColor: ACCESS_MODE_STYLE[selectedRole.data_scope.access_mode]?.color }}>
+                    <Tag style={{ color: accessModeStyle[selectedRole.data_scope.access_mode]?.color, borderColor: accessModeStyle[selectedRole.data_scope.access_mode]?.color }}>
                       {selectedRole.data_scope.access_mode}
                     </Tag>
                   </div>
                   <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 10 }}>
                     {selectedRole.data_scope.description}
                   </div>
-                  <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 6, color: COLORS.textDark }}>可访问组织层级</div>
+                  <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 6, color: COLORS.textDark }}>{t('roleMgmt.orgLevelsLabel')}</div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 12 }}>
                     {selectedRole.data_scope.org_levels.map(level => (
                       <span
@@ -293,7 +304,7 @@ export default function RoleManagement() {
                       </span>
                     ))}
                   </div>
-                  <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 6, color: COLORS.textDark }}>访问规则</div>
+                  <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 6, color: COLORS.textDark }}>{t('roleMgmt.accessRulesLabel')}</div>
                   <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: COLORS.textMuted, lineHeight: '22px' }}>
                     {selectedRole.data_scope.details.map((d, i) => (
                       <li key={i}>{d}</li>
@@ -306,7 +317,7 @@ export default function RoleManagement() {
             {/* 权限清单 */}
             {permissions && (
               <div>
-                <div style={{ fontWeight: 600, marginBottom: 12 }}>权限清单</div>
+                <div style={{ fontWeight: 600, marginBottom: 12 }}>{t('roleMgmt.permissionListLabel')}</div>
                 {permissions.modules.map(mod => {
                   const granted = mod.permissions.filter(p => selectedRole.permissions.includes(p.key));
                   if (granted.length === 0) return null;

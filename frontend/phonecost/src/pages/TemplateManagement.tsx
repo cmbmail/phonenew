@@ -350,7 +350,7 @@ export default function TemplateManagement() {
           dataSource={templates}
           rowKey="id"
           loading={loading}
-          pagination={{ pageSize, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'], showTotal: (total) => `共 ${total} 条`, onChange: (_p, s) => setPageSize(s) }}
+          pagination={{ pageSize, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'], showTotal: (total) => t('common.paginationTotal', { total }), onChange: (_p, s) => setPageSize(s) }}
           size="small"
         />
       </Card>

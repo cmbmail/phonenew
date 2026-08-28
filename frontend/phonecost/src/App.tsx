@@ -3,8 +3,6 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ConfigProvider, Spin, Result, Button } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
-import enUS from 'antd/locale/en_US';
-import { useTranslation } from 'react-i18next';
 import { morandiTheme } from './theme/morandi';
 import { useAuthStore } from './store/auth';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -79,9 +77,7 @@ const PrivateRoute: React.FC<{
 };
 
 const AntdLocaleWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { i18n } = useTranslation();
-  const locale = i18n.language?.startsWith('en') ? enUS : zhCN;
-  return <ConfigProvider locale={locale} theme={morandiTheme}>{children}</ConfigProvider>;
+  return <ConfigProvider locale={zhCN} theme={morandiTheme}>{children}</ConfigProvider>;
 };
 
 const App: React.FC = () => (
