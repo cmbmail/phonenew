@@ -109,7 +109,7 @@ public class BillTemplateService {
     @Transactional
     public void deleteTemplate(Long id) {
         BillTemplate template = getTemplate(id);
-        if (template.getIsActive() == 1) {
+        if (template.getIsActive() != null && template.getIsActive() == 1) {
             throw new IllegalArgumentException("不能删除当前活跃模板，请先切换到其他模板");
         }
         template.setDeletedAt(LocalDateTime.now());
@@ -137,19 +137,13 @@ public class BillTemplateService {
         return template;
     }
 
-    private static String toJson(Object obj) {
-        try { return MAPPER.writeValueAsString(obj); }
-        catch (Exception e) { return "{}"; }
-    }
-
     /**
      * Validate sheet_configs JSON structure
      * Must be a JSON array of sheet config objects with required fields
      */
     private void validateSheetConfigs(String sheetConfigsJson) {
         try {
-            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-            List<Map<String, Object>> sheets = mapper.readValue(sheetConfigsJson,
+            List<Map<String, Object>> sheets = MAPPER.readValue(sheetConfigsJson,
                     new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() {});
 
             if (sheets.isEmpty()) {

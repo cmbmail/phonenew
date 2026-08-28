@@ -1582,34 +1582,6 @@ public class BranchBillExportService {
         if (id == null) return null;
         return buildOrgMap().get(id);
     }
-    // ==================== Raw Data JSON Helpers ====================
-
-    private BigDecimal getRawDecimal(String rawData, String field) {
-        if (rawData == null || rawData.isEmpty() || rawData.equals("{}")) return null;
-        try {
-            Map<String, Object> map = MAPPER.readValue(rawData, new TypeReference<Map<String, Object>>() {});
-            Object val = map.get(field);
-            if (val == null) return null;
-            if (val instanceof Number) return BigDecimal.valueOf(((Number) val).doubleValue());
-            if (val instanceof String) { String s = ((String) val).trim(); return s.isEmpty() ? null : new BigDecimal(s); }
-            return null;
-        } catch (Exception e) { return null; }
-    }
-
-    private BigDecimal getRawDecimalOrZero(String rawData, String field) {
-        BigDecimal val = getRawDecimal(rawData, field);
-        return val != null ? val : ZERO;
-    }
-
-    private String getRawString(String rawData, String field) {
-        if (rawData == null || rawData.isEmpty() || rawData.equals("{}")) return "";
-        try {
-            Map<String, Object> map = MAPPER.readValue(rawData, new TypeReference<Map<String, Object>>() {});
-            Object val = map.get(field);
-            return val != null ? val.toString() : "";
-        } catch (Exception e) { return ""; }
-    }
-
     private Map<String, Object> parseRawData(String rawData) {
         if (rawData == null || rawData.isEmpty() || rawData.equals("{}")) return Collections.emptyMap();
         try {

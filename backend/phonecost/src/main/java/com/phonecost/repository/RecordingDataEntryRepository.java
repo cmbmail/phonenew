@@ -33,11 +33,6 @@ public interface RecordingDataEntryRepository extends JpaRepository<RecordingDat
            "WHERE b.billingMonth = :billingMonth AND e.deletedAt IS NULL AND b.deletedAt IS NULL")
     Page<RecordingDataEntry> findByBillingMonth(@Param("billingMonth") String billingMonth, Pageable pageable);
 
-    // Count all entries for a billing month
-    @Query("SELECT COUNT(e) FROM RecordingDataEntry e JOIN RecordingDataBatch b ON e.batchId = b.id " +
-           "WHERE b.billingMonth = :billingMonth AND e.deletedAt IS NULL AND b.deletedAt IS NULL")
-    long countByBillingMonth(@Param("billingMonth") String billingMonth);
-
     // All active entries for a given billing month (non-paginated, for export/service use)
     @Query("SELECT e FROM RecordingDataEntry e JOIN RecordingDataBatch b ON e.batchId = b.id " +
            "WHERE b.billingMonth = :billingMonth AND e.deletedAt IS NULL AND b.deletedAt IS NULL ORDER BY e.id")

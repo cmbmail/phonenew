@@ -19,6 +19,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -627,6 +628,7 @@ public class AllocationOrgController {
 
     @DeleteMapping("/batches/{id}")
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    @Transactional
     public ResponseEntity<ApiResponse<Map<String, Object>>> deleteBatch(
             @PathVariable Long id,
             @RequestAttribute("userId") Long userId) {

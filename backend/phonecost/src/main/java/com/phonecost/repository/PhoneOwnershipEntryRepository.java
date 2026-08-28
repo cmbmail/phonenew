@@ -91,12 +91,6 @@ public interface PhoneOwnershipEntryRepository extends JpaRepository<PhoneOwners
     @Query("SELECT e FROM PhoneOwnershipEntry e WHERE e.isException = 0 AND e.deletedAt IS NULL ORDER BY e.id DESC")
     Page<PhoneOwnershipEntry> findAllNonExceptionEntries(Pageable pageable);
 
-    @Query("SELECT e FROM PhoneOwnershipEntry e WHERE e.isException = 0 AND e.deletedAt IS NULL " +
-            "AND (e.phoneNumber LIKE %:keyword% OR e.extension LIKE %:keyword% " +
-            "OR e.fullPath LIKE %:keyword% OR e.l1Branch LIKE %:keyword% OR e.l2Branch LIKE %:keyword%) " +
-            "ORDER BY e.id DESC")
-    Page<PhoneOwnershipEntry> searchAllNonExceptionEntries(@Param("keyword") String keyword, Pageable pageable);
-
     // All non-exception entries for export (no pagination)
     @Query("SELECT e FROM PhoneOwnershipEntry e WHERE e.isException = 0 AND e.deletedAt IS NULL ORDER BY e.id DESC")
     List<PhoneOwnershipEntry> findAllNonExceptionEntriesForExport();

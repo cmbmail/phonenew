@@ -10,9 +10,7 @@ import com.phonecost.repository.SysOrganizationRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.support.TransactionTemplate;
-
-import java.util.stream.Collectors;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -40,22 +38,19 @@ public class BranchNumberPushService {
     private final SysOrganizationRepository sysOrganizationRepo;
     private final DataScopeService dataScopeService;
     private final JdbcTemplate jdbcTemplate;
-    private final TransactionTemplate txTemplate;
 
     public BranchNumberPushService(PhoneOwnershipEntryRepository ownershipEntryRepo,
                                    AllocationOrgBatchRepository allocationOrgBatchRepo,
                                    AllocationOrgEntryRepository allocationOrgEntryRepo,
                                    SysOrganizationRepository sysOrganizationRepo,
                                    DataScopeService dataScopeService,
-                                   JdbcTemplate jdbcTemplate,
-                                   TransactionTemplate txTemplate) {
+                                   JdbcTemplate jdbcTemplate) {
         this.ownershipEntryRepo = ownershipEntryRepo;
         this.allocationOrgBatchRepo = allocationOrgBatchRepo;
         this.allocationOrgEntryRepo = allocationOrgEntryRepo;
         this.sysOrganizationRepo = sysOrganizationRepo;
         this.dataScopeService = dataScopeService;
         this.jdbcTemplate = jdbcTemplate;
-        this.txTemplate = txTemplate;
     }
 
     /**
@@ -69,6 +64,7 @@ public class BranchNumberPushService {
      * @param userId      当前操作用户
      * @return 推送结果统计
      */
+    @Transactional
     public Map<String, Object> pushFromBranchNumber(String sourceMonth, String targetMonth, Long userId) {
         if (sourceMonth == null || sourceMonth.isBlank()) {
             throw new IllegalArgumentException("推送需要提供分行号码月份 sourceMonth");

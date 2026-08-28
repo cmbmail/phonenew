@@ -111,43 +111,4 @@ public class DataScopeService {
         return null;
     }
 
-    /**
-     * 快捷方法：从请求属性(role, orgId)直接构建DataScope，不需要查库
-     * 适用于已经从JWT中获取了role和orgId的场景
-     */
-    public DataScope getDataScopeFromContext(Byte role, Long orgId) {
-        if (role == null) {
-            return DataScope.singleOrgScope(-999L);
-        }
-
-        if (role == (byte)1 || role == (byte)4) {
-            return DataScope.allScope();
-        }
-
-        if (orgId == null || orgId == 0) {
-            return DataScope.singleOrgScope(-999L);
-        }
-
-        SysOrganization org = orgRepository.findByIdAndDeletedAtIsNull(orgId).orElse(null);
-        if (org == null || org.getPath() == null) {
-            return DataScope.singleOrgScope(-999L);
-        }
-
-        if (role == (byte)2) {
-            List<SysOrganization> descendants = orgRepository
-                    .findByPathStartingWithAndDeletedAtIsNull(org.getPath());
-            List<Long> orgIds = descendants.stream().map(SysOrganization::getId).toList();
-            return DataScope.subtreeScope(org.getPath(), orgIds);
-        }
-
-        if (role == (byte)3) {
-            // DEPARTMENT: 本部门及所有下级子组织
-            List<SysOrganization> descendants2 = orgRepository
-                    .findByPathStartingWithAndDeletedAtIsNull(org.getPath());
-            List<Long> orgIds2 = descendants2.stream().map(SysOrganization::getId).toList();
-            return DataScope.subtreeScope(org.getPath(), orgIds2);
-        }
-
-        return DataScope.singleOrgScope(-999L);
-    }
 }

@@ -11,6 +11,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -66,6 +67,7 @@ public class OrgCodeMappingController {
 
     @PostMapping("")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_BRANCH')")
+    @Transactional
     public ResponseEntity<ApiResponse<Map<String, Object>>> create(
             @RequestBody Map<String, String> body,
             @RequestAttribute("userId") Long userId) {
@@ -90,6 +92,7 @@ public class OrgCodeMappingController {
 
     @PutMapping("/{id}")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_BRANCH')")
+    @Transactional
     public ResponseEntity<ApiResponse<Map<String, Object>>> update(
             @PathVariable Long id,
             @RequestBody Map<String, String> body,
@@ -148,14 +151,17 @@ public class OrgCodeMappingController {
         List<Long> idList = ids.stream().map(Number::longValue).toList();
         List<OrgCodeMapping> records = repository.findAllById(idList);
         LocalDateTime now = LocalDateTime.now();
-        int count = 0;
+        List<OrgCodeMapping> toDelete = new ArrayList<>();
         for (OrgCodeMapping m : records) {
             if (m.getDeletedAt() == null) {
                 m.setDeletedAt(now);
-                repository.save(m);
-                count++;
+                toDelete.add(m);
             }
         }
+        if (!toDelete.isEmpty()) {
+            repository.saveAll(toDelete);
+        }
+        int count = toDelete.size();
         Map<String, Object> result = new HashMap<>();
         result.put("deleted", count);
         return ResponseEntity.ok(ApiResponse.ok(result));
@@ -165,6 +171,7 @@ public class OrgCodeMappingController {
 
     @PostMapping("/import")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_BRANCH')")
+    @Transactional
     public ResponseEntity<ApiResponse<Map<String, Object>>> importExcel(
             @RequestParam("file") MultipartFile file,
             @RequestAttribute("userId") Long userId) {

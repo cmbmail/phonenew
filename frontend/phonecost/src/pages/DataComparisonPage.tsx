@@ -403,14 +403,6 @@ const DataComparisonPage: React.FC = () => {
     }
   };
 
-  const handleCurImport = useCallback(async () => {
-    // deprecated - kept for reference
-  }, []);
-
-  const handleExcImport = useCallback(async () => {
-    // deprecated - kept for reference
-  }, []);
-
   // ==================== Initial load on mount ====================
   useEffect(() => {
     fetchCurBatches('');

@@ -71,18 +71,7 @@ public interface BillDetailRepository extends JpaRepository<BillDetail, Long> {
            "OR LOWER(bd.extension) LIKE LOWER(CONCAT('%', :keyword, '%')))")
     Page<BillDetail> searchByBatchIdAndSheetTypeAndOrgIdsAndKeyword(@Param("batchId") Long batchId, @Param("sheetType") String sheetType, @Param("orgIds") List<Long> orgIds, @Param("keyword") String keyword, Pageable pageable);
 
-    /**
-     * Find distinct phone numbers across all batches (lightweight query for phone list)
-     */
-    @Query("SELECT DISTINCT bd.phoneNumber FROM BillDetail bd WHERE bd.deletedAt IS NULL")
-    List<String> findDistinctPhoneNumbers();
-
-    /**
-     * Count bill details by batch and org IDs without loading entities
-     */
-    long countByBatchIdAndOrgIdInAndDeletedAtIsNull(Long batchId, List<Long> orgIds);
-
-    /**
+        /**
      * Soft-delete all details for a given batch
      */
     @Modifying(clearAutomatically = true)

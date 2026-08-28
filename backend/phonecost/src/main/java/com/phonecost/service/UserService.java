@@ -79,20 +79,6 @@ public class UserService {
         log.info("Password reset for user: id={}", id);
     }
 
-    @Transactional
-    public void changePassword(Long userId, String oldPassword, String newPassword) {
-        SysUser user = userRepository.findByIdAndDeletedAtIsNull(userId)
-                .orElseThrow(() -> new IllegalArgumentException("用户不存在"));
-        if (!passwordEncoder.matches(oldPassword, user.getPassword())) {
-            throw new IllegalArgumentException("原密码错误");
-        }
-        // M-02 fix: enforce password complexity on self-service change
-        validatePasswordComplexity(newPassword);
-        user.setPassword(passwordEncoder.encode(newPassword));
-        user.setMustChangePwd((byte) 0);
-        userRepository.save(user);
-    }
-
     /** Validate password meets complexity requirements (shared with AuthController) */
     private void validatePasswordComplexity(String password) {
         if (password == null || password.length() < 8) {

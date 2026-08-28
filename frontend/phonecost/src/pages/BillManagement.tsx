@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { COLORS } from '../theme/morandi';
-import { Card, Table, Tag, Button, Space, Modal, message, Select, Dropdown, Row, Col, Progress, Popconfirm, DatePicker, Tabs, Input } from 'antd';
+import { Card, Table, Button, Space, Modal, message, Select, Dropdown, Row, Col, Progress, Popconfirm, DatePicker, Tabs, Input } from 'antd';
 import type { ColumnType } from 'antd/es/table';
 import { UploadOutlined, DeleteOutlined, DownloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { useAuthStore } from '../store/auth';
@@ -27,7 +27,6 @@ import {
   getAllocationSnapshot,
   getAllocationResults,
 } from '../api/allocation';
-import { CONFIRM_STATUS_MAP } from '../types/allocation';
 import type { AllocationResult, OwnershipBatch, DirectoryBatch } from '../types/allocation';
 import { useImportProgress } from '../hooks/useImportProgress';
 import { useTranslation } from 'react-i18next';
@@ -81,13 +80,11 @@ export default function BillManagement() {
 
   // ==================== Allocation state (preserved for calculate/confirm/withdraw) ====================
   const [results, setResults] = useState<AllocationResult[]>([]);
-  const [_resultsLoading, setResultsLoading] = useState(false);
   const [calculatingId, setCalculatingId] = useState<number | null>(null);
   const [withdrawModal, setWithdrawModal] = useState<{ open: boolean; result?: AllocationResult }>({ open: false });
   const [withdrawReason, setWithdrawReason] = useState('');
 
-  // Fee summary search
-  
+
 
   // Bill detail search
   const [detailSearch, setDetailSearch] = useState('');
@@ -146,14 +143,11 @@ export default function BillManagement() {
 
   // Fetch allocation results
   const fetchResults = useCallback(async (batchId: number) => {
-    setResultsLoading(true);
     try {
       const data = await getAllocationResults(batchId);
       setResults(data.content);
     } catch {
       message.error(t('bill.fetchResultsFailed'));
-    } finally {
-      setResultsLoading(false);
     }
   }, [t]);
 
@@ -494,57 +488,7 @@ export default function BillManagement() {
     FLASH_MSG: flashColumns,
   };
 
-  // ==================== Allocation columns (for the allocation tab) ====================
-
-  const _resultColumns = [
-    {
-      title: t('bill.orgLabel'), dataIndex: 'org_name', key: 'org_name', width: 180,
-      render: (name: string, r: AllocationResult) =>
-        r.org_id === -1 ? <Tag color={COLORS.danger}>{t('bill.unassigned')}</Tag> : name,
-    },
-    { title: t('bill.phoneCount'), dataIndex: 'phone_count', key: 'phone_count', width: 80 },
-    {
-      title: t('bill.monthlyRent'), dataIndex: 'monthly_rent', key: 'monthly_rent', width: 90,
-      render: (v: number) => v != null && v !== 0 ? `¥${v.toFixed(2)}` : '-',
-    },
-    {
-      title: t('bill.callFee'), dataIndex: 'call_fee', key: 'call_fee', width: 90,
-      render: (v: number) => v != null && v !== 0 ? `¥${v.toFixed(2)}` : '-',
-    },
-    {
-      title: t('bill.totalFee'), dataIndex: 'total_fee', key: 'total_fee', width: 100,
-      render: (v: number) => <strong>{v != null ? `¥${v.toFixed(2)}` : '-'}</strong>,
-    },
-    {
-      title: t('bill.confirmStatus'), dataIndex: 'confirm_status', key: 'confirm_status', width: 90,
-      render: (s: number) => {
-        const info = CONFIRM_STATUS_MAP[s] || { label: t('bill.unknown'), color: 'default' };
-        return <Tag color={info.color}>{info.label}</Tag>;
-      },
-    },
-    {
-      title: t('bill.actions'), key: 'actions', width: 140,
-      render: (_unused: unknown, record: AllocationResult) => (
-        <Space size="small">
-          {record.confirm_status === 0 && (
-            <Button size="small" type="primary" onClick={() => handleConfirm(record.batch_id, record.org_id)}>
-              {t('bill.confirmBtn')}
-            </Button>
-          )}
-          {record.confirm_status === 1 && (
-            <Button size="small" danger onClick={() => setWithdrawModal({ open: true, result: record })}>
-              {t('bill.withdrawBtn')}
-            </Button>
-          )}
-        </Space>
-      ),
-    },
-  ];
-
   // ==================== Render ====================
-
-  const _totalFee = results.reduce((sum, r) => sum + (r.total_fee || 0), 0);
-  const _confirmedCount = results.filter(r => r.confirm_status === 1).length;
 
   return (
     <div>

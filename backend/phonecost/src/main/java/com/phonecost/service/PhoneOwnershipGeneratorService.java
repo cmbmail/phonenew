@@ -94,7 +94,7 @@ public class PhoneOwnershipGeneratorService {
             List<PhoneOwnershipEntry> branchContent = branchPageData.getContent();
             if (branchContent.isEmpty()) break;
             for (PhoneOwnershipEntry entry : branchContent) {
-                if (entry.getIsException() == 0 && entry.getPhoneNumber() != null && !entry.getPhoneNumber().isEmpty()) {
+                if (entry.getIsException() != null && entry.getIsException() == 0 && entry.getPhoneNumber() != null && !entry.getPhoneNumber().isEmpty()) {
                     String l1 = entry.getL1Branch();
                     if (l1 != null && !l1.isEmpty()) {
                         phoneToL1Branch.putIfAbsent(normalizePhone(entry.getPhoneNumber()), l1);

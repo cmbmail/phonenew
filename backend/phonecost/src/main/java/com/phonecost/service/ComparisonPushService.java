@@ -9,7 +9,7 @@ import com.phonecost.repository.SysOrganizationRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -39,7 +39,6 @@ public class ComparisonPushService {
     private final SysOrganizationRepository sysOrganizationRepository;
     private final DataScopeService dataScopeService;
     private final JdbcTemplate jdbcTemplate;
-    private final TransactionTemplate txTemplate;
 
     public ComparisonPushService(DirectoryEntryRepository directoryEntryRepository,
                                   DirectoryBatchRepository directoryBatchRepository,
@@ -47,8 +46,7 @@ public class ComparisonPushService {
                                   AllocationOrgEntryRepository allocationOrgEntryRepository,
                                   SysOrganizationRepository sysOrganizationRepository,
                                   DataScopeService dataScopeService,
-                                  JdbcTemplate jdbcTemplate,
-                                  TransactionTemplate txTemplate) {
+                                  JdbcTemplate jdbcTemplate) {
         this.directoryEntryRepository = directoryEntryRepository;
         this.directoryBatchRepository = directoryBatchRepository;
         this.allocationOrgBatchRepository = allocationOrgBatchRepository;
@@ -56,7 +54,6 @@ public class ComparisonPushService {
         this.sysOrganizationRepository = sysOrganizationRepository;
         this.dataScopeService = dataScopeService;
         this.jdbcTemplate = jdbcTemplate;
-        this.txTemplate = txTemplate;
     }
 
     /**
@@ -68,6 +65,7 @@ public class ComparisonPushService {
      * @param userId 当前操作用户
      * @return 推送结果统计
      */
+    @Transactional
     public Map<String, Object> pushDirectoryComparison(String month1, String month2,
                                                         Set<String> types, Long userId) {
         // 1. 构建差异数据
@@ -166,6 +164,7 @@ public class ComparisonPushService {
      * @param userId 当前操作用户
      * @return 推送结果统计
      */
+    @Transactional
     public Map<String, Object> pushExceptionComparison(String month, Long userId) {
         // 1. 构建例外差异数据
         Map<String, Object> full = buildExceptionCompareFull(true, month);

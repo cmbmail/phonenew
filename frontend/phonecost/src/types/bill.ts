@@ -1,5 +1,3 @@
-import { COLORS } from '../theme/morandi';
-
 export interface BillBatch { id: number; batch_no: string; billing_month: string; file_name: string; template_id: number; status: number; total_amount: string; total_count: number; import_status: number; error_message: string | null; imported_by: number; confirmed_at: string | null; confirmed_by: number | null; locked_at: string | null; created_at: string; }
 export interface BillDetail {
   id: number;

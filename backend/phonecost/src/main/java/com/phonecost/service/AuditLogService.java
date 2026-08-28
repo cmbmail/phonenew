@@ -92,10 +92,6 @@ public class AuditLogService {
     }
 
     // Keep backward-compatible overload
-    public Page<AuditLog> listPaged(int page, int size, String action, String username) {
-        return listPaged(page, size, action, username, null, null, null);
-    }
-
     public Page<AuditLog> listPaged(int page, int size, String action, String username,
                                      LocalDateTime startDate, LocalDateTime endDate) {
         return listPaged(page, size, action, username, null, startDate, endDate);

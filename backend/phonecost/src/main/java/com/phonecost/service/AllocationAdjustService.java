@@ -69,6 +69,7 @@ public class AllocationAdjustService {
                                        Long fromOrgId, Long toOrgId,
                                        String reason, Long userId) {
         clearOrgMapCache();
+        try {
         // --- 参数校验 ---
         if (phoneNumber == null || phoneNumber.isBlank()) {
             throw new IllegalArgumentException("号码不能为空");
@@ -201,6 +202,9 @@ public class AllocationAdjustService {
                 batchId, phoneNumber, fromOrgId, toOrgId, totalAmount, userId);
 
         return adjustment;
+        } finally {
+            clearOrgMapCache();
+        }
     }
 
     /**

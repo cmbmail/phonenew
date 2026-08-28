@@ -69,6 +69,8 @@ public class DataImportController {
     private final AllocationOrgEntryRepository allocationOrgEntryRepository;
     private final ComparisonArchiveRepository comparisonArchiveRepository;
 
+    private static final com.fasterxml.jackson.databind.ObjectMapper JSON_MAPPER = new com.fasterxml.jackson.databind.ObjectMapper();
+
     // ==================== 号码归属导入 ====================
 
     @PostMapping("/ownership")
@@ -1058,6 +1060,7 @@ public class DataImportController {
 
     @PutMapping("/ownership/entries/{id}")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_BRANCH')")
+    @Transactional
     public ResponseEntity<ApiResponse<Map<String, Object>>> updateOwnershipEntry(
             @PathVariable Long id,
             @Valid @RequestBody UpdateOwnershipEntryRequest req,
@@ -2125,8 +2128,7 @@ public class DataImportController {
                 archive.setUnchangedCount((Integer) full.get("unchanged"));
                 archive.setTotalCount(total);
                 archive.setArchivedBy(userId);
-                com.fasterxml.jackson.databind.ObjectMapper om = new com.fasterxml.jackson.databind.ObjectMapper();
-                archive.setResultJson(om.writeValueAsString(full));
+                archive.setResultJson(JSON_MAPPER.writeValueAsString(full));
                 comparisonArchiveRepository.save(archive);
             } catch (Exception ignore) {
                 // 归档保存失败不影响对比结果返回
@@ -2462,8 +2464,7 @@ public class DataImportController {
                 archive.setUnchangedCount((Integer) full.get("unchanged"));
                 archive.setTotalCount((Integer) full.get("total_all"));
                 archive.setArchivedBy(userId);
-                com.fasterxml.jackson.databind.ObjectMapper om = new com.fasterxml.jackson.databind.ObjectMapper();
-                archive.setResultJson(om.writeValueAsString(full));
+                archive.setResultJson(JSON_MAPPER.writeValueAsString(full));
                 comparisonArchiveRepository.save(archive);
             } catch (Exception ignore) {
             }
@@ -2552,7 +2553,6 @@ public class DataImportController {
         archive.setCompareType(compareType);
 
         // BUG-3: 后端重算全量对比结果并存储快照, 查看归档时直接读取快照避免实时重算导致数据漂移
-        com.fasterxml.jackson.databind.ObjectMapper snapshotOm = new com.fasterxml.jackson.databind.ObjectMapper();
 
         if ("month".equals(compareType)) {
             String m1 = (String) body.get("month1");
@@ -2565,14 +2565,14 @@ public class DataImportController {
             archive.setChangedCount((Integer) snap.get("changed"));
             archive.setUnchangedCount((Integer) snap.get("unchanged"));
             archive.setTotalCount((Integer) snap.get("total"));
-            try { archive.setResultJson(snapshotOm.writeValueAsString(snap)); } catch (Exception ignore) {}
+            try { archive.setResultJson(JSON_MAPPER.writeValueAsString(snap)); } catch (Exception ignore) {}
         } else {
             archive.setLatestMonth((String) body.get("latest_month"));
             Map<String, Object> snap = buildExceptionCompareFull(false);
             archive.setChangedCount((Integer) snap.get("changed"));
             archive.setUnchangedCount((Integer) snap.get("unchanged"));
             archive.setTotalCount((Integer) snap.get("total"));
-            try { archive.setResultJson(snapshotOm.writeValueAsString(snap)); } catch (Exception ignore) {}
+            try { archive.setResultJson(JSON_MAPPER.writeValueAsString(snap)); } catch (Exception ignore) {}
         }
 
         archive.setRemark((String) body.get("remark"));
@@ -3374,7 +3374,7 @@ public class DataImportController {
         // Find matching non-exception entry by phone number in same batch
         List<DirectoryEntry> matches = directoryEntryRepository.findByBatchIdAndDeletedAtIsNull(entry.getBatchId());
         DirectoryEntry match = matches.stream()
-                .filter(e -> e.getPhoneNumber().equals(entry.getPhoneNumber()) && !e.getId().equals(id) && e.getIsSeconded() == 0)
+                .filter(e -> e.getPhoneNumber().equals(entry.getPhoneNumber()) && !e.getId().equals(id) && e.getIsSeconded() != null && e.getIsSeconded() == 0)
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("未找到匹配的当前数据记录"));
         entry.setDeptPath(match.getDeptPath());

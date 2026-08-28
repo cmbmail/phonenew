@@ -36,9 +36,6 @@ public interface AllocationResultRepository extends JpaRepository<AllocationResu
     long countByBatchIdAndConfirmStatusAndDeletedAtIsNull(Long batchId, Byte confirmStatus);
     long countByBatchIdAndDeletedAtIsNull(Long batchId);
 
-    /** M-07: Count by confirm status for multiple org IDs (scoped) */
-    long countByBatchIdAndOrgIdInAndConfirmStatusAndDeletedAtIsNull(Long batchId, List<Long> orgIds, Byte confirmStatus);
-    long countByBatchIdAndOrgIdInAndDeletedAtIsNull(Long batchId, List<Long> orgIds);
 
     /** M-40: Paginated query by batch and org IDs */
     Page<AllocationResult> findByBatchIdAndOrgIdInAndDeletedAtIsNull(Long batchId, List<Long> orgIds, Pageable pageable);

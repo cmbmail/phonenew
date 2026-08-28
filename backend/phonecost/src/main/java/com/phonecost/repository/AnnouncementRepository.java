@@ -24,6 +24,4 @@ public interface AnnouncementRepository extends JpaRepository<Announcement, Long
     Page<Announcement> findByTitleContainingAndStatusAndDeletedAtIsNullOrderByPinnedDescPublishedAtDescCreatedAtDesc(String keyword, Byte status, Pageable pageable);
 
     List<Announcement> findTop5ByStatusAndDeletedAtIsNullOrderByPinnedDescPublishedAtDesc(Byte status);
-
-    long countByStatusAndDeletedAtIsNull(Byte status);
 }
