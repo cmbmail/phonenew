@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Layout, Menu, Avatar, Dropdown, Typography, Popconfirm, Modal, Form, Input, message } from 'antd';
-import { DashboardOutlined, FileTextOutlined, PhoneOutlined, TeamOutlined, SettingOutlined, LogoutOutlined, ToolOutlined, BankOutlined, BranchesOutlined, DatabaseOutlined, NumberOutlined, UserOutlined, AuditOutlined, BarChartOutlined, SafetyCertificateOutlined, NotificationOutlined, VideoCameraOutlined, SwapOutlined, CloudServerOutlined } from '@ant-design/icons';
+import { DashboardOutlined, FileTextOutlined, PhoneOutlined, TeamOutlined, SettingOutlined, LogoutOutlined, ToolOutlined, BankOutlined, BranchesOutlined, DatabaseOutlined, NumberOutlined, UserOutlined, AuditOutlined, BarChartOutlined, SafetyCertificateOutlined, NotificationOutlined, SwapOutlined, CloudServerOutlined } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
 import { getErrorMessage } from '../types/api';
@@ -38,7 +38,6 @@ const allMenuItems: MenuItemDef[] = [
     label: '基础数据',
     children: [
       { key: '/org', icon: <TeamOutlined />, label: '组织架构' },
-      { key: '/base/recording-data', icon: <VideoCameraOutlined />, label: '录音数据' },
       { key: '/data-comparison', icon: <SwapOutlined />, label: '数据对比', roles: [1, 2] },
       { key: '/maintenance/branch-number', icon: <BankOutlined />, label: '分行号码', roles: [1, 2] },
       { key: '/maintenance/allocation-org', icon: <BranchesOutlined />, label: '号码分摊机构', roles: [1, 2] },

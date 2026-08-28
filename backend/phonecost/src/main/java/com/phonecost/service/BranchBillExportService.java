@@ -40,7 +40,6 @@ public class BranchBillExportService {
     private final PhoneOwnershipEntryRepository phoneOwnershipEntryRepository;
     private final AllocationOrgEntryRepository allocationOrgEntryRepository;
     private final AllocationDeptEntryRepository allocationDeptEntryRepository;
-    private final RecordingDataEntryRepository recordingDataEntryRepository;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final DateTimeFormatter DTF = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -208,7 +207,7 @@ public class BranchBillExportService {
 
             // Sheet3-5: 录音/闪信/彩铃
             writeRecordingSheet(wb, monthLabel + branchName, allDetails, orgMap,
-                    branchPath, headerStyle, numberStyle, batch.getBillingMonth());
+                    branchPath, headerStyle, numberStyle);
             writeFlashSheet(wb, monthLabel + branchName, allDetails, orgMap,
                     branchPath, headerStyle, numberStyle);
             writeCrbtSheet(wb, monthLabel + branchName, allDetails, orgMap,
@@ -266,7 +265,7 @@ public class BranchBillExportService {
 
             // Sheet3-5: 录音/闪信/彩铃
             writeRecordingSheet(wb, monthLabel + subBranchName, allDetails, orgMap,
-                    subBranchPath, headerStyle, numberStyle, batch.getBillingMonth());
+                    subBranchPath, headerStyle, numberStyle);
             writeFlashSheet(wb, monthLabel + subBranchName, allDetails, orgMap,
                     subBranchPath, headerStyle, numberStyle);
             writeCrbtSheet(wb, monthLabel + subBranchName, allDetails, orgMap,
@@ -493,13 +492,10 @@ public class BranchBillExportService {
                                      List<BillDetail> details,
                                      Map<Long, SysOrganization> orgMap,
                                      String pathPrefix,
-                                     CellStyle headerStyle, CellStyle numberStyle,
-                                     String billingMonth) {
+                                     CellStyle headerStyle, CellStyle numberStyle) {
         Sheet sheet = wb.createSheet(sheetPrefix + "_录音费用");
         String[] headers = {"一级分行", "部门代码", "部门名称", "分机号", "号码", "录音目录", "费用小计(单位：元)"};
         writeHeaderRow(sheet, headers, headerStyle);
-
-        Map<String, String> recordingDeptMap = buildRecordingDeptMap(billingMonth);
 
         List<BillDetail> recDetails = details.stream()
                 .filter(d -> "RECORDING".equals(d.getSheetType()))
@@ -516,10 +512,8 @@ public class BranchBillExportService {
             row.createCell(3).setCellValue(d.getExtension() != null ? d.getExtension() : "");
             row.createCell(4).setCellValue(d.getPhoneNumber());
             Map<String, Object> parsed = parseRawData(d.getRawData());
-            // Prefer dept_name from recording_data_entry (by phone number), fallback to raw recordingDir
-            String recDir = d.getPhoneNumber() != null
-                    ? recordingDeptMap.getOrDefault(d.getPhoneNumber(), getRawString(parsed, "recordingDir"))
-                    : getRawString(parsed, "recordingDir");
+            // recording_dir sourced from bill raw data (same as bill management page)
+            String recDir = getRawString(parsed, "recordingDir");
             row.createCell(5).setCellValue(recDir);
             setCurrencyCell(row.createCell(6), d.getRecordingFee(), numberStyle);
         }
@@ -747,7 +741,6 @@ public class BranchBillExportService {
     private List<Map<String, Object>> buildDetailRows(List<BillDetail> details, String sheetType,
                                                        Map<Long, SysOrganization> orgMap,
                                                        String billingMonth) {
-        Map<String, String> recordingDeptMap = "RECORDING".equals(sheetType) ? buildRecordingDeptMap(billingMonth) : null;
         List<Map<String, Object>> rows = new ArrayList<>();
         for (BillDetail d : details) {
             Map<String, Object> row = new LinkedHashMap<>();
@@ -777,11 +770,8 @@ public class BranchBillExportService {
                 }
                 case "RECORDING" -> {
                     row.put("extension", d.getExtension() != null ? d.getExtension() : "");
-                    // Prefer dept_name from recording_data_entry (by phone number), fallback to raw recordingDir
-                    String recDir = (recordingDeptMap != null && d.getPhoneNumber() != null)
-                            ? recordingDeptMap.getOrDefault(d.getPhoneNumber(), getRawString(parsed, "recordingDir"))
-                            : getRawString(parsed, "recordingDir");
-                    row.put("recording_dir", recDir);
+                    // recording_dir sourced from bill raw data (same as bill management page)
+                    row.put("recording_dir", getRawString(parsed, "recordingDir"));
                     row.put("recording_fee", getRawDecimalOrZero(parsed, "recordingFee"));
                 }
                 case "CRBT" -> {
@@ -1036,23 +1026,6 @@ public class BranchBillExportService {
         BigDecimal callSubtotal = platformFee.add(monthlyRentCode).add(domesticFee).add(internationalFee);
         result.put("call_subtotal", callSubtotal);
         return result;
-    }
-
-    /**
-     * Build a phone→recording dept_name map for a given billing_month from recording_data_entry.
-     */
-    private Map<String, String> buildRecordingDeptMap(String billingMonth) {
-        if (billingMonth == null || billingMonth.isBlank()) return Collections.emptyMap();
-        List<RecordingDataEntry> entries = recordingDataEntryRepository.findAllByBillingMonth(billingMonth).stream()
-                .filter(e -> e.getPhoneNumber() != null && !e.getPhoneNumber().isBlank())
-                .collect(Collectors.toList());
-        Map<String, String> map = new LinkedHashMap<>();
-        for (RecordingDataEntry e : entries) {
-            if (e.getDeptName() != null && !e.getDeptName().isBlank()) {
-                map.putIfAbsent(e.getPhoneNumber(), e.getDeptName());
-            }
-        }
-        return map;
     }
 
     /**
@@ -1399,7 +1372,6 @@ public class BranchBillExportService {
                                                                  Map<String, PhoneOwnershipEntry> ownershipMap,
                                                                  Map<String, AllocationOrgEntry> allocOrgMap,
                                                                  String billingMonth) {
-        Map<String, String> recordingDeptMap = "RECORDING".equals(sheetType) ? buildRecordingDeptMap(billingMonth) : null;
         List<Map<String, Object>> rows = new ArrayList<>();
         for (BillDetail d : details) {
             Map<String, Object> row = new LinkedHashMap<>();
@@ -1472,11 +1444,8 @@ public class BranchBillExportService {
                 }
                 case "RECORDING" -> {
                     row.put("extension", d.getExtension() != null ? d.getExtension() : "");
-                    // Prefer dept_name from recording_data_entry (by phone number), fallback to raw recordingDir
-                    String recDir = (recordingDeptMap != null && d.getPhoneNumber() != null)
-                            ? recordingDeptMap.getOrDefault(d.getPhoneNumber(), getRawString(parsed, "recordingDir"))
-                            : getRawString(parsed, "recordingDir");
-                    row.put("recording_dir", recDir);
+                    // recording_dir sourced from bill raw data (same as bill management page)
+                    row.put("recording_dir", getRawString(parsed, "recordingDir"));
                     row.put("recording_fee", getRawDecimalOrZero(parsed, "recordingFee"));
                 }
                 case "CRBT" -> {

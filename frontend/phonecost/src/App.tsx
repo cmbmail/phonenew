@@ -17,7 +17,6 @@ const L2BranchPage = React.lazy(() => import('./pages/L2BranchPage'));
 const L3SubBranchPage = React.lazy(() => import('./pages/L3SubBranchPage'));
 const FeeAnalysisPage = React.lazy(() => import('./pages/FeeAnalysisPage'));
 const Organization = React.lazy(() => import('./pages/Organization'));
-const RecordingDataPage = React.lazy(() => import('./pages/RecordingDataPage'));
 const UserManagement = React.lazy(() => import('./pages/UserManagement'));
 const TemplateManagement = React.lazy(() => import('./pages/TemplateManagement'));
 const RoleManagement = React.lazy(() => import('./pages/RoleManagement'));
@@ -94,7 +93,6 @@ const App: React.FC = () => (
             <Route path="allocation/sub-branch" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2, 3, 4]}><L3SubBranchPage /></PrivateRoute></LazyRoute>} />
             <Route path="allocation/analysis" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2, 3]}><FeeAnalysisPage /></PrivateRoute></LazyRoute>} />
             <Route path="org" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><Organization /></PrivateRoute></LazyRoute>} />
-            <Route path="base/recording-data" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><RecordingDataPage /></PrivateRoute></LazyRoute>} />
             {/* 系统管理页面：仅管理员(1)和运维(2)可访问 */}
             <Route path="settings/users" element={<LazyRoute><PrivateRoute allowedRoles={[1]}><UserManagement /></PrivateRoute></LazyRoute>} />
             <Route path="settings/roles" element={<LazyRoute><PrivateRoute allowedRoles={[1]}><RoleManagement /></PrivateRoute></LazyRoute>} />
