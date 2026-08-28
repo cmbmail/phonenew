@@ -1229,6 +1229,76 @@ public class BranchBillExportService {
     }
 
     /**
+     * L1-Alloc Summary from ownership data: one row per alloc_dept under a given l1_branch (all l2_branches).
+     * Lightweight version of L3 summary (l2Branch = null) with cost_center added.
+     * Used by L2BranchPage summary & reimbursement tabs to avoid loading all detail rows.
+     */
+    public List<Map<String, Object>> getL1AllocSummaryDataByOwnership(Long batchId, String l1Branch) {
+        String billingMonth = getBillingMonthFromBatchId(batchId);
+        List<PhoneOwnershipEntry> ownershipEntries = loadOwnershipEntries(billingMonth);
+        List<BillDetail> allDetails = billDetailRepository.findByBatchIdAndDeletedAtIsNull(batchId);
+        Map<String, AllocationOrgEntry> allocOrgMap = buildAllocOrgMap(billingMonth);
+
+        // Build alloc_dept + cost_center per phone: prefer allocation_org_entry, fallback to phone_ownership_entry
+        Map<String, String> phoneAllocDept = new LinkedHashMap<>();
+        Map<String, String> phoneCostCenter = new LinkedHashMap<>();
+        for (PhoneOwnershipEntry e : ownershipEntries) {
+            String phone = e.getPhoneNumber();
+            if (phone == null || phone.isBlank()) continue;
+            if (l1Branch != null && !l1Branch.equals(e.getL1Branch())) continue;
+            AllocationOrgEntry allocOrg = allocOrgMap.get(phone);
+            String allocDept = (allocOrg != null && allocOrg.getAllocDept() != null && !allocOrg.getAllocDept().isEmpty())
+                    ? allocOrg.getAllocDept()
+                    : (e.getAllocDept() != null ? e.getAllocDept() : "");
+            if (!allocDept.isEmpty()) {
+                phoneAllocDept.put(phone, allocDept);
+                // cost_center: prefer allocation_org_entry, fallback to phone_ownership_entry
+                String costCenter = (allocOrg != null && allocOrg.getCostCenter() != null && !allocOrg.getCostCenter().isEmpty())
+                        ? allocOrg.getCostCenter()
+                        : (e.getCostCenter() != null ? e.getCostCenter() : "");
+                phoneCostCenter.putIfAbsent(allocDept, costCenter);
+                // If existing cost_center is empty but current is non-empty, supplement it
+                if (costCenter != null && !costCenter.isEmpty() && (phoneCostCenter.get(allocDept) == null || phoneCostCenter.get(allocDept).isEmpty())) {
+                    phoneCostCenter.put(allocDept, costCenter);
+                }
+            }
+        }
+
+        // Distinct alloc_depts sorted
+        List<String> allocDepts = phoneAllocDept.values().stream().distinct().sorted().collect(Collectors.toList());
+
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (String allocDept : allocDepts) {
+            Set<String> phones = phoneAllocDept.entrySet().stream()
+                    .filter(e -> allocDept.equals(e.getValue()))
+                    .map(Map.Entry::getKey)
+                    .collect(Collectors.toSet());
+            Map<String, BigDecimal> fees = aggregateFeesByPhones(allDetails, phones);
+            int phoneCount = phones.size();
+
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("alloc_dept", allocDept);
+            row.put("l1_branch", l1Branch);
+            row.put("cost_center", phoneCostCenter.getOrDefault(allocDept, ""));
+            row.put("platform_fee", fees.get("platform_fee"));
+            row.put("monthly_rent_code", fees.get("monthly_rent_code"));
+            row.put("domestic_duration", fees.get("domestic_duration"));
+            row.put("transfer_duration", fees.get("transfer_duration"));
+            row.put("domestic_fee", fees.get("domestic_fee"));
+            row.put("international_duration", fees.get("international_duration"));
+            row.put("international_fee", fees.get("international_fee"));
+            row.put("call_subtotal", fees.get("call_subtotal"));
+            row.put("recording_fee", fees.get("recording_fee"));
+            row.put("crbt_fee", fees.get("crbt_fee"));
+            row.put("flash_fee", fees.get("flash_fee"));
+            row.put("total_fee", fees.get("total_fee"));
+            row.put("phone_count", phoneCount);
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    /**
      * L3 Summary from ownership data: one row per alloc_dept under a given l1_branch + l2_branch.
      * alloc_dept is sourced from allocation_org_entry (cross-month), falling back to phone_ownership_entry.
      */

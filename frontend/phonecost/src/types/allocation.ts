@@ -79,6 +79,7 @@ export interface L3SummaryRow {
   l1_branch: string;
   l2_branch: string;
   alloc_dept: string;
+  cost_center: string;
   platform_fee: number;
   monthly_rent_code: number;
   domestic_duration: number;

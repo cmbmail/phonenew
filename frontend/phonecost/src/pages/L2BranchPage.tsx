@@ -3,8 +3,8 @@ import { Card, Table, Select, Button, Descriptions, Row, Col, Tabs, message, Emp
 import { DownloadOutlined, SearchOutlined, FileTextOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import type { BillBatch } from '../types/bill';
-import type { L1SummaryRow, AllocationDetailRow } from '../types/allocation';
-import { getL1SummaryData, getL2DetailData } from '../api/allocation';
+import type { L1SummaryRow, L3SummaryRow, AllocationDetailRow } from '../types/allocation';
+import { getL1SummaryData, getL2DetailData, getL1AllocSummaryData } from '../api/allocation';
 import { getBillBatches } from '../api/import';
 import { useAbortableEffect } from '../hooks/useAbortableEffect';
 import { exportCSV } from '../lib/export';
@@ -24,7 +24,10 @@ export default function L2BranchPage() {
   const [selectedL1Branch, setSelectedL1Branch] = useState<string | null>(null);
   const [summaryRows, setSummaryRows] = useState<L1SummaryRow[]>([]);
   const [loading, setLoading] = useState(false);
-  const [summaryLoading, setSummaryLoading] = useState(false);
+
+  // 分摊汇总数据（后端聚合，轻量接口）
+  const [allocSummaryData, setAllocSummaryData] = useState<L3SummaryRow[]>([]);
+  const [allocSummaryLoading, setAllocSummaryLoading] = useState(false);
 
   // 分摊明细数据
   const [detailData, setDetailData] = useState<Record<SheetType, AllocationDetailRow[]>>({
@@ -68,20 +71,20 @@ export default function L2BranchPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBatchId]);
 
-  // 月份/一级分行变化时加载分摊汇总（数据源为分摊明细，需自动加载明细）
+  // 月份/一级分行变化时加载分摊汇总（后端聚合接口，轻量）
   useEffect(() => {
     if (selectedBatchId && selectedL1Branch) {
-      setSummaryRows([]);
-      setSummaryLoading(true);
-      getL1SummaryData(selectedBatchId)
-        .then(data => setSummaryRows(data.filter(r => r.l1_branch === selectedL1Branch)))
+      // 加载 L1-Alloc Summary（后端按 alloc_dept 聚合，含 cost_center）
+      setAllocSummaryData([]);
+      setAllocSummaryLoading(true);
+      getL1AllocSummaryData(selectedBatchId, selectedL1Branch)
+        .then(data => setAllocSummaryData(data))
         .catch(() => message.error(t('l2Branch.fetchFailed')))
-        .finally(() => setSummaryLoading(false));
-      // 重置并自动加载明细（分摊汇总和报销单都依赖明细数据）
+        .finally(() => setAllocSummaryLoading(false));
+      // 重置明细数据（懒加载：切换到分摊明细 Tab 时才请求）
       setDetailData({ CALL: [], RECORDING: [], CRBT: [], FLASH_MSG: [] });
       setDetailLoaded(false);
       setDetailSearch('');
-      fetchAllDetails();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBatchId, selectedL1Branch]);
@@ -116,51 +119,13 @@ export default function L2BranchPage() {
     }
   }, [selectedBatchId, selectedL1Branch, t]);
 
-  // ========== 分摊汇总（按分摊部门聚合，数据源为 4 类分摊明细） ==========
+  // ========== 分摊汇总（直接使用后端聚合数据，无需前端再聚合） ==========
   const summaryRowsFromDetail = useMemo(() => {
-    const feeFields: Array<{ sheet: SheetType; fields: string[] }> = [
-      { sheet: 'CALL', fields: ['platform_fee', 'monthly_rent_code', 'domestic_duration', 'transfer_duration', 'domestic_fee', 'international_duration', 'international_fee', 'total_fee'] },
-      { sheet: 'RECORDING', fields: ['recording_fee'] },
-      { sheet: 'CRBT', fields: ['crbt_fee'] },
-      { sheet: 'FLASH_MSG', fields: ['flash_msg_fee'] },
-    ];
-    const map = new Map<string, { l1_branch: string; alloc_dept: string; cost_center: string; platform_fee: number; monthly_rent_code: number; domestic_duration: number; transfer_duration: number; domestic_fee: number; international_duration: number; international_fee: number; call_subtotal: number; recording_fee: number; crbt_fee: number; flash_fee: number; total_fee: number; phone_count: number }>();
-
-    for (const { sheet, fields } of feeFields) {
-      for (const row of detailData[sheet]) {
-        const dept = (row.alloc_dept || '').trim();
-        if (!dept) continue;
-        const key = dept;
-        const costCenter = (row.cost_center || '').trim();
-        let entry = map.get(key);
-        if (!entry) {
-          entry = {
-            l1_branch: selectedL1Branch || '', alloc_dept: dept, cost_center: costCenter,
-            platform_fee: 0, monthly_rent_code: 0, domestic_duration: 0, transfer_duration: 0,
-            domestic_fee: 0, international_duration: 0, international_fee: 0, call_subtotal: 0,
-            recording_fee: 0, crbt_fee: 0, flash_fee: 0, total_fee: 0, phone_count: 0,
-          };
-          map.set(key, entry);
-        }
-        if (!entry.cost_center && costCenter) entry.cost_center = costCenter;
-        for (const f of fields) {
-          entry[f as keyof typeof entry] = (Number(entry[f as keyof typeof entry]) || 0) + (Number(row[f as keyof AllocationDetailRow]) || 0);
-        }
-        if (sheet === 'CALL') entry.phone_count++;
-      }
-    }
-    // call_subtotal = platform_fee + monthly_rent_code + domestic_fee + international_fee
-    for (const entry of map.values()) {
-      entry.call_subtotal = entry.platform_fee + entry.monthly_rent_code + entry.domestic_fee + entry.international_fee;
-      entry.total_fee = entry.call_subtotal + entry.recording_fee + entry.crbt_fee + entry.flash_fee;
-    }
-    return Array.from(map.values())
-      .map((r, i) => ({ ...r, key: i }))
-      .sort((a, b) => a.alloc_dept.localeCompare(b.alloc_dept));
-  }, [detailData, selectedL1Branch]);
+    return allocSummaryData.map((r, i) => ({ ...r, key: i }));
+  }, [allocSummaryData]);
 
   const grandTotal = useMemo(() => {
-    if (summaryRowsFromDetail.length === 0) return null;
+    if (allocSummaryData.length === 0) return null;
     const init = {
       platform_fee: 0, monthly_rent_code: 0,
       domestic_duration: 0, transfer_duration: 0, domestic_fee: 0,
@@ -168,7 +133,7 @@ export default function L2BranchPage() {
       recording_fee: 0, crbt_fee: 0, flash_fee: 0, total_fee: 0,
       phone_count: 0,
     };
-    return summaryRowsFromDetail.reduce((acc, r) => {
+    return allocSummaryData.reduce((acc, r) => {
       acc.platform_fee += r.platform_fee;
       acc.monthly_rent_code += r.monthly_rent_code;
       acc.domestic_duration += r.domestic_duration;
@@ -184,7 +149,7 @@ export default function L2BranchPage() {
       acc.phone_count += r.phone_count;
       return acc;
     }, init);
-  }, [summaryRowsFromDetail]);
+  }, [allocSummaryData]);
 
   const summaryColumns = [
     { title: t('l1Summary.branchCol'), dataIndex: 'l1_branch', key: 'l1_branch', width: 140, fixed: 'left' as const },
@@ -292,6 +257,8 @@ export default function L2BranchPage() {
 
   const summaryDataSource = summaryRowsFromDetail;
 
+
+
   const renderDetailTab = (sheetType: SheetType) => {
     const data = filteredDetailData[sheetType];
     let columns;
@@ -315,30 +282,16 @@ export default function L2BranchPage() {
     );
   };
 
-  // ========== 报销单数据（按分摊部门汇总，数据源为 4 类分摊明细） ==========
+  // ========== 报销单数据（从后端聚合数据派生，无需加载全部明细） ==========
   const reimbursementData = useMemo(() => {
-    const feeOf = (row: AllocationDetailRow) =>
-      (Number(row.total_fee) || 0) + (Number(row.recording_fee) || 0) + (Number(row.crbt_fee) || 0) + (Number(row.flash_msg_fee) || 0);
-    const map = new Map<string, { l1_branch: string; alloc_dept: string; cost_center: string; fee_subtotal: number }>();
-    for (const st of SHEET_TYPES) {
-      for (const row of detailData[st]) {
-        const dept = (row.alloc_dept || '').trim();
-        if (!dept) continue;
-        const key = dept;
-        const prev = map.get(key);
-        const costCenter = (row.cost_center || '').trim();
-        if (prev) {
-          prev.fee_subtotal += feeOf(row);
-          if (!prev.cost_center && costCenter) prev.cost_center = costCenter;
-        } else {
-          map.set(key, { l1_branch: selectedL1Branch || '', alloc_dept: dept, cost_center: costCenter, fee_subtotal: feeOf(row) });
-        }
-      }
-    }
-    return Array.from(map.values())
-      .map((r, i) => ({ key: i, ...r }))
-      .sort((a, b) => a.alloc_dept.localeCompare(b.alloc_dept));
-  }, [detailData, selectedL1Branch]);
+    return allocSummaryData.map((r, i) => ({
+      key: i,
+      l1_branch: r.l1_branch,
+      alloc_dept: r.alloc_dept,
+      cost_center: r.cost_center || '',
+      fee_subtotal: r.total_fee,
+    })).sort((a, b) => a.alloc_dept.localeCompare(b.alloc_dept));
+  }, [allocSummaryData]);
 
   const reimbursementTotal = reimbursementData.reduce((s, r) => s + r.fee_subtotal, 0);
 
@@ -401,7 +354,7 @@ export default function L2BranchPage() {
               dataSource={summaryDataSource}
               rowKey="key"
               size="small"
-              loading={summaryLoading || detailLoading}
+              loading={allocSummaryLoading}
               pagination={false}
               scroll={{ x: 1900 }}
               summary={() => grandTotal ? (
@@ -426,7 +379,7 @@ export default function L2BranchPage() {
               ) : null}
             />
           ) : (
-            !(summaryLoading || detailLoading) && selectedL1Branch && <Empty description={t('l2Branch.noData')} />
+            !allocSummaryLoading && selectedL1Branch && <Empty description={t('l2Branch.noData')} />
           )}
         </>
       ),

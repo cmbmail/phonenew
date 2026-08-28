@@ -432,6 +432,28 @@ public class AllocationController {
     }
 
     /**
+     * L1-Alloc 分摊汇总数据（JSON，按 alloc_dept 聚合，含 cost_center）
+     * 轻量接口：供 L2BranchPage 分摊汇总/报销单 Tab 使用，无需加载全部明细
+     */
+    @GetMapping("/l1-alloc-summary")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_FINANCE', 'ROLE_BRANCH', 'ROLE_DEPARTMENT')")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getL1AllocSummaryData(
+            @RequestParam Long batchId,
+            @RequestParam String l1Branch,
+            @RequestAttribute("userId") Long userId) {
+        // 权限校验：非全量用户只能看本分行
+        DataScope scope = dataScopeService.getDataScope(userId);
+        if (!scope.isAllScope()) {
+            Set<String> visibleBranchNames = resolveVisibleL1BranchNames(userId);
+            if (visibleBranchNames != null && !visibleBranchNames.contains(l1Branch)) {
+                return ResponseEntity.ok(ApiResponse.ok(List.of()));
+            }
+        }
+        List<Map<String, Object>> data = branchBillExportService.getL1AllocSummaryDataByOwnership(batchId, l1Branch);
+        return ResponseEntity.ok(ApiResponse.ok(data));
+    }
+
+    /**
      * L2 一级分行分摊明细数据（JSON，供前端分摊明细4个Tab展示）
      * 数据源：分摊号码归属，按 l1_branch 过滤
      */
