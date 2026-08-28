@@ -34,6 +34,7 @@ export default {
     confirmedCount: '已确认',
     pendingCount: '待确认',
     branchCount: '一级分行',
+    l1Branch: '一级分行',
     allocationResults: '分摊结果',
     fetchFailed: '获取看板数据失败',
     monthlyTrend: '月度费用趋势',
