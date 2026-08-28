@@ -3084,7 +3084,7 @@ public class DataImportController {
 
         // Sheet 2: 录音费用 (4 columns)
         defs.add(new SheetDef("录音费用",
-                new String[]{"分机号", "号码", "关闭时间", "费用小计"},
+                new String[]{"分机号", "号码", "录音目录", "费用小计"},
                 new String[]{"8001", "13800138000", "2026-01-15", "3.00"}));
 
         // Sheet 3: 彩铃费用 (3 columns)
