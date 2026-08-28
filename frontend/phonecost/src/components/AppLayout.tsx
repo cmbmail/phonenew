@@ -37,8 +37,6 @@ const allMenuItems: MenuItemDef[] = [
     label: '基础数据',
     children: [
       { key: '/org', icon: <TeamOutlined />, label: '组织架构' },
-      { key: '/base/phone-ownership', icon: <NumberOutlined />, label: '号码归属' },
-      { key: '/base/branch-ownership', icon: <BankOutlined />, label: '归属分行' },
       { key: '/base/recording-data', icon: <VideoCameraOutlined />, label: '录音数据' },
     ],
   },
