@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -150,7 +151,7 @@ public class BranchBillExportService {
                 setCurrencyCell(totalRow.createCell(9), grandRecording, numberStyle);
                 setCurrencyCell(totalRow.createCell(10), grandCrbt, numberStyle);
                 setCurrencyCell(totalRow.createCell(11), grandFlash, numberStyle);
-                setCurrencyCell(totalRow.createCell(12), grandTotal, numberStyle);
+                setCurrencyCell(totalRow.createCell(12), grandTotal.setScale(2, RoundingMode.HALF_UP), numberStyle);
                 totalRow.createCell(13).setCellValue(grandPhones);
                 totalRow.getCell(13).setCellStyle(boldStyle);
             }
@@ -1022,7 +1023,8 @@ public class BranchBillExportService {
         result.put("recording_fee", recordingFee);
         result.put("crbt_fee", crbtFee);
         result.put("flash_fee", flashMsgFee);
-        result.put("total_fee", totalFee);
+        // 仅合计列保留两位小数，其他列保留原始精度
+        result.put("total_fee", totalFee.setScale(2, RoundingMode.HALF_UP));
         BigDecimal callSubtotal = platformFee.add(monthlyRentCode).add(domesticFee).add(internationalFee);
         result.put("call_subtotal", callSubtotal);
         return result;
