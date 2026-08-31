@@ -94,10 +94,6 @@ export default function L1SummaryPage() {
     const n = Number(v);
     return !isNaN(n) && n !== 0 ? `¥${n}` : '-';
   };
-  const money2 = (v: unknown) => {
-    const n = Number(v);
-    return !isNaN(n) && n !== 0 ? `¥${n.toFixed(2)}` : '-';
-  };
   const dur = (v: unknown) => {
     const n = Number(v);
     return !isNaN(n) && n !== 0 ? String(n) : '-';
@@ -145,7 +141,7 @@ export default function L1SummaryPage() {
     { title: t('l1Summary.crbtFeeCol'), dataIndex: 'crbt_fee', key: 'crbt_fee', width: 80, align: 'right' as const, render: money },
     { title: t('l1Summary.flashFeeCol'), dataIndex: 'flash_fee', key: 'flash_fee', width: 80, align: 'right' as const, render: money },
     { title: t('l1Summary.totalCol'), dataIndex: 'total_fee', key: 'total_fee', width: 110, align: 'right' as const,
-      render: (v: number) => <strong>{money2(v)}</strong>,
+      render: (v: number) => <strong>{money(v)}</strong>,
     },
     { title: t('l1Summary.phoneCountCol'), dataIndex: 'phone_count', key: 'phone_count', width: 70, align: 'right' as const },
   ];
@@ -163,7 +159,7 @@ export default function L1SummaryPage() {
     { title: t('l1Detail.domesticFeeCol'), dataIndex: 'domestic_fee', key: 'domestic_fee', width: 100, align: 'right' as const, render: money },
     { title: t('l1Detail.intlDurationCol'), dataIndex: 'international_duration', key: 'international_duration', width: 100, align: 'right' as const, render: dur },
     { title: t('l1Detail.intlFeeCol'), dataIndex: 'international_fee', key: 'international_fee', width: 90, align: 'right' as const, render: money },
-    { title: t('l1Detail.totalFeeCol'), dataIndex: 'total_fee', key: 'total_fee', width: 100, align: 'right' as const, render: (v: number) => <strong>{money2(v)}</strong> },
+    { title: t('l1Detail.totalFeeCol'), dataIndex: 'total_fee', key: 'total_fee', width: 100, align: 'right' as const, render: (v: number) => <strong>{money(v)}</strong> },
     { title: t('l1Detail.sourceCol'), dataIndex: 'ownership_source', key: 'ownership_source', width: 70 },
   ];
 
@@ -270,7 +266,7 @@ export default function L1SummaryPage() {
           {selectedBatchId && rows.length > 0 && grandTotal && (
             <Descriptions size="small" column={4} style={{ marginBottom: 16 }}>
               <Descriptions.Item label={t('l1Summary.descMonth')}>{selectedBatch?.billing_month}</Descriptions.Item>
-              <Descriptions.Item label={t('l1Summary.descTotalFee')}>¥{grandTotal.total_fee.toFixed(2)}</Descriptions.Item>
+              <Descriptions.Item label={t('l1Summary.descTotalFee')}>¥{grandTotal.total_fee}</Descriptions.Item>
               <Descriptions.Item label={t('l1Summary.descTotalPhones')}>{grandTotal.phone_count}</Descriptions.Item>
               <Descriptions.Item label={t('l1Summary.descBranchCount')}>{rows.length}</Descriptions.Item>
             </Descriptions>
@@ -298,7 +294,7 @@ export default function L1SummaryPage() {
                   <Table.Summary.Cell index={9} align="right">{money(grandTotal.recording_fee)}</Table.Summary.Cell>
                   <Table.Summary.Cell index={10} align="right">{money(grandTotal.crbt_fee)}</Table.Summary.Cell>
                   <Table.Summary.Cell index={11} align="right">{money(grandTotal.flash_fee)}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={12} align="right"><strong>¥{grandTotal.total_fee.toFixed(2)}</strong></Table.Summary.Cell>
+                  <Table.Summary.Cell index={12} align="right"><strong>{money(grandTotal.total_fee)}</strong></Table.Summary.Cell>
                   <Table.Summary.Cell index={13} align="right"><strong>{grandTotal.phone_count}</strong></Table.Summary.Cell>
                 </Table.Summary.Row>
               ) : null}
@@ -316,10 +312,10 @@ export default function L1SummaryPage() {
         <>
           {detailLoaded && (
             <Row gutter={16} style={{ marginBottom: 16 }}>
-              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.callTab')} value={detailStats.callCount} suffix={`¥${detailStats.callTotal.toFixed(2)}`} /></Col>
-              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.recordingTab')} value={detailStats.recCount} suffix={`¥${detailStats.recTotal.toFixed(2)}`} /></Col>
-              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.crbtTab')} value={detailStats.crbtCount} suffix={`¥${detailStats.crbtTotal.toFixed(2)}`} /></Col>
-              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.flashTab')} value={detailStats.flashCount} suffix={`¥${detailStats.flashTotal.toFixed(2)}`} /></Col>
+              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.callTab')} value={detailStats.callCount} suffix={`¥${detailStats.callTotal}`} /></Col>
+              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.recordingTab')} value={detailStats.recCount} suffix={`¥${detailStats.recTotal}`} /></Col>
+              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.crbtTab')} value={detailStats.crbtCount} suffix={`¥${detailStats.crbtTotal}`} /></Col>
+              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.flashTab')} value={detailStats.flashCount} suffix={`¥${detailStats.flashTotal}`} /></Col>
             </Row>
           )}
           <Input

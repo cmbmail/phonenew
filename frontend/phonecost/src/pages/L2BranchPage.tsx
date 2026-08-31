@@ -95,10 +95,6 @@ export default function L2BranchPage() {
     const n = Number(v);
     return !isNaN(n) && n !== 0 ? `¥${n}` : '-';
   };
-  const money2 = (v: unknown) => {
-    const n = Number(v);
-    return !isNaN(n) && n !== 0 ? `¥${n.toFixed(2)}` : '-';
-  };
   const dur = (v: unknown) => {
     const n = Number(v);
     return !isNaN(n) && n !== 0 ? String(n) : '-';
@@ -171,7 +167,7 @@ export default function L2BranchPage() {
     { title: t('l1Summary.crbtFeeCol'), dataIndex: 'crbt_fee', key: 'crbt_fee', width: 80, align: 'right' as const, render: money },
     { title: t('l1Summary.flashFeeCol'), dataIndex: 'flash_fee', key: 'flash_fee', width: 80, align: 'right' as const, render: money },
     { title: t('l1Summary.totalCol'), dataIndex: 'total_fee', key: 'total_fee', width: 110, align: 'right' as const,
-      render: (v: number) => <strong>{money2(v)}</strong>,
+      render: (v: number) => <strong>{money(v)}</strong>,
     },
     { title: t('l1Summary.phoneCountCol'), dataIndex: 'phone_count', key: 'phone_count', width: 70, align: 'right' as const },
   ];
@@ -305,7 +301,7 @@ export default function L2BranchPage() {
     { title: t('l1Summary.costCenterCol'), dataIndex: 'cost_center', key: 'cost_center', width: 150 },
     {
       title: t('l2Branch.reimbursementFeeSubtotal'), dataIndex: 'fee_subtotal', key: 'fee_subtotal', width: 150, align: 'right' as const,
-      render: (v: number) => <strong>¥{v.toFixed(2)}</strong>,
+      render: (v: number) => <strong>¥{v}</strong>,
     },
   ];
 
@@ -320,7 +316,7 @@ export default function L2BranchPage() {
               <Descriptions.Item label={t('l2Branch.descMonth')}>{selectedBatch?.billing_month}</Descriptions.Item>
               <Descriptions.Item label={t('l2Branch.descBranch')}>{selectedL1Branch}</Descriptions.Item>
               <Descriptions.Item label={t('l1Summary.descBranchCount')}>{summaryRowsFromDetail.length}</Descriptions.Item>
-              <Descriptions.Item label={t('l2Branch.descTotalFee')}>¥{grandTotal.total_fee.toFixed(2)}</Descriptions.Item>
+              <Descriptions.Item label={t('l2Branch.descTotalFee')}>¥{grandTotal.total_fee}</Descriptions.Item>
             </Descriptions>
           )}
           {selectedBatchId && selectedL1Branch && summaryRowsFromDetail.length > 0 && (
@@ -344,7 +340,7 @@ export default function L2BranchPage() {
                     { title: t('l1Summary.recordingFeeCol'), dataIndex: 'recording_fee', render: (v: number) => v != null && v !== 0 ? String(v) : '' },
                     { title: t('l1Summary.crbtFeeCol'), dataIndex: 'crbt_fee', render: (v: number) => v != null && v !== 0 ? String(v) : '' },
                     { title: t('l1Summary.flashFeeCol'), dataIndex: 'flash_fee', render: (v: number) => v != null && v !== 0 ? String(v) : '' },
-                    { title: t('l1Summary.totalCol'), dataIndex: 'total_fee', render: (v: number) => v != null ? v.toFixed(2) : '' },
+                    { title: t('l1Summary.totalCol'), dataIndex: 'total_fee', render: (v: number) => v != null && v !== 0 ? String(v) : '' },
                     { title: t('l1Summary.phoneCountCol'), dataIndex: 'phone_count' },
                   ],
                   toPlainRecords(summaryRowsFromDetail),
@@ -377,7 +373,7 @@ export default function L2BranchPage() {
                   <Table.Summary.Cell index={11} align="right">{money(grandTotal.recording_fee)}</Table.Summary.Cell>
                   <Table.Summary.Cell index={12} align="right">{money(grandTotal.crbt_fee)}</Table.Summary.Cell>
                   <Table.Summary.Cell index={13} align="right">{money(grandTotal.flash_fee)}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={14} align="right"><strong>¥{grandTotal.total_fee.toFixed(2)}</strong></Table.Summary.Cell>
+                  <Table.Summary.Cell index={14} align="right"><strong>{money(grandTotal.total_fee)}</strong></Table.Summary.Cell>
                   <Table.Summary.Cell index={15} align="right"><strong>{grandTotal.phone_count}</strong></Table.Summary.Cell>
                 </Table.Summary.Row>
               ) : null}
@@ -395,10 +391,10 @@ export default function L2BranchPage() {
         <>
           {detailLoaded && (
             <Row gutter={16} style={{ marginBottom: 16 }}>
-              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.callTab')} value={detailStats.callCount} suffix={`¥${detailStats.callTotal.toFixed(2)}`} /></Col>
-              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.recordingTab')} value={detailStats.recCount} suffix={`¥${detailStats.recTotal.toFixed(2)}`} /></Col>
-              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.crbtTab')} value={detailStats.crbtCount} suffix={`¥${detailStats.crbtTotal.toFixed(2)}`} /></Col>
-              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.flashTab')} value={detailStats.flashCount} suffix={`¥${detailStats.flashTotal.toFixed(2)}`} /></Col>
+              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.callTab')} value={detailStats.callCount} suffix={`¥${detailStats.callTotal}`} /></Col>
+              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.recordingTab')} value={detailStats.recCount} suffix={`¥${detailStats.recTotal}`} /></Col>
+              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.crbtTab')} value={detailStats.crbtCount} suffix={`¥${detailStats.crbtTotal}`} /></Col>
+              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.flashTab')} value={detailStats.flashCount} suffix={`¥${detailStats.flashTotal}`} /></Col>
             </Row>
           )}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -428,20 +424,20 @@ export default function L2BranchPage() {
                     { title: t('l1Detail.extensionCol'), dataIndex: 'extension' },
                     { title: t('l1Detail.orgCol'), dataIndex: 'full_path' },
                     { title: t('l1Detail.orgCodeCol'), dataIndex: 'org_code' },
-                    { title: t('l1Detail.platformFeeCol'), dataIndex: 'platform_fee', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? n.toFixed(2) : ''; } },
-                    { title: t('l1Detail.monthlyRentCodeCol'), dataIndex: 'monthly_rent_code', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? n.toFixed(2) : ''; } },
-                    { title: t('l1Detail.domesticDurationCol'), dataIndex: 'domestic_duration', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? n.toFixed(1) : ''; } },
-                    { title: t('l1Detail.transferDurationCol'), dataIndex: 'transfer_duration', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? n.toFixed(1) : ''; } },
-                    { title: t('l1Detail.domesticFeeCol'), dataIndex: 'domestic_fee', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? n.toFixed(2) : ''; } },
-                    { title: t('l1Detail.intlDurationCol'), dataIndex: 'international_duration', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? n.toFixed(1) : ''; } },
-                    { title: t('l1Detail.intlFeeCol'), dataIndex: 'international_fee', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? n.toFixed(2) : ''; } },
+                    { title: t('l1Detail.platformFeeCol'), dataIndex: 'platform_fee', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? String(n) : ''; } },
+                    { title: t('l1Detail.monthlyRentCodeCol'), dataIndex: 'monthly_rent_code', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? String(n) : ''; } },
+                    { title: t('l1Detail.domesticDurationCol'), dataIndex: 'domestic_duration', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? String(n) : ''; } },
+                    { title: t('l1Detail.transferDurationCol'), dataIndex: 'transfer_duration', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? String(n) : ''; } },
+                    { title: t('l1Detail.domesticFeeCol'), dataIndex: 'domestic_fee', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? String(n) : ''; } },
+                    { title: t('l1Detail.intlDurationCol'), dataIndex: 'international_duration', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? String(n) : ''; } },
+                    { title: t('l1Detail.intlFeeCol'), dataIndex: 'international_fee', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? String(n) : ''; } },
                     { title: t('l1Detail.recordingDirCol'), dataIndex: 'recording_dir' },
-                    { title: t('l1Detail.recordingFeeCol'), dataIndex: 'recording_fee', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? n.toFixed(2) : ''; } },
-                    { title: t('l1Detail.crbtFeeCol'), dataIndex: 'crbt_fee', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? n.toFixed(2) : ''; } },
+                    { title: t('l1Detail.recordingFeeCol'), dataIndex: 'recording_fee', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? String(n) : ''; } },
+                    { title: t('l1Detail.crbtFeeCol'), dataIndex: 'crbt_fee', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? String(n) : ''; } },
                     { title: t('l1Detail.flashMonthCol'), dataIndex: 'flash_month' },
                     { title: t('l1Detail.flashCountCol'), dataIndex: 'flash_count', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? String(Math.round(n)) : ''; } },
-                    { title: t('l1Detail.flashFeeCol'), dataIndex: 'flash_msg_fee', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? n.toFixed(2) : ''; } },
-                    { title: t('l1Detail.totalFeeCol'), dataIndex: 'total_fee', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? n.toFixed(2) : ''; } },
+                    { title: t('l1Detail.flashFeeCol'), dataIndex: 'flash_msg_fee', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? String(n) : ''; } },
+                    { title: t('l1Detail.totalFeeCol'), dataIndex: 'total_fee', render: (v: unknown) => { const n = Number(v); return !isNaN(n) && n !== 0 ? String(n) : ''; } },
                     { title: t('l1Detail.sourceCol'), dataIndex: 'ownership_source' },
                   ],
                   allRows,
@@ -477,7 +473,7 @@ export default function L2BranchPage() {
                   { title: t('l1Summary.branchCol'), dataIndex: 'l1_branch' },
                   { title: t('l1Detail.orgCol'), dataIndex: 'alloc_dept' },
                   { title: t('l1Summary.costCenterCol'), dataIndex: 'cost_center' },
-                  { title: t('l2Branch.reimbursementFeeSubtotal'), dataIndex: 'fee_subtotal', render: (v: number) => v.toFixed(2) },
+                  { title: t('l2Branch.reimbursementFeeSubtotal'), dataIndex: 'fee_subtotal', render: (v: number) => String(v) },
                 ],
                 data,
               );
@@ -494,7 +490,7 @@ export default function L2BranchPage() {
               <Table.Summary.Cell index={0} />
               <Table.Summary.Cell index={1}><strong>{t('l2Branch.reimbursementTotal')}</strong></Table.Summary.Cell>
               <Table.Summary.Cell index={2} />
-              <Table.Summary.Cell index={3} align="right"><strong>¥{reimbursementTotal.toFixed(2)}</strong></Table.Summary.Cell>
+              <Table.Summary.Cell index={3} align="right"><strong>¥{reimbursementTotal}</strong></Table.Summary.Cell>
             </Table.Summary.Row>
           )}
          />
