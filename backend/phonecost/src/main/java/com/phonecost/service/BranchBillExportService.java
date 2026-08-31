@@ -195,7 +195,7 @@ public class BranchBillExportService {
 
         try (XSSFWorkbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             CellStyle headerStyle = createHeaderStyle(wb);
-            CellStyle numberStyle = createNumberStyle(wb);
+            CellStyle numberStyle = createRawNumberStyle(wb);
             CellStyle boldStyle = createBoldStyle(wb);
 
             // Sheet1: 分行分摊汇总（直属下级）
@@ -253,7 +253,7 @@ public class BranchBillExportService {
 
         try (XSSFWorkbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             CellStyle headerStyle = createHeaderStyle(wb);
-            CellStyle numberStyle = createNumberStyle(wb);
+            CellStyle numberStyle = createRawNumberStyle(wb);
             CellStyle boldStyle = createBoldStyle(wb);
 
             // Sheet1: 二级分行分摊汇总
@@ -313,7 +313,7 @@ public class BranchBillExportService {
             row.createCell(2).setCellValue(child.getName());
             row.createCell(3).setCellValue(child.getCostCenter() != null ? child.getCostCenter() : "");
 
-            // 从bill_detail聚合原始费用
+            // 从bill_detail聚合原始费用 (CALL)
             AggregatedFees fees = aggregateFeesByOrgId(groupedByOrgId, child.getId());
             setCurrencyCell(row.createCell(4), fees.platformFee, numberStyle);
             setCurrencyCell(row.createCell(5), fees.monthlyRentCode, numberStyle);
@@ -324,9 +324,12 @@ public class BranchBillExportService {
                     .add(fees.domesticFee).add(fees.internationalFee);
             setCurrencyCell(row.createCell(8), callSub, numberStyle);
 
-            BigDecimal sumRec = safeSum(childRes, AllocationResult::getRecordingFee);
-            BigDecimal sumCrbt = safeSum(childRes, AllocationResult::getCrbtFee);
-            BigDecimal sumFlash = safeSum(childRes, AllocationResult::getFlashMsgFee);
+            // 从bill_detail raw_data聚合录音/彩铃/闪信费用
+            String childPath = child.getPath();
+            NonCallFees ncf = aggregateNonCallFeesByOrgPath(allDetails, childPath, orgMap);
+            BigDecimal sumRec = ncf.recordingFee;
+            BigDecimal sumCrbt = ncf.crbtFee;
+            BigDecimal sumFlash = ncf.flashMsgFee;
             int phones = childRes.stream()
                     .mapToInt(r -> r.getPhoneCount() != null ? r.getPhoneCount() : 0).sum();
 
@@ -406,9 +409,12 @@ public class BranchBillExportService {
                     .add(fees.domesticFee).add(fees.internationalFee);
             setCurrencyCell(row.createCell(8), callSub, numberStyle);
 
-            BigDecimal sumRec = safeSum(childRes, AllocationResult::getRecordingFee);
-            BigDecimal sumCrbt = safeSum(childRes, AllocationResult::getCrbtFee);
-            BigDecimal sumFlash = safeSum(childRes, AllocationResult::getFlashMsgFee);
+            // 从bill_detail raw_data聚合录音/彩铃/闪信费用
+            String childPath = child.getPath();
+            NonCallFees ncf = aggregateNonCallFeesByOrgPath(allDetails, childPath, orgMap);
+            BigDecimal sumRec = ncf.recordingFee;
+            BigDecimal sumCrbt = ncf.crbtFee;
+            BigDecimal sumFlash = ncf.flashMsgFee;
             int phones = childRes.stream()
                     .mapToInt(r -> r.getPhoneCount() != null ? r.getPhoneCount() : 0).sum();
 
@@ -516,7 +522,7 @@ public class BranchBillExportService {
             // recording_dir sourced from bill raw data (same as bill management page)
             String recDir = getRawString(parsed, "recordingDir");
             row.createCell(5).setCellValue(recDir);
-            setCurrencyCell(row.createCell(6), d.getRecordingFee(), numberStyle);
+            setCurrencyCell(row.createCell(6), getRawDecimalOrZero(parsed, "recordingFee"), numberStyle);
         }
         autoSizeColumns(sheet, headers.length);
     }
@@ -546,7 +552,7 @@ public class BranchBillExportService {
             row.createCell(4).setCellValue(d.getFlashMonth() != null ? d.getFlashMonth() : "");
             Map<String, Object> parsed = parseRawData(d.getRawData());
             row.createCell(5).setCellValue(getRawDecimalOrZero(parsed, "flashCount").doubleValue());
-            setCurrencyCell(row.createCell(6), d.getFlashMsgFee(), numberStyle);
+            setCurrencyCell(row.createCell(6), getRawDecimalOrZero(parsed, "flashMsgFee"), numberStyle);
         }
         autoSizeColumns(sheet, headers.length);
     }
@@ -574,7 +580,8 @@ public class BranchBillExportService {
             row.createCell(2).setCellValue(org != null ? org.getName() : "");
             row.createCell(3).setCellValue(d.getExtension() != null ? d.getExtension() : "");
             row.createCell(4).setCellValue(d.getPhoneNumber());
-            setCurrencyCell(row.createCell(5), d.getCrbtFee(), numberStyle);
+            Map<String, Object> parsed = parseRawData(d.getRawData());
+            setCurrencyCell(row.createCell(5), getRawDecimalOrZero(parsed, "crbtFee"), numberStyle);
         }
         autoSizeColumns(sheet, headers.length);
     }
@@ -663,6 +670,36 @@ public class BranchBillExportService {
             fees.internationalFee = safeAdd(fees.internationalFee, getRawDecimalOrZero(parsed, "internationalFee"));
         }
         return fees;
+    }
+
+    /**
+     * Aggregate non-CALL fees (recording/crbt/flash) from raw_data for all details
+     * belonging to a given org_id path prefix. Returns 3-element array.
+     * Only counts details with a non-null org_id that falls within the path prefix.
+     */
+    private NonCallFees aggregateNonCallFeesByOrgPath(List<BillDetail> allDetails, String pathPrefix,
+                                                       Map<Long, SysOrganization> orgMap) {
+        NonCallFees fees = new NonCallFees();
+        for (BillDetail d : allDetails) {
+            if (d.getOrgId() == null) continue; // skip unassigned
+            if (!isInPath(d.getOrgId(), pathPrefix, orgMap)) continue;
+            Map<String, Object> parsed = parseRawData(d.getRawData());
+            String st = d.getSheetType();
+            if (st == null) continue;
+            switch (st) {
+                case "RECORDING" -> fees.recordingFee = safeAdd(fees.recordingFee, getRawDecimalOrZero(parsed, "recordingFee"));
+                case "CRBT" -> fees.crbtFee = safeAdd(fees.crbtFee, getRawDecimalOrZero(parsed, "crbtFee"));
+                case "FLASH_MSG" -> fees.flashMsgFee = safeAdd(fees.flashMsgFee, getRawDecimalOrZero(parsed, "flashMsgFee"));
+            }
+        }
+        return fees;
+    }
+
+    /** Container for non-CALL aggregated fees (from raw_data) */
+    private static class NonCallFees {
+        BigDecimal recordingFee = ZERO;
+        BigDecimal crbtFee = ZERO;
+        BigDecimal flashMsgFee = ZERO;
     }
 
     private static class AggregatedFees {
@@ -823,9 +860,11 @@ public class BranchBillExportService {
                     })
                     .collect(Collectors.toList());
 
-            BigDecimal sumRec = safeSum(childResults, AllocationResult::getRecordingFee);
-            BigDecimal sumCrbt = safeSum(childResults, AllocationResult::getCrbtFee);
-            BigDecimal sumFlash = safeSum(childResults, AllocationResult::getFlashMsgFee);
+            // 从bill_detail raw_data聚合录音/彩铃/闪信费用
+            NonCallFees ncf = aggregateNonCallFeesByOrgPath(allDetails, branchPath, orgMap);
+            BigDecimal sumRec = ncf.recordingFee;
+            BigDecimal sumCrbt = ncf.crbtFee;
+            BigDecimal sumFlash = ncf.flashMsgFee;
             int phoneCount = childResults.stream()
                     .mapToInt(r -> r.getPhoneCount() != null ? r.getPhoneCount() : 0).sum();
             int confirmed = (int) childResults.stream()
