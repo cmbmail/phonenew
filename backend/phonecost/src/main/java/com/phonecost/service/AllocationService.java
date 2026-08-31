@@ -1,5 +1,7 @@
 package com.phonecost.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.phonecost.domain.*;
 import com.phonecost.repository.*;
 import lombok.RequiredArgsConstructor;
@@ -201,6 +203,13 @@ public class AllocationService {
 
     /**
      * Fee aggregator helper
+     * Reads fees from raw_data JSON (not entity columns) to preserve original precision,
+     * consistent with BranchBillExportService.aggregateFeesByPhones.
+     *
+     * raw_data stores template fields (platformFee, monthlyRentCode, domesticFee, internationalFee,
+     * recordingFee, crbtFee, flashMsgFee, totalFee), NOT computed fields (monthlyRent, callFee).
+     * So monthlyRent = platformFee + monthlyRentCode, callFee = domesticFee + internationalFee
+     * (same computation as BillImportService.computeFields).
      */
     static class FeeAggregator {
         BigDecimal monthlyRent = BigDecimal.ZERO;
@@ -214,23 +223,73 @@ public class AllocationService {
         // Track unique phone numbers for phone count
         Set<String> uniquePhones = new HashSet<>();
 
+        private static final ObjectMapper MAPPER = new ObjectMapper();
+
         void add(BillDetail detail) {
-            this.monthlyRent = this.monthlyRent.add(safe(detail.getMonthlyRent()));
-            this.callFee = this.callFee.add(safe(detail.getCallFee()));
-            this.recordingFee = this.recordingFee.add(safe(detail.getRecordingFee()));
-            this.crbtFee = this.crbtFee.add(safe(detail.getCrbtFee()));
-            this.flashMsgFee = this.flashMsgFee.add(safe(detail.getFlashMsgFee()));
-            this.totalFee = this.totalFee.add(safe(detail.getTotalFee()));
+            Map<String, Object> parsed = parseRawData(detail.getRawData());
+            String st = detail.getSheetType();
+            if (st == null) return;
+
+            switch (st) {
+                case "CALL" -> {
+                    // monthlyRent = platformFee + monthlyRentCode (computed, same as import)
+                    BigDecimal mr = getRawDecimalOrZero(parsed, "monthlyRent");
+                    if (mr.compareTo(BigDecimal.ZERO) == 0) {
+                        mr = getRawDecimalOrZero(parsed, "platformFee")
+                                .add(getRawDecimalOrZero(parsed, "monthlyRentCode"));
+                    }
+                    this.monthlyRent = this.monthlyRent.add(mr);
+
+                    // callFee = domesticFee + internationalFee (computed, same as import)
+                    BigDecimal cf = getRawDecimalOrZero(parsed, "callFee");
+                    if (cf.compareTo(BigDecimal.ZERO) == 0) {
+                        cf = getRawDecimalOrZero(parsed, "domesticFee")
+                                .add(getRawDecimalOrZero(parsed, "internationalFee"));
+                    }
+                    this.callFee = this.callFee.add(cf);
+
+                    this.totalFee = this.totalFee.add(getRawDecimalOrZero(parsed, "totalFee"));
+                }
+                case "RECORDING" -> {
+                    this.recordingFee = this.recordingFee.add(getRawDecimalOrZero(parsed, "recordingFee"));
+                    this.totalFee = this.totalFee.add(getRawDecimalOrZero(parsed, "recordingFee"));
+                }
+                case "CRBT" -> {
+                    this.crbtFee = this.crbtFee.add(getRawDecimalOrZero(parsed, "crbtFee"));
+                    this.totalFee = this.totalFee.add(getRawDecimalOrZero(parsed, "crbtFee"));
+                }
+                case "FLASH_MSG" -> {
+                    this.flashMsgFee = this.flashMsgFee.add(getRawDecimalOrZero(parsed, "flashMsgFee"));
+                    this.totalFee = this.totalFee.add(getRawDecimalOrZero(parsed, "flashMsgFee"));
+                }
+            }
+
             // Only count unique phone numbers from CALL sheet
-            if ("CALL".equals(detail.getSheetType()) && detail.getPhoneNumber() != null) {
+            if ("CALL".equals(st) && detail.getPhoneNumber() != null) {
                 if (uniquePhones.add(detail.getPhoneNumber())) {
                     this.phoneCount++;
                 }
             }
         }
 
-        private BigDecimal safe(BigDecimal v) {
-            return v != null ? v : BigDecimal.ZERO;
+        private static Map<String, Object> parseRawData(String rawData) {
+            if (rawData == null || rawData.isEmpty() || rawData.equals("{}")) return Collections.emptyMap();
+            try {
+                return MAPPER.readValue(rawData, new TypeReference<Map<String, Object>>() {});
+            } catch (Exception e) {
+                return Collections.emptyMap();
+            }
+        }
+
+        private static BigDecimal getRawDecimalOrZero(Map<String, Object> parsed, String field) {
+            Object val = parsed.get(field);
+            if (val == null) return BigDecimal.ZERO;
+            if (val instanceof Number) return BigDecimal.valueOf(((Number) val).doubleValue());
+            if (val instanceof String) {
+                String s = ((String) val).trim();
+                return s.isEmpty() ? BigDecimal.ZERO : new BigDecimal(s);
+            }
+            return BigDecimal.ZERO;
         }
     }
 

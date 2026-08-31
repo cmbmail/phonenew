@@ -1,5 +1,7 @@
 package com.phonecost.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.phonecost.domain.AllocationAdjustment;
 import com.phonecost.domain.AllocationResult;
 import com.phonecost.domain.BillDetail;
@@ -16,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -98,10 +101,28 @@ public class AllocationAdjustService {
             }
         }
 
-        // --- 计算该号码的费用合计 ---
-        BigDecimal totalAmount = details.stream()
-                .map(d -> d.getTotalFee() != null ? d.getTotalFee() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        // --- 计算该号码的费用合计 (from raw_data to preserve original precision) ---
+        // totalFee in raw_data may be 0 or absent; fall back to sum of components (same as import)
+        BigDecimal totalAmount = BigDecimal.ZERO;
+        for (BillDetail d : details) {
+            Map<String, Object> parsed = parseRawData(d.getRawData());
+            BigDecimal tf = getRawDecimalOrZero(parsed, "totalFee");
+            if (tf.compareTo(BigDecimal.ZERO) == 0) {
+                String st = d.getSheetType();
+                if (st != null) {
+                    switch (st) {
+                        case "CALL" -> tf = getRawDecimalOrZero(parsed, "platformFee")
+                                .add(getRawDecimalOrZero(parsed, "monthlyRentCode"))
+                                .add(getRawDecimalOrZero(parsed, "domesticFee"))
+                                .add(getRawDecimalOrZero(parsed, "internationalFee"));
+                        case "RECORDING" -> tf = getRawDecimalOrZero(parsed, "recordingFee");
+                        case "CRBT" -> tf = getRawDecimalOrZero(parsed, "crbtFee");
+                        case "FLASH_MSG" -> tf = getRawDecimalOrZero(parsed, "flashMsgFee");
+                    }
+                }
+            }
+            totalAmount = totalAmount.add(tf);
+        }
 
         if (totalAmount.compareTo(BigDecimal.ZERO) == 0) {
             throw new IllegalArgumentException("该号码费用为0，无需调整");
@@ -216,17 +237,58 @@ public class AllocationAdjustService {
 
     // ==================== 辅助方法 ====================
 
+    /**
+     * Sum a fee field from raw_data (not entity columns) to preserve original precision.
+     * raw_data stores template fields; computed fields (monthlyRent, callFee) are derived
+     * from platformFee+monthlyRentCode and domesticFee+internationalFee respectively.
+     */
     private BigDecimal sumField(List<BillDetail> details, String field) {
-        return details.stream()
-                .map(d -> switch (field) {
-                    case "monthlyRent" -> d.getMonthlyRent();
-                    case "callFee" -> d.getCallFee();
-                    case "recordingFee" -> d.getRecordingFee();
-                    case "crbtFee" -> d.getCrbtFee();
-                    case "flashMsgFee" -> d.getFlashMsgFee();
-                    default -> BigDecimal.ZERO;
-                })
-                .reduce(BigDecimal.ZERO, (a, b) -> a.add(b != null ? b : BigDecimal.ZERO));
+        BigDecimal sum = BigDecimal.ZERO;
+        for (BillDetail d : details) {
+            Map<String, Object> parsed = parseRawData(d.getRawData());
+            String st = d.getSheetType();
+            if (st == null) continue;
+
+            switch (field) {
+                case "monthlyRent" -> {
+                    if ("CALL".equals(st)) {
+                        BigDecimal mr = getRawDecimalOrZero(parsed, "monthlyRent");
+                        if (mr.compareTo(BigDecimal.ZERO) == 0) {
+                            mr = getRawDecimalOrZero(parsed, "platformFee")
+                                    .add(getRawDecimalOrZero(parsed, "monthlyRentCode"));
+                        }
+                        sum = sum.add(mr);
+                    }
+                }
+                case "callFee" -> {
+                    if ("CALL".equals(st)) {
+                        BigDecimal cf = getRawDecimalOrZero(parsed, "callFee");
+                        if (cf.compareTo(BigDecimal.ZERO) == 0) {
+                            cf = getRawDecimalOrZero(parsed, "domesticFee")
+                                    .add(getRawDecimalOrZero(parsed, "internationalFee"));
+                        }
+                        sum = sum.add(cf);
+                    }
+                }
+                case "recordingFee" -> {
+                    if ("RECORDING".equals(st)) {
+                        sum = sum.add(getRawDecimalOrZero(parsed, "recordingFee"));
+                    }
+                }
+                case "crbtFee" -> {
+                    if ("CRBT".equals(st)) {
+                        sum = sum.add(getRawDecimalOrZero(parsed, "crbtFee"));
+                    }
+                }
+                case "flashMsgFee" -> {
+                    if ("FLASH_MSG".equals(st)) {
+                        sum = sum.add(getRawDecimalOrZero(parsed, "flashMsgFee"));
+                    }
+                }
+                default -> { /* no-op */ }
+            }
+        }
+        return sum;
     }
 
     private BigDecimal safeSub(BigDecimal a, BigDecimal b) {
@@ -259,14 +321,15 @@ public class AllocationAdjustService {
                                              boolean isSubtract) {
         if (leafOrg == null || leafOrg.getPath() == null || leafOrg.getParentId() == null) return;
 
+        // Read deltas from raw_data to preserve original precision
         BigDecimal amount = details.stream()
-                .map(d -> d.getTotalFee() != null ? d.getTotalFee() : BigDecimal.ZERO)
+                .map(d -> getRawDecimalOrZero(parseRawData(d.getRawData()), "totalFee"))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal monthlyRentDelta = details.stream().map(d -> safe(d.getMonthlyRent())).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal callFeeDelta = details.stream().map(d -> safe(d.getCallFee())).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal recordingFeeDelta = details.stream().map(d -> safe(d.getRecordingFee())).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal crbtFeeDelta = details.stream().map(d -> safe(d.getCrbtFee())).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal flashMsgFeeDelta = details.stream().map(d -> safe(d.getFlashMsgFee())).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal monthlyRentDelta = sumField(details, "monthlyRent");
+        BigDecimal callFeeDelta = sumField(details, "callFee");
+        BigDecimal recordingFeeDelta = sumField(details, "recordingFee");
+        BigDecimal crbtFeeDelta = sumField(details, "crbtFee");
+        BigDecimal flashMsgFeeDelta = sumField(details, "flashMsgFee");
         int phoneCountDelta = countCallPhones(details);
 
         // Walk up the org tree using cached orgMap (no N+1 queries)
@@ -309,5 +372,27 @@ public class AllocationAdjustService {
 
     private BigDecimal safe(BigDecimal v) {
         return v != null ? v : BigDecimal.ZERO;
+    }
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    private static Map<String, Object> parseRawData(String rawData) {
+        if (rawData == null || rawData.isEmpty() || rawData.equals("{}")) return Collections.emptyMap();
+        try {
+            return MAPPER.readValue(rawData, new TypeReference<Map<String, Object>>() {});
+        } catch (Exception e) {
+            return Collections.emptyMap();
+        }
+    }
+
+    private static BigDecimal getRawDecimalOrZero(Map<String, Object> parsed, String field) {
+        Object val = parsed.get(field);
+        if (val == null) return BigDecimal.ZERO;
+        if (val instanceof Number) return BigDecimal.valueOf(((Number) val).doubleValue());
+        if (val instanceof String) {
+            String s = ((String) val).trim();
+            return s.isEmpty() ? BigDecimal.ZERO : new BigDecimal(s);
+        }
+        return BigDecimal.ZERO;
     }
 }
