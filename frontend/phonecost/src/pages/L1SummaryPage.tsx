@@ -92,11 +92,15 @@ export default function L1SummaryPage() {
 
   const money = (v: unknown) => {
     const n = Number(v);
+    return !isNaN(n) && n !== 0 ? `¥${n}` : '-';
+  };
+  const money2 = (v: unknown) => {
+    const n = Number(v);
     return !isNaN(n) && n !== 0 ? `¥${n.toFixed(2)}` : '-';
   };
   const dur = (v: unknown) => {
     const n = Number(v);
-    return !isNaN(n) && n !== 0 ? n.toFixed(1) : '-';
+    return !isNaN(n) && n !== 0 ? String(n) : '-';
   };
 
   // ========== 分摊汇总 ==========
@@ -141,7 +145,7 @@ export default function L1SummaryPage() {
     { title: t('l1Summary.crbtFeeCol'), dataIndex: 'crbt_fee', key: 'crbt_fee', width: 80, align: 'right' as const, render: money },
     { title: t('l1Summary.flashFeeCol'), dataIndex: 'flash_fee', key: 'flash_fee', width: 80, align: 'right' as const, render: money },
     { title: t('l1Summary.totalCol'), dataIndex: 'total_fee', key: 'total_fee', width: 110, align: 'right' as const,
-      render: (v: number) => <strong>{money(v)}</strong>,
+      render: (v: number) => <strong>{money2(v)}</strong>,
     },
     { title: t('l1Summary.phoneCountCol'), dataIndex: 'phone_count', key: 'phone_count', width: 70, align: 'right' as const },
   ];
@@ -159,7 +163,7 @@ export default function L1SummaryPage() {
     { title: t('l1Detail.domesticFeeCol'), dataIndex: 'domestic_fee', key: 'domestic_fee', width: 100, align: 'right' as const, render: money },
     { title: t('l1Detail.intlDurationCol'), dataIndex: 'international_duration', key: 'international_duration', width: 100, align: 'right' as const, render: dur },
     { title: t('l1Detail.intlFeeCol'), dataIndex: 'international_fee', key: 'international_fee', width: 90, align: 'right' as const, render: money },
-    { title: t('l1Detail.totalFeeCol'), dataIndex: 'total_fee', key: 'total_fee', width: 100, align: 'right' as const, render: (v: number) => <strong>{money(v)}</strong> },
+    { title: t('l1Detail.totalFeeCol'), dataIndex: 'total_fee', key: 'total_fee', width: 100, align: 'right' as const, render: (v: number) => <strong>{money2(v)}</strong> },
     { title: t('l1Detail.sourceCol'), dataIndex: 'ownership_source', key: 'ownership_source', width: 70 },
   ];
 

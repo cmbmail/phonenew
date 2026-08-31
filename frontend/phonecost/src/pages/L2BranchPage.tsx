@@ -93,11 +93,15 @@ export default function L2BranchPage() {
 
   const money = (v: unknown) => {
     const n = Number(v);
+    return !isNaN(n) && n !== 0 ? `¥${n}` : '-';
+  };
+  const money2 = (v: unknown) => {
+    const n = Number(v);
     return !isNaN(n) && n !== 0 ? `¥${n.toFixed(2)}` : '-';
   };
   const dur = (v: unknown) => {
     const n = Number(v);
-    return !isNaN(n) && n !== 0 ? n.toFixed(1) : '-';
+    return !isNaN(n) && n !== 0 ? String(n) : '-';
   };
 
   // ========== 加载全部4种明细数据 ==========
@@ -167,7 +171,7 @@ export default function L2BranchPage() {
     { title: t('l1Summary.crbtFeeCol'), dataIndex: 'crbt_fee', key: 'crbt_fee', width: 80, align: 'right' as const, render: money },
     { title: t('l1Summary.flashFeeCol'), dataIndex: 'flash_fee', key: 'flash_fee', width: 80, align: 'right' as const, render: money },
     { title: t('l1Summary.totalCol'), dataIndex: 'total_fee', key: 'total_fee', width: 110, align: 'right' as const,
-      render: (v: number) => <strong>{money(v)}</strong>,
+      render: (v: number) => <strong>{money2(v)}</strong>,
     },
     { title: t('l1Summary.phoneCountCol'), dataIndex: 'phone_count', key: 'phone_count', width: 70, align: 'right' as const },
   ];
@@ -329,17 +333,17 @@ export default function L2BranchPage() {
                     { title: t('l1Summary.branchCol'), dataIndex: 'l1_branch' },
                     { title: t('l2Branch.allocDeptCol'), dataIndex: 'alloc_dept' },
                     { title: t('l2Branch.costCenterCodeCol'), dataIndex: 'cost_center' },
-                    { title: t('l1Summary.platformFeeCol'), dataIndex: 'platform_fee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
-                    { title: t('l1Summary.monthlyRentCodeCol'), dataIndex: 'monthly_rent_code', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
-                    { title: t('l1Summary.domesticDurationCol'), dataIndex: 'domestic_duration', render: (v: number) => v != null && v !== 0 ? v.toFixed(1) : '' },
-                    { title: t('l1Summary.transferDurationCol'), dataIndex: 'transfer_duration', render: (v: number) => v != null && v !== 0 ? v.toFixed(1) : '' },
-                    { title: t('l1Summary.domesticFeeCol'), dataIndex: 'domestic_fee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
-                    { title: t('l1Summary.intlDurationCol'), dataIndex: 'international_duration', render: (v: number) => v != null && v !== 0 ? v.toFixed(1) : '' },
-                    { title: t('l1Summary.intlFeeCol'), dataIndex: 'international_fee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
-                    { title: t('l1Summary.callSubtotalCol'), dataIndex: 'call_subtotal', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
-                    { title: t('l1Summary.recordingFeeCol'), dataIndex: 'recording_fee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
-                    { title: t('l1Summary.crbtFeeCol'), dataIndex: 'crbt_fee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
-                    { title: t('l1Summary.flashFeeCol'), dataIndex: 'flash_fee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
+                    { title: t('l1Summary.platformFeeCol'), dataIndex: 'platform_fee', render: (v: number) => v != null && v !== 0 ? String(v) : '' },
+                    { title: t('l1Summary.monthlyRentCodeCol'), dataIndex: 'monthly_rent_code', render: (v: number) => v != null && v !== 0 ? String(v) : '' },
+                    { title: t('l1Summary.domesticDurationCol'), dataIndex: 'domestic_duration', render: (v: number) => v != null && v !== 0 ? String(v) : '' },
+                    { title: t('l1Summary.transferDurationCol'), dataIndex: 'transfer_duration', render: (v: number) => v != null && v !== 0 ? String(v) : '' },
+                    { title: t('l1Summary.domesticFeeCol'), dataIndex: 'domestic_fee', render: (v: number) => v != null && v !== 0 ? String(v) : '' },
+                    { title: t('l1Summary.intlDurationCol'), dataIndex: 'international_duration', render: (v: number) => v != null && v !== 0 ? String(v) : '' },
+                    { title: t('l1Summary.intlFeeCol'), dataIndex: 'international_fee', render: (v: number) => v != null && v !== 0 ? String(v) : '' },
+                    { title: t('l1Summary.callSubtotalCol'), dataIndex: 'call_subtotal', render: (v: number) => v != null && v !== 0 ? String(v) : '' },
+                    { title: t('l1Summary.recordingFeeCol'), dataIndex: 'recording_fee', render: (v: number) => v != null && v !== 0 ? String(v) : '' },
+                    { title: t('l1Summary.crbtFeeCol'), dataIndex: 'crbt_fee', render: (v: number) => v != null && v !== 0 ? String(v) : '' },
+                    { title: t('l1Summary.flashFeeCol'), dataIndex: 'flash_fee', render: (v: number) => v != null && v !== 0 ? String(v) : '' },
                     { title: t('l1Summary.totalCol'), dataIndex: 'total_fee', render: (v: number) => v != null ? v.toFixed(2) : '' },
                     { title: t('l1Summary.phoneCountCol'), dataIndex: 'phone_count' },
                   ],

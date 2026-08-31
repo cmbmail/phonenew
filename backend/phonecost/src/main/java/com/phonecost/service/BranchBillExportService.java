@@ -70,7 +70,8 @@ public class BranchBillExportService {
 
         try (XSSFWorkbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             CellStyle headerStyle = createHeaderStyle(wb);
-            CellStyle numberStyle = createNumberStyle(wb);
+            CellStyle numberStyle = createRawNumberStyle(wb);
+            CellStyle totalStyle = createNumberStyle(wb);
             CellStyle boldStyle = createBoldStyle(wb);
 
             // Sheet1: 分摊汇总表 — 列与前端页面完全一致
@@ -151,7 +152,7 @@ public class BranchBillExportService {
                 setCurrencyCell(totalRow.createCell(9), grandRecording, numberStyle);
                 setCurrencyCell(totalRow.createCell(10), grandCrbt, numberStyle);
                 setCurrencyCell(totalRow.createCell(11), grandFlash, numberStyle);
-                setCurrencyCell(totalRow.createCell(12), grandTotal.setScale(2, RoundingMode.HALF_UP), numberStyle);
+                setCurrencyCell(totalRow.createCell(12), grandTotal.setScale(2, RoundingMode.HALF_UP), totalStyle);
                 totalRow.createCell(13).setCellValue(grandPhones);
                 totalRow.getCell(13).setCellStyle(boldStyle);
             }
@@ -1670,6 +1671,14 @@ public class BranchBillExportService {
         CellStyle style = wb.createCellStyle();
         DataFormat format = wb.createDataFormat();
         style.setDataFormat(format.getFormat("#,##0.00"));
+        return style;
+    }
+
+    /** 原始精度数字样式：不强制 2 位小数，保留原始小数位 */
+    private static CellStyle createRawNumberStyle(Workbook wb) {
+        CellStyle style = wb.createCellStyle();
+        DataFormat format = wb.createDataFormat();
+        style.setDataFormat(format.getFormat("#,##0.############"));
         return style;
     }
 

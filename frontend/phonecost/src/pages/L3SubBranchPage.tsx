@@ -115,11 +115,15 @@ export default function L3SubBranchPage() {
 
   const money = (v: unknown) => {
     const n = Number(v);
+    return !isNaN(n) && n !== 0 ? `¥${n}` : '-';
+  };
+  const money2 = (v: unknown) => {
+    const n = Number(v);
     return !isNaN(n) && n !== 0 ? `¥${n.toFixed(2)}` : '-';
   };
   const dur = (v: unknown) => {
     const n = Number(v);
-    return !isNaN(n) && n !== 0 ? n.toFixed(1) : '-';
+    return !isNaN(n) && n !== 0 ? String(n) : '-';
   };
 
   // ========== 加载全部4种明细数据 ==========
@@ -184,7 +188,7 @@ export default function L3SubBranchPage() {
     { title: t('l3SubBranch.crbtFeeCol'), dataIndex: 'crbt_fee', key: 'crbt_fee', width: 80, align: 'right' as const, render: money },
     { title: t('l3SubBranch.flashFeeCol'), dataIndex: 'flash_fee', key: 'flash_fee', width: 80, align: 'right' as const, render: money },
     { title: t('l3SubBranch.totalCol'), dataIndex: 'total_fee', key: 'total_fee', width: 110, align: 'right' as const,
-      render: (v: number) => <strong>{money(v)}</strong>,
+      render: (v: number) => <strong>{money2(v)}</strong>,
     },
     { title: t('l3SubBranch.phoneCountCol'), dataIndex: 'phone_count', key: 'phone_count', width: 70, align: 'right' as const },
   ];
@@ -202,7 +206,7 @@ export default function L3SubBranchPage() {
     { title: t('l1Detail.domesticFeeCol'), dataIndex: 'domestic_fee', key: 'domestic_fee', width: 100, align: 'right' as const, render: money },
     { title: t('l1Detail.intlDurationCol'), dataIndex: 'international_duration', key: 'international_duration', width: 100, align: 'right' as const, render: dur },
     { title: t('l1Detail.intlFeeCol'), dataIndex: 'international_fee', key: 'international_fee', width: 90, align: 'right' as const, render: money },
-    { title: t('l1Detail.totalFeeCol'), dataIndex: 'total_fee', key: 'total_fee', width: 100, align: 'right' as const, render: (v: number) => <strong>{money(v)}</strong> },
+    { title: t('l1Detail.totalFeeCol'), dataIndex: 'total_fee', key: 'total_fee', width: 100, align: 'right' as const, render: (v: number) => <strong>{money2(v)}</strong> },
     { title: t('l1Detail.sourceCol'), dataIndex: 'ownership_source', key: 'ownership_source', width: 70 },
   ];
 
@@ -337,17 +341,17 @@ export default function L3SubBranchPage() {
                   `分摊汇总_${selectedL2Branch}_${batch?.billing_month || ''}`,
                   [
                     { title: t('l3SubBranch.orgNameCol'), dataIndex: 'alloc_dept' },
-                    { title: t('l3SubBranch.platformFeeCol'), dataIndex: 'platform_fee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
-                    { title: t('l3SubBranch.monthlyRentCodeCol'), dataIndex: 'monthly_rent_code', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
-                    { title: t('l3SubBranch.domesticDurationCol'), dataIndex: 'domestic_duration', render: (v: number) => v != null && v !== 0 ? v.toFixed(1) : '' },
-                    { title: t('l3SubBranch.transferDurationCol'), dataIndex: 'transfer_duration', render: (v: number) => v != null && v !== 0 ? v.toFixed(1) : '' },
-                    { title: t('l3SubBranch.domesticFeeCol'), dataIndex: 'domestic_fee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
-                    { title: t('l3SubBranch.intlDurationCol'), dataIndex: 'international_duration', render: (v: number) => v != null && v !== 0 ? v.toFixed(1) : '' },
-                    { title: t('l3SubBranch.intlFeeCol'), dataIndex: 'international_fee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
-                    { title: t('l3SubBranch.callSubtotalCol'), dataIndex: 'call_subtotal', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
-                    { title: t('l3SubBranch.recordingFeeCol'), dataIndex: 'recording_fee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
-                    { title: t('l3SubBranch.crbtFeeCol'), dataIndex: 'crbt_fee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
-                    { title: t('l3SubBranch.flashFeeCol'), dataIndex: 'flash_fee', render: (v: number) => v != null && v !== 0 ? v.toFixed(2) : '' },
+                    { title: t('l3SubBranch.platformFeeCol'), dataIndex: 'platform_fee', render: (v: number) => v != null && v !== 0 ? String(v) : '' },
+                    { title: t('l3SubBranch.monthlyRentCodeCol'), dataIndex: 'monthly_rent_code', render: (v: number) => v != null && v !== 0 ? String(v) : '' },
+                    { title: t('l3SubBranch.domesticDurationCol'), dataIndex: 'domestic_duration', render: (v: number) => v != null && v !== 0 ? String(v) : '' },
+                    { title: t('l3SubBranch.transferDurationCol'), dataIndex: 'transfer_duration', render: (v: number) => v != null && v !== 0 ? String(v) : '' },
+                    { title: t('l3SubBranch.domesticFeeCol'), dataIndex: 'domestic_fee', render: (v: number) => v != null && v !== 0 ? String(v) : '' },
+                    { title: t('l3SubBranch.intlDurationCol'), dataIndex: 'international_duration', render: (v: number) => v != null && v !== 0 ? String(v) : '' },
+                    { title: t('l3SubBranch.intlFeeCol'), dataIndex: 'international_fee', render: (v: number) => v != null && v !== 0 ? String(v) : '' },
+                    { title: t('l3SubBranch.callSubtotalCol'), dataIndex: 'call_subtotal', render: (v: number) => v != null && v !== 0 ? String(v) : '' },
+                    { title: t('l3SubBranch.recordingFeeCol'), dataIndex: 'recording_fee', render: (v: number) => v != null && v !== 0 ? String(v) : '' },
+                    { title: t('l3SubBranch.crbtFeeCol'), dataIndex: 'crbt_fee', render: (v: number) => v != null && v !== 0 ? String(v) : '' },
+                    { title: t('l3SubBranch.flashFeeCol'), dataIndex: 'flash_fee', render: (v: number) => v != null && v !== 0 ? String(v) : '' },
                     { title: t('l3SubBranch.totalCol'), dataIndex: 'total_fee', render: (v: number) => v != null ? v.toFixed(2) : '' },
                     { title: t('l3SubBranch.phoneCountCol'), dataIndex: 'phone_count' },
                   ],
