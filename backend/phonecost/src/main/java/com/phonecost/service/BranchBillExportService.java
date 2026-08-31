@@ -54,22 +54,16 @@ public class BranchBillExportService {
     // ==================== L1: 分摊汇总（集团→一级分行） ====================
 
     /**
-     * 导出L1分摊汇总表：每个一级分行一行，汇总其所有下属组织的费用
+     * 导出L1分摊汇总表：使用 ownership 数据源（与前端 getL1SummaryDataByOwnership 一致）
+     * 每个一级分行一行，汇总其所有下属号码的费用
      */
     public byte[] exportLevel1Summary(Long batchId, Long operatorId) throws IOException {
 
         BillBatch batch = billBatchRepository.findByIdAndDeletedAtIsNull(batchId)
                 .orElseThrow(() -> new IllegalArgumentException("账单批次不存在: " + batchId));
-        List<AllocationResult> allResults = resultRepository.findByBatchIdAndDeletedAtIsNull(batchId);
-        List<BillDetail> allDetails = billDetailRepository.findByBatchIdAndDeletedAtIsNull(batchId);
-        Map<Long, SysOrganization> orgMap = buildOrgMap();
-        Map<Long, List<BillDetail>> groupedByOrgId = groupCallDetailsByOrgId(allDetails);
 
-        // 找出所有一级分行(type=2)
-        List<SysOrganization> branches = orgMap.values().stream()
-                .filter(o -> o.getType() != null && o.getType() == 2 && o.getDeletedAt() == null)
-                .sorted(Comparator.comparing(SysOrganization::getId))
-                .collect(Collectors.toList());
+        // 使用与前端一致的 ownership 数据源
+        List<Map<String, Object>> rows = getL1SummaryDataByOwnership(batchId);
 
         String monthLabel = formatMonthLabel(batch.getBillingMonth());
 
@@ -78,9 +72,9 @@ public class BranchBillExportService {
             CellStyle numberStyle = createNumberStyle(wb);
             CellStyle boldStyle = createBoldStyle(wb);
 
-            // Sheet1: 分摊汇总表
+            // Sheet1: 分摊汇总表 — 列与前端页面完全一致
             Sheet sheet = wb.createSheet(monthLabel + "集团分摊汇总");
-            String[] headers = {"一级分行", "成本中心", "平台使用费", "码号月租费",
+            String[] headers = {"一级分行", "平台使用费", "码号月租费",
                     "国内外呼时长(分钟)", "转接外呼时长(分钟)", "国内费用",
                     "国际时长(分钟)", "国际费用", "费用小计",
                     "录音费用", "彩铃费用", "闪信费用", "合计", "号码数"};
@@ -89,76 +83,82 @@ public class BranchBillExportService {
             int rowIdx = 1;
             BigDecimal grandTotal = ZERO;
             int grandPhones = 0;
+            BigDecimal grandPlatform = ZERO, grandMonthlyRent = ZERO, grandDomesticFee = ZERO, grandIntlFee = ZERO;
+            BigDecimal grandCallSubtotal = ZERO, grandRecording = ZERO, grandCrbt = ZERO, grandFlash = ZERO;
+            BigDecimal grandDomesticDur = ZERO, grandTransferDur = ZERO, grandIntlDur = ZERO;
 
-            for (SysOrganization branch : branches) {
-                String branchPath = branch.getPath();
-                // 聚合该一级分行下所有子组织的allocation_result
-                List<AllocationResult> childResults = allResults.stream()
-                        .filter(r -> {
-                            if (r.getOrgId() == null || r.getOrgId() == -1L) return false;
-                            SysOrganization rOrg = orgMap.get(r.getOrgId());
-                            return rOrg != null && rOrg.getPath() != null
-                                    && rOrg.getPath().startsWith(branchPath);
-                        })
-                        .collect(Collectors.toList());
-
+            for (Map<String, Object> r : rows) {
                 Row row = sheet.createRow(rowIdx++);
-                row.createCell(0).setCellValue(branch.getName());
-                row.createCell(1).setCellValue(branch.getCostCenter() != null ? branch.getCostCenter() : "");
+                row.createCell(0).setCellValue(strOrEmpty(r.get("l1_branch")));
 
-                // 从bill_detail按原始列聚合费用（需要raw_data）
-                AggregatedFees fees = aggregateFeesByOrgPath(groupedByOrgId, branchPath, orgMap);
+                BigDecimal platformFee = toBD(r.get("platform_fee"));
+                BigDecimal monthlyRent = toBD(r.get("monthly_rent_code"));
+                BigDecimal domesticDur = toBD(r.get("domestic_duration"));
+                BigDecimal transferDur = toBD(r.get("transfer_duration"));
+                BigDecimal domesticFee = toBD(r.get("domestic_fee"));
+                BigDecimal intlDur = toBD(r.get("international_duration"));
+                BigDecimal intlFee = toBD(r.get("international_fee"));
+                BigDecimal callSubtotal = toBD(r.get("call_subtotal"));
+                BigDecimal recordingFee = toBD(r.get("recording_fee"));
+                BigDecimal crbtFee = toBD(r.get("crbt_fee"));
+                BigDecimal flashFee = toBD(r.get("flash_fee"));
+                BigDecimal totalFee = toBD(r.get("total_fee"));
+                int phoneCount = toInt(r.get("phone_count"));
 
-                setCurrencyCell(row.createCell(2), fees.platformFee, numberStyle);
-                setCurrencyCell(row.createCell(3), fees.monthlyRentCode, numberStyle);
-                row.createCell(4).setCellValue(fees.domesticDuration.doubleValue());
-                row.createCell(5).setCellValue(fees.transferDuration.doubleValue());
-                setCurrencyCell(row.createCell(6), fees.domesticFee, numberStyle);
-                row.createCell(7).setCellValue(fees.internationalDuration.doubleValue());
-                setCurrencyCell(row.createCell(8), fees.internationalFee, numberStyle);
+                setCurrencyCell(row.createCell(1), platformFee, numberStyle);
+                setCurrencyCell(row.createCell(2), monthlyRent, numberStyle);
+                row.createCell(3).setCellValue(domesticDur.doubleValue());
+                row.createCell(4).setCellValue(transferDur.doubleValue());
+                setCurrencyCell(row.createCell(5), domesticFee, numberStyle);
+                row.createCell(6).setCellValue(intlDur.doubleValue());
+                setCurrencyCell(row.createCell(7), intlFee, numberStyle);
+                setCurrencyCell(row.createCell(8), callSubtotal, numberStyle);
+                setCurrencyCell(row.createCell(9), recordingFee, numberStyle);
+                setCurrencyCell(row.createCell(10), crbtFee, numberStyle);
+                setCurrencyCell(row.createCell(11), flashFee, numberStyle);
+                setCurrencyCell(row.createCell(12), totalFee, numberStyle);
+                row.createCell(13).setCellValue(phoneCount);
 
-                BigDecimal callSubtotal = fees.platformFee.add(fees.monthlyRentCode)
-                        .add(fees.domesticFee).add(fees.internationalFee);
-                setCurrencyCell(row.createCell(9), callSubtotal, numberStyle);
-
-                // 录音/彩铃/闪信从allocation_result聚合
-                BigDecimal sumRec = safeSum(childResults, AllocationResult::getRecordingFee);
-                BigDecimal sumCrbt = safeSum(childResults, AllocationResult::getCrbtFee);
-                BigDecimal sumFlash = safeSum(childResults, AllocationResult::getFlashMsgFee);
-                int phoneCount = childResults.stream()
-                        .mapToInt(r -> r.getPhoneCount() != null ? r.getPhoneCount() : 0).sum();
-
-                setCurrencyCell(row.createCell(10), sumRec, numberStyle);
-                setCurrencyCell(row.createCell(11), sumCrbt, numberStyle);
-                setCurrencyCell(row.createCell(12), sumFlash, numberStyle);
-
-                BigDecimal total = callSubtotal.add(sumRec).add(sumCrbt).add(sumFlash);
-                setCurrencyCell(row.createCell(13), total, numberStyle);
-                row.createCell(14).setCellValue(phoneCount);
-
-                grandTotal = grandTotal.add(total);
+                grandPlatform = grandPlatform.add(platformFee);
+                grandMonthlyRent = grandMonthlyRent.add(monthlyRent);
+                grandDomesticDur = grandDomesticDur.add(domesticDur);
+                grandTransferDur = grandTransferDur.add(transferDur);
+                grandDomesticFee = grandDomesticFee.add(domesticFee);
+                grandIntlDur = grandIntlDur.add(intlDur);
+                grandIntlFee = grandIntlFee.add(intlFee);
+                grandCallSubtotal = grandCallSubtotal.add(callSubtotal);
+                grandRecording = grandRecording.add(recordingFee);
+                grandCrbt = grandCrbt.add(crbtFee);
+                grandFlash = grandFlash.add(flashFee);
+                grandTotal = grandTotal.add(totalFee);
                 grandPhones += phoneCount;
             }
 
             // 合计行
-            if (!branches.isEmpty()) {
+            if (!rows.isEmpty()) {
                 Row totalRow = sheet.createRow(rowIdx++);
                 totalRow.createCell(0).setCellValue("合计");
                 totalRow.getCell(0).setCellStyle(boldStyle);
-                // Re-calculate totals from data for accuracy
-                List<AllocationResult> allValid = allResults.stream()
-                        .filter(r -> r.getOrgId() != null && r.getOrgId() != -1L)
-                        .collect(Collectors.toList());
-                setCurrencyCell(totalRow.createCell(13),
-                        safeSum(allValid, AllocationResult::getTotalFee), numberStyle);
-                totalRow.createCell(14).setCellValue(grandPhones);
-                totalRow.getCell(14).setCellStyle(boldStyle);
+                setCurrencyCell(totalRow.createCell(1), grandPlatform, numberStyle);
+                setCurrencyCell(totalRow.createCell(2), grandMonthlyRent, numberStyle);
+                totalRow.createCell(3).setCellValue(grandDomesticDur.doubleValue());
+                totalRow.createCell(4).setCellValue(grandTransferDur.doubleValue());
+                setCurrencyCell(totalRow.createCell(5), grandDomesticFee, numberStyle);
+                totalRow.createCell(6).setCellValue(grandIntlDur.doubleValue());
+                setCurrencyCell(totalRow.createCell(7), grandIntlFee, numberStyle);
+                setCurrencyCell(totalRow.createCell(8), grandCallSubtotal, numberStyle);
+                setCurrencyCell(totalRow.createCell(9), grandRecording, numberStyle);
+                setCurrencyCell(totalRow.createCell(10), grandCrbt, numberStyle);
+                setCurrencyCell(totalRow.createCell(11), grandFlash, numberStyle);
+                setCurrencyCell(totalRow.createCell(12), grandTotal, numberStyle);
+                totalRow.createCell(13).setCellValue(grandPhones);
+                totalRow.getCell(13).setCellStyle(boldStyle);
             }
 
             autoSizeColumns(sheet, headers.length);
             wb.write(out);
 
-            log.info("L1 summary exported: batch={}, branches={}", batchId, branches.size());
+            log.info("L1 summary exported (ownership): batch={}, branches={}", batchId, rows.size());
             return out.toByteArray();
         }
     }
@@ -1713,5 +1713,31 @@ public class BranchBillExportService {
 
     private static BigDecimal safeAdd(BigDecimal a, BigDecimal b) {
         return (a != null ? a : ZERO).add(b != null ? b : ZERO);
+    }
+
+    private static String strOrEmpty(Object obj) {
+        return obj != null ? obj.toString() : "";
+    }
+
+    private static BigDecimal toBD(Object obj) {
+        if (obj == null) return ZERO;
+        try {
+            return new BigDecimal(obj.toString().trim());
+        } catch (NumberFormatException e) {
+            return ZERO;
+        }
+    }
+
+    private static int toInt(Object obj) {
+        if (obj == null) return 0;
+        try {
+            return Integer.parseInt(obj.toString().trim());
+        } catch (NumberFormatException e) {
+            try {
+                return new BigDecimal(obj.toString().trim()).intValue();
+            } catch (NumberFormatException e2) {
+                return 0;
+            }
+        }
     }
 }
