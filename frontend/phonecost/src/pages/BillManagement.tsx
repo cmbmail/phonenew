@@ -371,7 +371,7 @@ export default function BillManagement() {
       title: t('bill.totalAmountCol'), dataIndex: 'total_amount', key: 'total_amount', width: 130,
       render: (v: unknown, record: BillBatch) => (
         <span style={{ fontWeight: 500 }}>
-          {v != null ? `¥${Number(v).toFixed(2)}` : '-'}
+          {v != null ? `¥${Number(v)}` : '-'}
           <span style={{ color: COLORS.textMuted, fontSize: 12, marginLeft: 6 }}>
             ({record.total_count}{t('bill.countUnit')})
           </span>
@@ -426,13 +426,13 @@ export default function BillManagement() {
     return obj;
   };
 
-  /** Format a fee value from rawData */
+  /** Format a fee value from rawData — preserve original precision, no truncation */
   const fmtFee = (v: unknown) => {
     if (v == null || v === '') return '-';
     const n = Number(v);
     if (isNaN(n)) return '-';
     // Show '-' when numeric value is 0 (including string "0"/"0.00")
-    return n === 0 ? '-' : `¥${n.toFixed(2)}`;
+    return n === 0 ? '-' : `¥${n}`;
   };
 
   /** Format a duration value from rawData (domestic/transfer/international) */
