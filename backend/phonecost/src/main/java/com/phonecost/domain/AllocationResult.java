@@ -34,28 +34,28 @@ public class AllocationResult extends BaseEntity {
     @Column(name = "cost_center")
     private String costCenter;
 
-    @Column(name = "monthly_rent", precision = 12, scale = 2)
-    @ColumnDefault("0.00")
+    @Column(name = "monthly_rent", precision = 22, scale = 15)
+    @ColumnDefault("0")
     private BigDecimal monthlyRent;
 
-    @Column(name = "call_fee", precision = 12, scale = 2)
-    @ColumnDefault("0.00")
+    @Column(name = "call_fee", precision = 22, scale = 15)
+    @ColumnDefault("0")
     private BigDecimal callFee;
 
-    @Column(name = "recording_fee", precision = 12, scale = 2)
-    @ColumnDefault("0.00")
+    @Column(name = "recording_fee", precision = 22, scale = 15)
+    @ColumnDefault("0")
     private BigDecimal recordingFee;
 
-    @Column(name = "crbt_fee", precision = 12, scale = 2)
-    @ColumnDefault("0.00")
+    @Column(name = "crbt_fee", precision = 22, scale = 15)
+    @ColumnDefault("0")
     private BigDecimal crbtFee;
 
-    @Column(name = "flash_msg_fee", precision = 12, scale = 2)
-    @ColumnDefault("0.00")
+    @Column(name = "flash_msg_fee", precision = 22, scale = 15)
+    @ColumnDefault("0")
     private BigDecimal flashMsgFee;
 
-    @Column(name = "total_fee", precision = 12, scale = 2)
-    @ColumnDefault("0.00")
+    @Column(name = "total_fee", precision = 22, scale = 15)
+    @ColumnDefault("0")
     private BigDecimal totalFee;
 
     @Column(name = "phone_count")

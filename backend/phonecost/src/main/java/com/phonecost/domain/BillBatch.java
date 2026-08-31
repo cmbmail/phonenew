@@ -38,8 +38,8 @@ public class BillBatch extends BaseEntity {
     @ColumnDefault("0")
     private Byte status;
 
-    @Column(name = "total_amount", precision = 12, scale = 2)
-    @ColumnDefault("0.00")
+    @Column(name = "total_amount", precision = 22, scale = 15)
+    @ColumnDefault("0")
     private BigDecimal totalAmount;
 
     @Column(name = "total_count")
