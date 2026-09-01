@@ -92,7 +92,7 @@ export default function L1SummaryPage() {
 
   const money = (v: unknown) => {
     const n = Number(v);
-    return !isNaN(n) && n !== 0 ? `¥${n}` : '-';
+    return !isNaN(n) && n !== 0 ? `¥${n.toFixed(2)}` : '-';
   };
   const dur = (v: unknown) => {
     const n = Number(v);
@@ -266,7 +266,7 @@ export default function L1SummaryPage() {
           {selectedBatchId && rows.length > 0 && grandTotal && (
             <Descriptions size="small" column={4} style={{ marginBottom: 16 }}>
               <Descriptions.Item label={t('l1Summary.descMonth')}>{selectedBatch?.billing_month}</Descriptions.Item>
-              <Descriptions.Item label={t('l1Summary.descTotalFee')}>¥{grandTotal.total_fee}</Descriptions.Item>
+              <Descriptions.Item label={t('l1Summary.descTotalFee')}>¥{Number(grandTotal.total_fee).toFixed(2)}</Descriptions.Item>
               <Descriptions.Item label={t('l1Summary.descTotalPhones')}>{grandTotal.phone_count}</Descriptions.Item>
               <Descriptions.Item label={t('l1Summary.descBranchCount')}>{rows.length}</Descriptions.Item>
             </Descriptions>
@@ -312,10 +312,10 @@ export default function L1SummaryPage() {
         <>
           {detailLoaded && (
             <Row gutter={16} style={{ marginBottom: 16 }}>
-              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.callTab')} value={detailStats.callCount} suffix={`¥${detailStats.callTotal}`} /></Col>
-              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.recordingTab')} value={detailStats.recCount} suffix={`¥${detailStats.recTotal}`} /></Col>
-              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.crbtTab')} value={detailStats.crbtCount} suffix={`¥${detailStats.crbtTotal}`} /></Col>
-              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.flashTab')} value={detailStats.flashCount} suffix={`¥${detailStats.flashTotal}`} /></Col>
+              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.callTab')} value={detailStats.callCount} suffix={`¥${Number(detailStats.callTotal).toFixed(2)}`} /></Col>
+              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.recordingTab')} value={detailStats.recCount} suffix={`¥${Number(detailStats.recTotal).toFixed(2)}`} /></Col>
+              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.crbtTab')} value={detailStats.crbtCount} suffix={`¥${Number(detailStats.crbtTotal).toFixed(2)}`} /></Col>
+              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.flashTab')} value={detailStats.flashCount} suffix={`¥${Number(detailStats.flashTotal).toFixed(2)}`} /></Col>
             </Row>
           )}
           <Input

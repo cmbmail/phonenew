@@ -115,7 +115,7 @@ export default function L3SubBranchPage() {
 
   const money = (v: unknown) => {
     const n = Number(v);
-    return !isNaN(n) && n !== 0 ? `¥${n}` : '-';
+    return !isNaN(n) && n !== 0 ? `¥${n.toFixed(2)}` : '-';
   };
   const dur = (v: unknown) => {
     const n = Number(v);
@@ -311,7 +311,7 @@ export default function L3SubBranchPage() {
     { title: t('l3SubBranch.reimbursementCostCenter'), dataIndex: 'cost_center', key: 'cost_center', width: 200 },
     {
       title: t('l3SubBranch.reimbursementFeeSubtotal'), dataIndex: 'fee_subtotal', key: 'fee_subtotal', width: 150, align: 'right' as const,
-      render: (v: number) => <strong>¥{v}</strong>,
+      render: (v: number) => <strong>¥{Number(v).toFixed(2)}</strong>,
     },
   ];
 
@@ -326,7 +326,7 @@ export default function L3SubBranchPage() {
               <Descriptions.Item label={t('l3SubBranch.descMonth')}>{selectedBatch?.billing_month}</Descriptions.Item>
               <Descriptions.Item label={t('l3SubBranch.descSubBranch')}>{selectedL2Branch}</Descriptions.Item>
               <Descriptions.Item label={t('l3SubBranch.descBranchCount')}>{summaryRows.length}</Descriptions.Item>
-              <Descriptions.Item label={t('l3SubBranch.descTotalFee')}>¥{grandTotal.total_fee}</Descriptions.Item>
+              <Descriptions.Item label={t('l3SubBranch.descTotalFee')}>¥{Number(grandTotal.total_fee).toFixed(2)}</Descriptions.Item>
             </Descriptions>
           )}
           {selectedBatchId && selectedL1Branch && selectedL2Branch && summaryRows.length > 0 && (
@@ -397,10 +397,10 @@ export default function L3SubBranchPage() {
         <>
           {detailLoaded && (
             <Row gutter={16} style={{ marginBottom: 16 }}>
-              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.callTab')} value={detailStats.callCount} suffix={`¥${detailStats.callTotal}`} /></Col>
-              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.recordingTab')} value={detailStats.recCount} suffix={`¥${detailStats.recTotal}`} /></Col>
-              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.crbtTab')} value={detailStats.crbtCount} suffix={`¥${detailStats.crbtTotal}`} /></Col>
-              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.flashTab')} value={detailStats.flashCount} suffix={`¥${detailStats.flashTotal}`} /></Col>
+              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.callTab')} value={detailStats.callCount} suffix={`¥${Number(detailStats.callTotal).toFixed(2)}`} /></Col>
+              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.recordingTab')} value={detailStats.recCount} suffix={`¥${Number(detailStats.recTotal).toFixed(2)}`} /></Col>
+              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.crbtTab')} value={detailStats.crbtCount} suffix={`¥${Number(detailStats.crbtTotal).toFixed(2)}`} /></Col>
+              <Col xs={12} sm={12} md={6}><Statistic title={t('l1Detail.flashTab')} value={detailStats.flashCount} suffix={`¥${Number(detailStats.flashTotal).toFixed(2)}`} /></Col>
             </Row>
           )}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -492,7 +492,7 @@ export default function L3SubBranchPage() {
           summary={() => (
             <Table.Summary.Row>
               <Table.Summary.Cell index={0}><strong>{t('l3SubBranch.reimbursementTotal')}</strong></Table.Summary.Cell>
-              <Table.Summary.Cell index={1} align="right"><strong>¥{reimbursementTotal}</strong></Table.Summary.Cell>
+              <Table.Summary.Cell index={1} align="right"><strong>¥{Number(reimbursementTotal).toFixed(2)}</strong></Table.Summary.Cell>
             </Table.Summary.Row>
           )}
          />
