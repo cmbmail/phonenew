@@ -2,7 +2,10 @@ package com.phonecost.service;
 
 import com.alibaba.excel.EasyExcel;
 import com.alibaba.excel.context.AnalysisContext;
+import com.alibaba.excel.enums.CellDataTypeEnum;
+import com.alibaba.excel.enums.ReadDefaultReturnEnum;
 import com.alibaba.excel.event.AnalysisEventListener;
+import com.alibaba.excel.metadata.data.ReadCellData;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.phonecost.domain.*;
@@ -266,9 +269,13 @@ public class BillImportService {
             // Read this specific sheet with EasyExcel (streaming, low memory)
             int skipRows = cfg.skipRows > 0 ? cfg.skipRows : 1;
 
-            EasyExcel.read(tempFile.toFile(), new AnalysisEventListener<Map<Integer, String>>() {
+            // READ_CELL_DATA mode: receive raw cell data so DECIMAL columns keep the original
+            // Excel numeric precision (a "0.00" display format no longer rounds 359.575 to 359.58).
+            // Non-DECIMAL columns replicate the legacy STRING-mode conversion behavior.
+            EasyExcel.read(tempFile.toFile(), new AnalysisEventListener<Map<Integer, ReadCellData<?>>>() {
                 @Override
-                public void invoke(Map<Integer, String> row, AnalysisContext context) {
+                public void invoke(Map<Integer, ReadCellData<?>> row, AnalysisContext context) {
+                    Integer rowIndex = context.readRowHolder() != null ? context.readRowHolder().getRowIndex() : null;
                     // Extract values by column config
                     Map<String, Object> values = new LinkedHashMap<>();
                     // Build index->field reverse map for this sheet config
@@ -277,8 +284,7 @@ public class BillImportService {
                         indexToField.put(col.index, col.field);
                     }
                     for (ColumnConfig col : cfg.columns) {
-                        String rawVal = row.getOrDefault(col.index, null);
-                        Object val = convertCellValue(rawVal, col.type);
+                        Object val = convertCellData(row.get(col.index), col.type, context, rowIndex, col.index);
                         // Strip Excel empty-date artifacts (e.g. 1904/1/1, 1900/1/0) for recordingDir
                         if ("recordingDir".equals(col.field) && val instanceof String s && isInvalidExcelDate(s)) {
                             val = null;
@@ -294,7 +300,7 @@ public class BillImportService {
                     // For columns defined in the template, use the field name;
                     // for columns not in the template, use "col_N" as the key.
                     Map<String, Object> rawAll = new LinkedHashMap<>();
-                    for (Map.Entry<Integer, String> entry : row.entrySet()) {
+                    for (Map.Entry<Integer, ReadCellData<?>> entry : row.entrySet()) {
                         String fieldName = indexToField.get(entry.getKey());
                         String key = fieldName != null ? fieldName : "col_" + entry.getKey();
                         if (!rawAll.containsKey(key)) {
@@ -302,7 +308,7 @@ public class BillImportService {
                             if (fieldName != null && values.containsKey(fieldName)) {
                                 rawAll.put(key, values.get(fieldName));
                             } else {
-                                rawAll.put(key, entry.getValue());
+                                rawAll.put(key, convertCellData(entry.getValue(), null, context, rowIndex, entry.getKey()));
                             }
                         }
                     }
@@ -396,7 +402,7 @@ public class BillImportService {
                 public void doAfterAllAnalysed(AnalysisContext context) {
                     log.info("Sheet '{}' parsing complete", sheetName);
                 }
-            }).sheet(s).headRowNumber(skipRows).doRead();
+            }).readDefaultReturn(ReadDefaultReturnEnum.READ_CELL_DATA).sheet(s).headRowNumber(skipRows).doRead();
         }
 
         int totalCount = totalCountRef[0];
@@ -653,18 +659,35 @@ public class BillImportService {
     // ==================== Cell Value Helpers (EasyExcel String mode) ====================
 
     /**
-     * Convert string value from EasyExcel to typed value.
-     * EasyExcel returns all cells as String in Map<Integer, String> mode.
+     * Convert a raw EasyExcel cell to typed value.
+     * DECIMAL columns use the underlying numberValue (original Excel precision, unaffected by
+     * the cell display format such as "0.00" that would otherwise round 359.575 to 359.58);
+     * all other columns replicate the legacy STRING-mode conversion via EasyExcel's own
+     * converter chain (same formatting as before this change).
      */
-    private Object convertCellValue(String rawVal, String type) {
-        if (rawVal == null || rawVal.isEmpty()) return null;
-
-        if ("DECIMAL".equalsIgnoreCase(type)) {
-            try { return new BigDecimal(rawVal.trim()); }
-            catch (NumberFormatException e) { return BigDecimal.ZERO; }
+    private Object convertCellData(ReadCellData<?> cd, String type, AnalysisContext context,
+                                   Integer rowIndex, Integer colIndex) {
+        if (cd == null || cd.getType() == CellDataTypeEnum.EMPTY) return null;
+        if (cd.getType() == CellDataTypeEnum.NUMBER && "DECIMAL".equalsIgnoreCase(type)) {
+            BigDecimal v = cd.getNumberValue();
+            if (v == null) return null;
+            BigDecimal stripped = v.stripTrailingZeros();
+            return stripped.scale() < 0 ? stripped.setScale(0) : stripped;
         }
-        // Default: STRING
-        return rawVal.trim();
+        var converterMap = context.readSheetHolder() != null ? context.readSheetHolder().converterMap() : null;
+        if (converterMap == null) {
+            // Defensive fallback (should not happen during normal row processing)
+            if (cd.getType() == CellDataTypeEnum.STRING) return cd.getStringValue();
+            return cd.getNumberValue() != null ? cd.getNumberValue().toPlainString() : String.valueOf(cd.getData());
+        }
+        Object converted = com.alibaba.excel.util.ConverterUtils.convertToJavaObject(
+                cd, null, null, converterMap, context, rowIndex, colIndex);
+        if (converted instanceof String s) {
+            // Template-declared STRING columns were trimmed by the old convertCellValue;
+            // non-template (col_N) raw columns were not trimmed — keep both behaviors.
+            return type != null ? s.trim() : s;
+        }
+        return converted;
     }
 
     /**
