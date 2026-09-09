@@ -110,7 +110,8 @@ public class AllocationOrgImportService {
         progress.setStatus("READING");
 
         try {
-            List<String> columnNames = List.of("phone_number", "l1_branch", "alloc_dept", "org_code", "cost_center", "remark");
+            // 模板 3 列：号码、一级分行、备注（分摊部门/机构代码/成本中心改为查询时从分摊机构对照表实时匹配，不再导入）
+            List<String> columnNames = List.of("phone_number", "l1_branch", "remark");
 
             try (InputStream is = Files.newInputStream(tempFile)) {
                 EasyExcel.read(is, new ReadListener() {
@@ -207,10 +208,11 @@ public class AllocationOrgImportService {
             } else {
                 ps.setNull(4, java.sql.Types.BIGINT);
             }
-            ps.setString(5, safeGet(row, 2)); // alloc_dept
-            ps.setString(6, safeGet(row, 3)); // org_code
-            ps.setString(7, safeGet(row, 4)); // cost_center
-            ps.setString(8, safeGet(row, 5)); // remark
+            // 分摊部门/机构代码/成本中心：查询时实时匹配，导入不再写入
+            ps.setString(5, "");
+            ps.setString(6, "");
+            ps.setString(7, "");
+            ps.setString(8, safeGet(row, 2)); // remark
         });
     }
 

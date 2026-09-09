@@ -2,9 +2,12 @@ package com.phonecost.controller;
 
 import com.phonecost.domain.AllocationOrgBatch;
 import com.phonecost.domain.AllocationOrgEntry;
+import com.phonecost.domain.AllocationOrgMapping;
 import com.phonecost.domain.SysOrganization;
 import com.phonecost.repository.AllocationOrgBatchRepository;
 import com.phonecost.repository.AllocationOrgEntryRepository;
+import com.phonecost.repository.AllocationOrgMappingRepository;
+import com.phonecost.repository.DirectoryEntryRepository;
 import com.phonecost.repository.SysOrganizationRepository;
 import com.phonecost.service.AllocationOrgImportService;
 import com.phonecost.service.BranchNumberPushService;
@@ -39,6 +42,8 @@ public class AllocationOrgController {
     private final AllocationOrgImportService importService;
     private final AllocationOrgBatchRepository batchRepo;
     private final AllocationOrgEntryRepository entryRepo;
+    private final AllocationOrgMappingRepository mappingRepo;
+    private final DirectoryEntryRepository directoryEntryRepo;
     private final DataScopeService dataScopeService;
     private final ComparisonPushService pushService;
     private final BranchNumberPushService branchNumberPushService;
@@ -50,6 +55,8 @@ public class AllocationOrgController {
     public AllocationOrgController(AllocationOrgImportService importService,
                                    AllocationOrgBatchRepository batchRepo,
                                    AllocationOrgEntryRepository entryRepo,
+                                   AllocationOrgMappingRepository mappingRepo,
+                                   DirectoryEntryRepository directoryEntryRepo,
                                    DataScopeService dataScopeService,
                                    ComparisonPushService pushService,
                                    BranchNumberPushService branchNumberPushService,
@@ -57,6 +64,8 @@ public class AllocationOrgController {
         this.importService = importService;
         this.batchRepo = batchRepo;
         this.entryRepo = entryRepo;
+        this.mappingRepo = mappingRepo;
+        this.directoryEntryRepo = directoryEntryRepo;
         this.dataScopeService = dataScopeService;
         this.pushService = pushService;
         this.branchNumberPushService = branchNumberPushService;
@@ -73,6 +82,109 @@ public class AllocationOrgController {
             return SCOPE_ALL;
         }
         return dataScopeService.resolveBranchOrgId(userId);
+    }
+
+    // ==================== 实时匹配（通讯录 → 对照表） ====================
+
+    /**
+     * 查询时实时匹配器：
+     * 1) 同月通讯录（directory_entry JOIN directory_batch）按号码聚合 extension/dept_path 多值（「、」分隔）
+     * 2) 分摊机构对照表（allocation_org_mapping）构建 l1Branch+deptPath → orgName/orgCode/costCenterCode 映射
+     */
+    private static class AllocationOrgMatchResolver {
+        final Map<String, String[]> extByPhone = new HashMap<>();
+        final Map<String, String[]> deptByPhone = new HashMap<>();
+        final Map<String, AllocationOrgMapping> mappingByBranchDept = new HashMap<>();
+
+        /** 按号码取匹配结果：extension（多值）、dept_path（多值）、alloc_dept/org_code/cost_center（对照表匹配，匹配不到为空串） */
+        Map<String, String> resolve(String phoneNumber, String l1Branch) {
+            Map<String, String> r = new HashMap<>();
+            String phone = phoneNumber != null ? phoneNumber.trim() : "";
+            String[] exts = extByPhone.get(phone);
+            String[] depts = deptByPhone.get(phone);
+            r.put("extension", exts != null && exts.length > 0 ? String.join("、", exts) : "");
+            r.put("dept_path", depts != null && depts.length > 0 ? String.join("、", depts) : "");
+            // 匹配不到（无部门全路径或无对照记录）→ 三列为空，便于发现对照表缺口
+            String allocDept = "";
+            String orgCode = "";
+            String costCenter = "";
+            if (depts != null) {
+                List<String> ad = new ArrayList<>();
+                List<String> oc = new ArrayList<>();
+                List<String> cc = new ArrayList<>();
+                for (String dp : depts) {
+                    if (dp == null || dp.isBlank()) continue;
+                    AllocationOrgMapping m = mappingByBranchDept.get(key(l1Branch, dp.trim()));
+                    if (m != null) {
+                        if (m.getOrgName() != null && !m.getOrgName().isBlank() && !ad.contains(m.getOrgName())) ad.add(m.getOrgName());
+                        if (m.getOrgCode() != null && !m.getOrgCode().isBlank() && !oc.contains(m.getOrgCode())) oc.add(m.getOrgCode());
+                        if (m.getCostCenterCode() != null && !m.getCostCenterCode().isBlank() && !cc.contains(m.getCostCenterCode())) cc.add(m.getCostCenterCode());
+                    }
+                }
+                allocDept = String.join("、", ad);
+                orgCode = String.join("、", oc);
+                costCenter = String.join("、", cc);
+            }
+            r.put("alloc_dept", allocDept);
+            r.put("org_code", orgCode);
+            r.put("cost_center", costCenter);
+            return r;
+        }
+
+        private static String key(String l1Branch, String deptPath) {
+            String b = l1Branch != null ? l1Branch.trim() : "";
+            return b + "\u0001" + deptPath;
+        }
+    }
+
+    /** 无月份上下文时的空匹配结果 */
+    private Map<String, String> emptyMatch() {
+        Map<String, String> r = new HashMap<>();
+        r.put("extension", "");
+        r.put("dept_path", "");
+        r.put("alloc_dept", "");
+        r.put("org_code", "");
+        r.put("cost_center", "");
+        return r;
+    }
+
+    /**
+     * 构建指定月份的实时匹配器（每次调用实时读取，通讯录/对照表更新后立即生效）
+     */
+    private AllocationOrgMatchResolver buildMatchResolver(String billingMonth) {
+        AllocationOrgMatchResolver resolver = new AllocationOrgMatchResolver();
+
+        // 1) 同月通讯录：号码 → 聚合 extension / dept_path（多值去重保序）
+        List<Object[]> dirRows = directoryEntryRepo.findPhoneExtAndDeptByMonth(billingMonth);
+        Map<String, LinkedHashSet<String>> extMap = new HashMap<>();
+        Map<String, LinkedHashSet<String>> deptMap = new HashMap<>();
+        for (Object[] row : dirRows) {
+            String pn = row[0] != null ? String.valueOf(row[0]).trim() : "";
+            if (pn.isEmpty()) continue;
+            String ext = row[1] != null ? String.valueOf(row[1]).trim() : "";
+            String dp = row[2] != null ? String.valueOf(row[2]).trim() : "";
+            if (!ext.isEmpty()) extMap.computeIfAbsent(pn, k -> new LinkedHashSet<>()).add(ext);
+            if (!dp.isEmpty()) deptMap.computeIfAbsent(pn, k -> new LinkedHashSet<>()).add(dp);
+        }
+        for (Map.Entry<String, LinkedHashSet<String>> e : extMap.entrySet()) {
+            resolver.extByPhone.put(e.getKey(), e.getValue().toArray(new String[0]));
+        }
+        for (Map.Entry<String, LinkedHashSet<String>> e : deptMap.entrySet()) {
+            resolver.deptByPhone.put(e.getKey(), e.getValue().toArray(new String[0]));
+        }
+
+        // 2) 分摊机构对照表：l1Branch+deptPath → mapping（同一部门全路径在同一一级分行下唯一）
+        List<AllocationOrgMapping> mappings = mappingRepo.findAllByDeletedAtIsNull();
+        for (AllocationOrgMapping m : mappings) {
+            if (m.getDeptFullPath() == null || m.getDeptFullPath().isBlank()) continue;
+            String l1 = m.getL1Branch() != null ? m.getL1Branch().trim() : "";
+            String[] paths = m.getDeptFullPath().split("、");
+            for (String p : paths) {
+                if (p == null || p.isBlank()) continue;
+                resolver.mappingByBranchDept.putIfAbsent(l1 + "\u0001" + p.trim(), m);
+            }
+        }
+        return resolver;
     }
 
     // ==================== Push from Comparison ====================
@@ -163,7 +275,8 @@ public class AllocationOrgController {
         try (Workbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             Sheet sheet = wb.createSheet("号码分摊机构");
             Row headerRow = sheet.createRow(0);
-            String[] headers = {"号码", "一级分行", "分摊部门", "机构代码", "成本中心", "备注"};
+            // 模板简化为 3 列：号码、一级分行、备注（分摊部门/机构代码/成本中心自动匹配；分机号/部门全路径自动匹配）
+            String[] headers = {"号码", "一级分行", "备注"};
             for (int i = 0; i < headers.length; i++) {
                 headerRow.createCell(i).setCellValue(headers[i]);
                 sheet.setColumnWidth(i, 6000);
@@ -288,6 +401,13 @@ public class AllocationOrgController {
         // 全量加载该批次未删除条目（<=200/页由内存分页处理）
         List<AllocationOrgEntry> all = entryRepo.findByBatchIdAndDeletedAtIsNull(batchId);
 
+        // 批次所属月份：用于实时匹配同月通讯录与分摊机构对照表
+        AllocationOrgBatch batch = batchRepo.findByIdAndDeletedAtIsNull(batchId).orElse(null);
+        String batchMonth = batch != null ? batch.getBillingMonth() : null;
+        AllocationOrgMatchResolver resolver = batchMonth != null && !batchMonth.isBlank()
+                ? buildMatchResolver(batchMonth)
+                : null;
+
         // 数据隔离过滤
         List<AllocationOrgEntry> scoped;
         if (scopeBranch == SCOPE_ALL) {
@@ -323,9 +443,15 @@ public class AllocationOrgController {
             e.put("batch_id", entry.getBatchId());
             e.put("phone_number", entry.getPhoneNumber() != null ? entry.getPhoneNumber() : "");
             e.put("l1_branch", entry.getL1Branch() != null ? entry.getL1Branch() : "");
-            e.put("alloc_dept", entry.getAllocDept() != null ? entry.getAllocDept() : "");
-            e.put("org_code", entry.getOrgCode() != null ? entry.getOrgCode() : "");
-            e.put("cost_center", entry.getCostCenter() != null ? entry.getCostCenter() : "");
+            // 实时匹配：分机号/部门全路径来自同月通讯录，分摊部门/机构代码/成本中心取自分摊机构对照表（匹配不到为空）
+            Map<String, String> matched = resolver != null
+                    ? resolver.resolve(entry.getPhoneNumber(), entry.getL1Branch())
+                    : emptyMatch();
+            e.put("extension", matched.get("extension"));
+            e.put("dept_path", matched.get("dept_path"));
+            e.put("alloc_dept", matched.get("alloc_dept"));
+            e.put("org_code", matched.get("org_code"));
+            e.put("cost_center", matched.get("cost_center"));
             e.put("remark", entry.getRemark() != null ? entry.getRemark() : "");
             entries.add(e);
         }
@@ -420,15 +546,28 @@ public class AllocationOrgController {
         }
 
         List<Map<String, Object>> entries = new ArrayList<>();
+        // 实时匹配：仅对 import 来源生效（push 来源是差异推送数据，保持现状）
+        AllocationOrgMatchResolver resolver = isImport
+                ? buildMatchResolver(billingMonth)
+                : null;
         for (AllocationOrgEntry entry : pageResult.getContent()) {
             Map<String, Object> e = new HashMap<>();
             e.put("id", entry.getId());
             e.put("batch_id", entry.getBatchId());
             e.put("phone_number", entry.getPhoneNumber() != null ? entry.getPhoneNumber() : "");
             e.put("l1_branch", entry.getL1Branch() != null ? entry.getL1Branch() : "");
-            e.put("alloc_dept", entry.getAllocDept() != null ? entry.getAllocDept() : "");
-            e.put("org_code", entry.getOrgCode() != null ? entry.getOrgCode() : "");
-            e.put("cost_center", entry.getCostCenter() != null ? entry.getCostCenter() : "");
+            if (isImport) {
+                Map<String, String> matched = resolver.resolve(entry.getPhoneNumber(), entry.getL1Branch());
+                e.put("extension", matched.get("extension"));
+                e.put("dept_path", matched.get("dept_path"));
+                e.put("alloc_dept", matched.get("alloc_dept"));
+                e.put("org_code", matched.get("org_code"));
+                e.put("cost_center", matched.get("cost_center"));
+            } else {
+                e.put("alloc_dept", entry.getAllocDept() != null ? entry.getAllocDept() : "");
+                e.put("org_code", entry.getOrgCode() != null ? entry.getOrgCode() : "");
+                e.put("cost_center", entry.getCostCenter() != null ? entry.getCostCenter() : "");
+            }
             e.put("remark", entry.getRemark() != null ? entry.getRemark() : "");
             // 差异推送数据 Tab 额外返回差异数据列
             if (isPush) {
@@ -692,7 +831,10 @@ public class AllocationOrgController {
             headerStyle.setFillForegroundColor(IndexedColors.PALE_BLUE.getIndex());
             headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
 
-            String[] headers = {"号码", "一级分行", "分摊部门", "机构代码", "成本中心", "备注"};
+            // 导出列：号码、分机号、部门全路径、一级分行、分摊部门、机构代码、成本中心、备注
+            // import 来源：分机号/部门全路径来自同月通讯录实时匹配；分摊部门/机构代码/成本中心取自分摊机构对照表（匹配不到为空）
+            // push 来源：保持推送数据原样（三列来自推送批次）
+            String[] headers = {"号码", "分机号", "部门全路径", "一级分行", "分摊部门", "机构代码", "成本中心", "备注"};
             Row headerRow = sheet.createRow(0);
             for (int i = 0; i < headers.length; i++) {
                 Cell cell = headerRow.createCell(i);
@@ -701,15 +843,29 @@ public class AllocationOrgController {
                 sheet.setColumnWidth(i, 6000);
             }
 
+            AllocationOrgMatchResolver resolver = isImport ? buildMatchResolver(billingMonth) : null;
             int rowIdx = 1;
             for (AllocationOrgEntry entry : entries) {
                 Row row = sheet.createRow(rowIdx++);
                 row.createCell(0).setCellValue(entry.getPhoneNumber() != null ? entry.getPhoneNumber() : "");
-                row.createCell(1).setCellValue(entry.getL1Branch() != null ? entry.getL1Branch() : "");
-                row.createCell(2).setCellValue(entry.getAllocDept() != null ? entry.getAllocDept() : "");
-                row.createCell(3).setCellValue(entry.getOrgCode() != null ? entry.getOrgCode() : "");
-                row.createCell(4).setCellValue(entry.getCostCenter() != null ? entry.getCostCenter() : "");
-                row.createCell(5).setCellValue(entry.getRemark() != null ? entry.getRemark() : "");
+                if (isImport) {
+                    Map<String, String> matched = resolver.resolve(entry.getPhoneNumber(), entry.getL1Branch());
+                    row.createCell(1).setCellValue(matched.get("extension"));
+                    row.createCell(2).setCellValue(matched.get("dept_path"));
+                    row.createCell(3).setCellValue(entry.getL1Branch() != null ? entry.getL1Branch() : "");
+                    row.createCell(4).setCellValue(matched.get("alloc_dept"));
+                    row.createCell(5).setCellValue(matched.get("org_code"));
+                    row.createCell(6).setCellValue(matched.get("cost_center"));
+                    row.createCell(7).setCellValue(entry.getRemark() != null ? entry.getRemark() : "");
+                } else {
+                    row.createCell(1).setCellValue(entry.getExtension() != null ? entry.getExtension() : "");
+                    row.createCell(2).setCellValue(entry.getDeptPath() != null ? entry.getDeptPath() : "");
+                    row.createCell(3).setCellValue(entry.getL1Branch() != null ? entry.getL1Branch() : "");
+                    row.createCell(4).setCellValue(entry.getAllocDept() != null ? entry.getAllocDept() : "");
+                    row.createCell(5).setCellValue(entry.getOrgCode() != null ? entry.getOrgCode() : "");
+                    row.createCell(6).setCellValue(entry.getCostCenter() != null ? entry.getCostCenter() : "");
+                    row.createCell(7).setCellValue(entry.getRemark() != null ? entry.getRemark() : "");
+                }
             }
 
             wb.write(out);

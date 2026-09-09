@@ -808,6 +808,8 @@ export default {
     title: '号码分摊机构',
     selectMonth: '选择月份',
     colPhoneNumber: '号码',
+    colExtension: '分机号',
+    colDeptPath: '部门全路径',
     colAllocDept: '分摊部门',
     colOrgCode: '机构代码',
     colCostCenter: '成本中心',

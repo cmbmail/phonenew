@@ -38,6 +38,8 @@ export const getAllocOrgEntriesByBatch = (batchId: number, search?: string, page
       id: number;
       batch_id: number;
       phone_number: string;
+      extension: string;
+      dept_path: string;
       l1_branch: string;
       alloc_dept: string;
       org_code: string;
@@ -60,6 +62,8 @@ export const getAllocOrgEntriesByMonth = (billingMonth: string, search?: string,
       id: number;
       batch_id: number;
       phone_number: string;
+      extension: string;
+      dept_path: string;
       l1_branch: string;
       alloc_dept: string;
       org_code: string;

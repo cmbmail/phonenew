@@ -32,7 +32,8 @@ type SourceTab = 'import' | 'push';
  * 号码分摊机构页面 — 双 Tab：号码分摊机构（import）/ 待核对号码（push）
  * import Tab：月份 + 批次列表 + 批次明细（与数据录入页结构一致）
  * push Tab：按月份直接查明细（保持现状）
- * 列：号码、一级分行、分摊部门、机构代码、成本中心、备注
+ * 列：号码、分机号、部门全路径、一级分行、分摊部门、机构代码、成本中心、备注
+ * 分机号/部门全路径：同月通讯录按号码实时匹配；分摊部门/机构代码/成本中心：分摊机构对照表按一级分行+部门全路径实时匹配
  */
 const AllocationOrgPage: React.FC = () => {
   const { t } = useTranslation();
@@ -510,6 +511,21 @@ const AllocationOrgPage: React.FC = () => {
       render: (v: string) => <span style={{ fontFamily: 'monospace' }}>{v}</span>,
     },
     {
+      title: t('allocationOrg.colExtension'),
+      dataIndex: 'extension',
+      key: 'extension',
+      width: 120,
+      align: 'center' as const,
+      render: (v: string) => v || '-',
+    },
+    {
+      title: t('allocationOrg.colDeptPath'),
+      dataIndex: 'dept_path',
+      key: 'dept_path',
+      width: 280,
+      ellipsis: true,
+    },
+    {
       title: t('allocationOrg.colL1Branch'),
       dataIndex: 'l1_branch',
       key: 'l1_branch',
@@ -879,6 +895,12 @@ const AllocationOrgPage: React.FC = () => {
         <Form form={editForm} layout="vertical" style={{ marginTop: 8 }}>
           <Form.Item name="phone_number" label={t('allocationOrg.colPhoneNumber')}>
             <Input />
+          </Form.Item>
+          <Form.Item label={t('allocationOrg.colExtension')}>
+            <Input value={editingEntry?.extension as string || ''} disabled />
+          </Form.Item>
+          <Form.Item label={t('allocationOrg.colDeptPath')}>
+            <Input value={editingEntry?.dept_path as string || ''} disabled />
           </Form.Item>
           <Form.Item name="l1_branch" label={t('allocationOrg.colL1Branch')}>
             <Input />
