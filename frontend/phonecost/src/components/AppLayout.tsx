@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Layout, Menu, Avatar, Dropdown, Typography, Popconfirm, Modal, Form, Input, message } from 'antd';
-import { DashboardOutlined, FileTextOutlined, PhoneOutlined, TeamOutlined, SettingOutlined, LogoutOutlined, ToolOutlined, BankOutlined, BranchesOutlined, DatabaseOutlined, NumberOutlined, UserOutlined, AuditOutlined, BarChartOutlined, SafetyCertificateOutlined, NotificationOutlined, SwapOutlined, CloudServerOutlined } from '@ant-design/icons';
+import { DashboardOutlined, FileTextOutlined, PhoneOutlined, TeamOutlined, SettingOutlined, LogoutOutlined, ToolOutlined, BankOutlined, BranchesOutlined, DatabaseOutlined, NumberOutlined, UserOutlined, AuditOutlined, BarChartOutlined, SafetyCertificateOutlined, NotificationOutlined, SwapOutlined, CloudServerOutlined, ApartmentOutlined } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
 import { getErrorMessage } from '../types/api';
@@ -42,6 +42,7 @@ const allMenuItems: MenuItemDef[] = [
       { key: '/maintenance/branch-number', icon: <BankOutlined />, label: '分行号码', roles: [1, 2] },
       { key: '/maintenance/allocation-org', icon: <BranchesOutlined />, label: '号码分摊机构', roles: [1, 2] },
       { key: '/maintenance/org-code-mapping', icon: <SafetyCertificateOutlined />, label: '组织机构对照表', roles: [1, 2] },
+      { key: '/maintenance/allocation-org-mapping', icon: <ApartmentOutlined />, label: '分摊机构对照表', roles: [1, 2] },
     ],
   },
   {

@@ -28,6 +28,7 @@ const AllocationPhoneOwnership = React.lazy(() => import('./pages/AllocationPhon
 const BranchNumberPage = React.lazy(() => import('./pages/BranchNumberPage'));
 const AllocationOrgPage = React.lazy(() => import('./pages/AllocationOrgPage'));
 const OrgCodeMappingPage = React.lazy(() => import('./pages/OrgCodeMappingPage'));
+const AllocationOrgMappingPage = React.lazy(() => import('./pages/AllocationOrgMappingPage'));
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30000 } } });
 
@@ -104,6 +105,7 @@ const App: React.FC = () => (
             <Route path="maintenance/branch-number" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><BranchNumberPage /></PrivateRoute></LazyRoute>} />
             <Route path="maintenance/allocation-org" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><AllocationOrgPage /></PrivateRoute></LazyRoute>} />
             <Route path="maintenance/org-code-mapping" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><OrgCodeMappingPage /></PrivateRoute></LazyRoute>} />
+            <Route path="maintenance/allocation-org-mapping" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><AllocationOrgMappingPage /></PrivateRoute></LazyRoute>} />
             <Route path="templates" element={<LazyRoute><PrivateRoute allowedRoles={[1, 2]}><TemplateManagement /></PrivateRoute></LazyRoute>} />
             {/* Redirect old paths */}
             <Route path="settings" element={<Navigate to="/settings/users" replace />} />

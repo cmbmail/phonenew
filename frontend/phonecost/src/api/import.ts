@@ -235,6 +235,107 @@ export const downloadOrgCodeMappingTemplate = () => {
 
 
 
+// ==================== Allocation Org Mapping (分摊机构对照表) ====================
+
+export const getAllocationOrgMappingEntries = (search?: string, page = 0, size = 50) => {
+  const params: Record<string, string> = { page: String(page), size: String(size) };
+  if (search) params.search = search;
+  return apiGet<{
+    entries: Array<{
+      id: number;
+      l1_branch: string;
+      org_name: string;
+      org_code: string;
+      cost_center_code: string;
+      dept_full_path: string;
+      remark: string;
+      created_at: string;
+      updated_at: string;
+    }>;
+    total: number;
+    page: number;
+    size: number;
+  }>('/import/allocation-org-mapping', params);
+};
+
+export const createAllocationOrgMapping = (data: {
+  l1_branch: string;
+  org_name: string;
+  org_code: string;
+  cost_center_code?: string;
+  dept_full_path?: string;
+  remark?: string;
+}) => apiPost<Record<string, unknown>>('/import/allocation-org-mapping', data);
+
+export const updateAllocationOrgMapping = (id: number, data: {
+  l1_branch: string;
+  org_name: string;
+  org_code: string;
+  cost_center_code?: string;
+  dept_full_path?: string;
+  remark?: string;
+}) => apiPut<Record<string, unknown>>(`/import/allocation-org-mapping/${id}`, data);
+
+export const deleteAllocationOrgMapping = (id: number) =>
+  apiDelete<{ id: number; deleted: boolean }>(`/import/allocation-org-mapping/${id}`);
+
+export const batchDeleteAllocationOrgMapping = (ids: number[]) =>
+  apiPost<{ deleted: number }>('/import/allocation-org-mapping/batch', { ids });
+
+export const importAllocationOrgMapping = (file: File) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  return apiUpload<{ imported: number; skipped: number; errors?: string[] }>('/import/allocation-org-mapping/import', formData);
+};
+
+export const exportAllocationOrgMapping = () => {
+  const token = useAuthStore.getState().token;
+  const baseUrl = getApiBaseUrl();
+  const url = `${baseUrl}/import/allocation-org-mapping/export`;
+  fetch(url, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+    .then(res => {
+      if (!res.ok) throw new Error('Export failed');
+      return res.blob();
+    })
+    .then(blob => {
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = '分摊机构对照表导出.xlsx';
+      link.click();
+      URL.revokeObjectURL(blobUrl);
+    })
+    .catch(() => {
+      message.error('导出失败，请检查网络或重新登录');
+    });
+};
+
+export const downloadAllocationOrgMappingTemplate = () => {
+  const token = useAuthStore.getState().token;
+  const baseUrl = getApiBaseUrl();
+  const url = `${baseUrl}/import/allocation-org-mapping/template`;
+  fetch(url, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+    .then(res => {
+      if (!res.ok) throw new Error('Download failed');
+      return res.blob();
+    })
+    .then(blob => {
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = '分摊机构对照表导入模板.xlsx';
+      link.click();
+      URL.revokeObjectURL(blobUrl);
+    })
+    .catch(() => {
+      message.error('模板下载失败，请检查网络或重新登录');
+    });
+};
+
 export const generateOwnership = (billingMonth: string) =>
   apiPost<{ batch_id: number; batch_no: string; total_count: number; exception_count: number; elapsed_ms: number }>(
     '/import/ownership/generate',
