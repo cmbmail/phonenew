@@ -24,8 +24,8 @@ import java.util.*;
 
 /**
  * 分摊机构对照表
- * 一个机构名称（唯一）对应一个机构代码（唯一）、一个成本中心（唯一），多个部门全路径（、分隔）
- * 部门全路径的值在同一一级分行下只能有唯一值；同一个部门全路径可对应多个不同一级分行
+ * 机构名称、机构代码、成本中心代码均可重复（如不同分行均有「营业部」）
+ * 唯一性仅体现在部门全路径：其值在同一一级分行下唯一；同一部门全路径可对应多个不同一级分行
  */
 @RestController
 @RequestMapping("/import/allocation-org-mapping")
@@ -93,9 +93,7 @@ public class AllocationOrgMappingController {
         }
         String deptFullPath = normalizeDepts(body.getOrDefault("dept_full_path", ""));
 
-        // 唯一性校验（含软删除记录，因为唯一索引覆盖所有行）
-        checkUniqueness(orgName, orgCode, costCenterCode, null);
-        // 部门全路径在同一一级分行内唯一
+        // 唯一性仅限部门全路径（同一一级分行内）；机构名称/代码/成本中心可重复
         checkDeptUniqueness(l1Branch, deptFullPath, null);
 
         AllocationOrgMapping m = new AllocationOrgMapping();
@@ -139,8 +137,7 @@ public class AllocationOrgMappingController {
             throw new RuntimeException("机构代码不能为空");
         }
 
-        // 唯一性校验：排除自身（含软删除记录，因为唯一索引覆盖所有行）
-        checkUniqueness(orgName, orgCode, costCenterCode, id);
+        // 唯一性仅限部门全路径（同一一级分行内）；机构名称/代码/成本中心可重复
         checkDeptUniqueness(l1Branch, deptFullPath, id);
 
         m.setL1Branch(l1Branch);
@@ -211,11 +208,9 @@ public class AllocationOrgMappingController {
         int count = 0;
         int skipped = 0;
         List<String> errors = new ArrayList<>();
-        // 缓存当前批次已处理的记录，避免同文件内重复触发唯一索引冲突
+        // 缓存当前批次已处理的记录（key：一级分行 + 机构名称，唯一性仅在此维度）
         Map<String, AllocationOrgMapping> nameCache = new HashMap<>();
-        Map<String, AllocationOrgMapping> codeCache = new HashMap<>();
-        Map<String, AllocationOrgMapping> costCache = new HashMap<>();
-        // (一级分行 + 部门) → 占用记录 id：预载库内既有占用（不含软删除行，部门无物理唯一索引）
+        // (一级分行 + 部门) → 占用记录 id：预载库内既有占用（不含软删除行）
         Map<String, Long> deptOwner = new HashMap<>();
         for (AllocationOrgMapping m : repository.findAllByDeletedAtIsNull()) {
             registerDepts(deptOwner, m.getL1Branch(), m.getDeptFullPath(), m.getId());
@@ -239,11 +234,10 @@ public class AllocationOrgMappingController {
                     continue;
                 }
 
-                // upsert: 按机构名称（主键语义）查找，其次按机构代码（含软删除记录，避免唯一索引冲突）
-                AllocationOrgMapping m = nameCache.get(orgName);
+                // upsert：按 一级分行+机构名称 定位记录（机构名称/代码/成本中心可重复，不作为 upsert 键）
+                AllocationOrgMapping m = nameCache.get(l1Branch + "|" + orgName);
                 if (m == null) {
-                    m = repository.findByOrgName(orgName)
-                            .or(() -> repository.findByOrgCode(orgCode))
+                    m = repository.findByL1BranchAndOrgNameAndDeletedAtIsNull(l1Branch, orgName)
                             .orElseGet(AllocationOrgMapping::new);
                 }
                 // 若是软删除记录则恢复
@@ -251,28 +245,6 @@ public class AllocationOrgMappingController {
                     m.setDeletedAt(null);
                 }
                 Long selfId = m.getId();
-
-                // 机构代码/成本中心指向其他记录时拒绝该行（含软删除记录，唯一索引覆盖所有行；空成本中心存 NULL 不参与唯一约束）
-                AllocationOrgMapping byCode = codeCache.get(orgCode);
-                if (byCode == null) {
-                    byCode = repository.findByOrgCode(orgCode).orElse(null);
-                }
-                if (byCode != null && !byCode.getId().equals(selfId)) {
-                    skipped++;
-                    errors.add("第" + (i + 1) + "行: 机构代码 " + orgCode + " 已被 " + byCode.getOrgName() + " 使用");
-                    continue;
-                }
-                if (!costCenterCode.isEmpty()) {
-                    AllocationOrgMapping byCost = costCache.get(costCenterCode);
-                    if (byCost == null) {
-                        byCost = repository.findByCostCenterCode(costCenterCode).orElse(null);
-                    }
-                    if (byCost != null && !byCost.getId().equals(selfId)) {
-                        skipped++;
-                        errors.add("第" + (i + 1) + "行: 成本中心 " + costCenterCode + " 已被 " + byCost.getOrgName() + " 使用");
-                        continue;
-                    }
-                }
 
                 // 部门全路径在同一一级分行内唯一（占用者为自身时放行，支持原记录更新自己的部门）
                 String deptConflict = findDeptConflict(deptOwner, l1Branch, deptFullPath, selfId);
@@ -294,9 +266,7 @@ public class AllocationOrgMappingController {
                 m.setRemark(remark);
                 repository.save(m);
                 repository.flush();
-                nameCache.put(orgName, m);
-                codeCache.put(orgCode, m);
-                if (!costCenterCode.isEmpty()) costCache.put(costCenterCode, m);
+                nameCache.put(l1Branch + "|" + orgName, m);
                 // 释放旧部门占用，登记新部门占用
                 unregisterDepts(deptOwner, oldL1, oldDepts, m.getId());
                 registerDepts(deptOwner, l1Branch, deptFullPath, m.getId());
@@ -400,25 +370,7 @@ public class AllocationOrgMappingController {
         return String.join(DEPT_SEPARATOR, parts);
     }
 
-    /** 机构名称/机构代码/成本中心唯一性校验（排除自身 id，含软删除记录，因为唯一索引覆盖所有行；NULL 成本中心不受唯一索引约束） */
-    private void checkUniqueness(String orgName, String orgCode, String costCenterCode, Long excludeId) {
-        Optional<AllocationOrgMapping> byName = repository.findByOrgName(orgName);
-        if (byName.isPresent() && (excludeId == null || !byName.get().getId().equals(excludeId))) {
-            throw new RuntimeException("机构名称已存在: " + orgName);
-        }
-        Optional<AllocationOrgMapping> byCode = repository.findByOrgCode(orgCode);
-        if (byCode.isPresent() && (excludeId == null || !byCode.get().getId().equals(excludeId))) {
-            throw new RuntimeException("机构代码已存在: " + orgCode);
-        }
-        if (costCenterCode != null && !costCenterCode.isBlank()) {
-            Optional<AllocationOrgMapping> byCost = repository.findByCostCenterCode(costCenterCode);
-            if (byCost.isPresent() && (excludeId == null || !byCost.get().getId().equals(excludeId))) {
-                throw new RuntimeException("成本中心代码已存在: " + costCenterCode);
-            }
-        }
-    }
-
-    /** 统一空成本中心的落库值：空串存 NULL（MySQL 唯一索引不约束 NULL，多条记录可同时无成本中心） */
+    /** 统一空成本中心的落库值：空串存 NULL */
     private String nullableCost(String costCenterCode) {
         return costCenterCode == null || costCenterCode.isBlank() ? null : costCenterCode;
     }
