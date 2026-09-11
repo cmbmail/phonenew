@@ -102,7 +102,7 @@ public class AllocationOrgMappingController {
         m.setL1Branch(l1Branch);
         m.setOrgName(orgName);
         m.setOrgCode(orgCode);
-        m.setCostCenterCode(costCenterCode);
+        m.setCostCenterCode(nullableCost(costCenterCode));
         m.setDeptFullPath(deptFullPath);
         m.setRemark(body.getOrDefault("remark", ""));
         AllocationOrgMapping saved = repository.save(m);
@@ -146,7 +146,7 @@ public class AllocationOrgMappingController {
         m.setL1Branch(l1Branch);
         m.setOrgName(orgName);
         m.setOrgCode(orgCode);
-        m.setCostCenterCode(costCenterCode);
+        m.setCostCenterCode(nullableCost(costCenterCode));
         m.setDeptFullPath(deptFullPath);
         if (body.containsKey("remark")) m.setRemark(body.get("remark"));
         AllocationOrgMapping saved = repository.save(m);
@@ -252,7 +252,7 @@ public class AllocationOrgMappingController {
                 }
                 Long selfId = m.getId();
 
-                // 机构代码/成本中心指向其他记录时拒绝该行（含软删除记录，唯一索引覆盖所有行）
+                // 机构代码/成本中心指向其他记录时拒绝该行（含软删除记录，唯一索引覆盖所有行；空成本中心存 NULL 不参与唯一约束）
                 AllocationOrgMapping byCode = codeCache.get(orgCode);
                 if (byCode == null) {
                     byCode = repository.findByOrgCode(orgCode).orElse(null);
@@ -262,7 +262,7 @@ public class AllocationOrgMappingController {
                     errors.add("第" + (i + 1) + "行: 机构代码 " + orgCode + " 已被 " + byCode.getOrgName() + " 使用");
                     continue;
                 }
-                if (!costCenterCode.isBlank()) {
+                if (!costCenterCode.isEmpty()) {
                     AllocationOrgMapping byCost = costCache.get(costCenterCode);
                     if (byCost == null) {
                         byCost = repository.findByCostCenterCode(costCenterCode).orElse(null);
@@ -289,14 +289,14 @@ public class AllocationOrgMappingController {
                 m.setL1Branch(l1Branch);
                 m.setOrgName(orgName);
                 m.setOrgCode(orgCode);
-                m.setCostCenterCode(costCenterCode);
+                m.setCostCenterCode(nullableCost(costCenterCode));
                 m.setDeptFullPath(deptFullPath);
                 m.setRemark(remark);
                 repository.save(m);
                 repository.flush();
                 nameCache.put(orgName, m);
                 codeCache.put(orgCode, m);
-                if (!costCenterCode.isBlank()) costCache.put(costCenterCode, m);
+                if (!costCenterCode.isEmpty()) costCache.put(costCenterCode, m);
                 // 释放旧部门占用，登记新部门占用
                 unregisterDepts(deptOwner, oldL1, oldDepts, m.getId());
                 registerDepts(deptOwner, l1Branch, deptFullPath, m.getId());
@@ -400,7 +400,7 @@ public class AllocationOrgMappingController {
         return String.join(DEPT_SEPARATOR, parts);
     }
 
-    /** 机构名称/机构代码/成本中心唯一性校验（排除自身 id，含软删除记录，因为唯一索引覆盖所有行） */
+    /** 机构名称/机构代码/成本中心唯一性校验（排除自身 id，含软删除记录，因为唯一索引覆盖所有行；NULL 成本中心不受唯一索引约束） */
     private void checkUniqueness(String orgName, String orgCode, String costCenterCode, Long excludeId) {
         Optional<AllocationOrgMapping> byName = repository.findByOrgName(orgName);
         if (byName.isPresent() && (excludeId == null || !byName.get().getId().equals(excludeId))) {
@@ -410,12 +410,17 @@ public class AllocationOrgMappingController {
         if (byCode.isPresent() && (excludeId == null || !byCode.get().getId().equals(excludeId))) {
             throw new RuntimeException("机构代码已存在: " + orgCode);
         }
-        if (!costCenterCode.isBlank()) {
+        if (costCenterCode != null && !costCenterCode.isBlank()) {
             Optional<AllocationOrgMapping> byCost = repository.findByCostCenterCode(costCenterCode);
             if (byCost.isPresent() && (excludeId == null || !byCost.get().getId().equals(excludeId))) {
                 throw new RuntimeException("成本中心代码已存在: " + costCenterCode);
             }
         }
+    }
+
+    /** 统一空成本中心的落库值：空串存 NULL（MySQL 唯一索引不约束 NULL，多条记录可同时无成本中心） */
+    private String nullableCost(String costCenterCode) {
+        return costCenterCode == null || costCenterCode.isBlank() ? null : costCenterCode;
     }
 
     /** 部门全路径在同一一级分行内唯一校验（排除自身 id，不含软删除记录） */

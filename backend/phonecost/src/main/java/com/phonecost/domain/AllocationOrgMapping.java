@@ -23,9 +23,8 @@ public class AllocationOrgMapping extends BaseEntity {
     @ColumnDefault("''")
     private String orgCode;
 
-    /** 成本中心代码（唯一） */
-    @Column(name = "cost_center_code", nullable = false)
-    @ColumnDefault("''")
+    /** 成本中心代码（唯一；空存 NULL，多条记录可同时无成本中心） */
+    @Column(name = "cost_center_code")
     private String costCenterCode;
 
     /** 部门全路径（多个以、分隔；值在同一一级分行下唯一） */
