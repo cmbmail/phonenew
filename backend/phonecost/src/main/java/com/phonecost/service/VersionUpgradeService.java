@@ -72,7 +72,7 @@ public class VersionUpgradeService {
     private static final String BACKEND_SERVICE_NAME = "phonecost-backend";
 
     /** 当前构建版本号，用于新建安装时初始化 system_version */
-    public static final String BUILD_VERSION = "1.12.148";
+    public static final String BUILD_VERSION = "1.12.149";
 
     /**
      * 上传升级包
