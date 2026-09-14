@@ -24,10 +24,9 @@ import java.util.*;
 
 /**
  * 分摊机构对照表（业务规则）
- * 1) 同一一级分行下，部门全路径唯一；同一部门全路径可出现在不同一级分行
- * 2) 同一一级分行下，机构名称对应的机构代码/成本中心代码唯一（同名机构多部门行导入时累积合并部门全路径）；
- *    不同机构名称可共用同一机构代码（v1.12.150）
- * 成本中心可跨分行（同一部门可挂靠多个一级分行，v1.12.151 放开，如总行/汇勤与佛山分行/汇勤共用 757080）
+ * 1) 每个部门全路径独占一条记录；同一一级分行下部门全路径唯一，同一部门全路径可出现在不同一级分行
+ * 2) 同一一级分行下，机构名称对应的机构代码/成本中心代码一致（同机构多部门行校验）；不同机构名称可共用机构代码（v1.12.150）
+ * 成本中心可跨分行（v1.12.151）
  * 导入时不符合规则的数据逐行提示，不阻断其他行
  */
 @RestController
@@ -94,7 +93,13 @@ public class AllocationOrgMappingController {
         if (l1Branch.isBlank()) {
             throw new RuntimeException("一级分行不能为空");
         }
-        String deptFullPath = normalizeDepts(body.getOrDefault("dept_full_path", ""));
+        String deptFullPath = body.getOrDefault("dept_full_path", "").trim();
+        if (deptFullPath.isBlank()) {
+            throw new RuntimeException("部门全路径不能为空");
+        }
+        if (deptFullPath.contains(DEPT_SEPARATOR)) {
+            throw new RuntimeException("部门全路径需独占一行，不允许含「、」多值");
+        }
 
         // 业务规则校验（不通过则报错）
         validateCreate(l1Branch, orgName, orgCode, costCenterCode, deptFullPath);
@@ -127,7 +132,7 @@ public class AllocationOrgMappingController {
         String orgCode = body.containsKey("org_code") ? body.get("org_code").trim() : m.getOrgCode();
         String costCenterCode = body.containsKey("cost_center_code") ? body.get("cost_center_code").trim() : m.getCostCenterCode();
         String deptFullPath = body.containsKey("dept_full_path")
-                ? normalizeDepts(body.get("dept_full_path"))
+                ? body.get("dept_full_path").trim()
                 : m.getDeptFullPath();
 
         if (l1Branch.isBlank()) {
@@ -138,6 +143,9 @@ public class AllocationOrgMappingController {
         }
         if (orgCode.isBlank()) {
             throw new RuntimeException("机构代码不能为空");
+        }
+        if (deptFullPath != null && deptFullPath.contains(DEPT_SEPARATOR)) {
+            throw new RuntimeException("部门全路径需独占一行，不允许含「、」多值");
         }
 
         // 业务规则校验（排除自身）
@@ -208,13 +216,17 @@ public class AllocationOrgMappingController {
         int count = 0;
         int skipped = 0;
         List<String> errors = new ArrayList<>();
-        // 缓存当前批次已处理的记录（key：一级分行 + 机构名称）
-        Map<String, AllocationOrgMapping> nameCache = new HashMap<>();
+        // 缓存当前批次已处理的记录（key：一级分行 + 部门全路径）
+        Map<String, AllocationOrgMapping> deptCache = new HashMap<>();
+        // 同机构（分行+机构名）代码/成本中心基准（取首条，后续行一致性比对）：key：一级分行+机构名称
+        Map<String, String[]> orgRef = new HashMap<>();
         // 规则占用表（均不含软删除行）：
         // (一级分行 + 部门) → 占用记录 id；同分行下部门全路径唯一（规则 1）
         Map<String, Long> deptOwner = new HashMap<>();
         for (AllocationOrgMapping m : repository.findAllByDeletedAtIsNull()) {
-            registerDepts(deptOwner, m.getL1Branch(), m.getDeptFullPath(), m.getId());
+            deptOwner.put(deptKey(m.getL1Branch(), m.getDeptFullPath()), m.getId());
+            orgRef.putIfAbsent(m.getL1Branch() + "|" + m.getOrgName(),
+                    new String[]{m.getOrgCode(), m.getCostCenterCode() == null ? "" : m.getCostCenterCode()});
         }
         try (Workbook wb = WorkbookFactory.create(file.getInputStream())) {
             Sheet sheet = wb.getSheetAt(0);
@@ -225,7 +237,7 @@ public class AllocationOrgMappingController {
                 String orgName = getCellString(row, 1);
                 String orgCode = getCellString(row, 2);
                 String costCenterCode = getCellString(row, 3);
-                String deptFullPath = normalizeDepts(getCellString(row, 4));
+                String deptFullPath = getCellString(row, 4).trim();
                 String remark = getCellString(row, 5);
                 if (l1Branch.isBlank() && orgName.isBlank() && orgCode.isBlank()
                         && costCenterCode.isBlank() && deptFullPath.isBlank() && remark.isBlank()) continue;
@@ -235,61 +247,75 @@ public class AllocationOrgMappingController {
                     continue;
                 }
 
-                // upsert：按 一级分行+机构名称 定位记录
-                AllocationOrgMapping m = nameCache.get(l1Branch + "|" + orgName);
+                // 部门全路径独占一行：不允许单行多值（「、」为历史合并格式）
+                if (deptFullPath.contains(DEPT_SEPARATOR)) {
+                    skipped++;
+                    errors.add("第" + (i + 1) + "行: 部门全路径需独占一行，不允许含「、」多值（请拆分为多行）");
+                    continue;
+                }
+                if (deptFullPath.isBlank()) {
+                    skipped++;
+                    errors.add("第" + (i + 1) + "行: 部门全路径不能为空");
+                    continue;
+                }
+
+                // upsert：按 一级分行+部门全路径 定位记录
+                AllocationOrgMapping m = deptCache.get(deptKey(l1Branch, deptFullPath));
                 if (m == null) {
-                    m = repository.findByL1BranchAndOrgNameAndDeletedAtIsNull(l1Branch, orgName)
+                    m = repository.findByL1BranchAndDeptFullPathAndDeletedAtIsNull(l1Branch, deptFullPath)
                             .orElseGet(AllocationOrgMapping::new);
                 }
                 Long selfId = m.getId();
 
                 // ===== 规则校验（不合规逐行提示，跳过不阻断）=====
 
-                // 规则 1：部门全路径在同一一级分行内唯一（占用者为自身时放行，支持原记录更新自己的部门）
-                String deptConflict = findDeptConflict(deptOwner, l1Branch, deptFullPath, selfId);
-                if (deptConflict != null) {
+                // 规则 1：部门全路径在同一一级分行内唯一（占用者为自身时放行，支持原记录更新自己的信息）
+                Long owner = deptOwner.get(deptKey(l1Branch, deptFullPath));
+                if (owner != null && !owner.equals(selfId)) {
                     skipped++;
-                    errors.add("第" + (i + 1) + "行: 部门全路径 " + deptConflict + " 在 " + l1Branch + " 下已存在");
+                    errors.add("第" + (i + 1) + "行: 部门全路径 " + deptFullPath + " 在 " + l1Branch + " 下已存在");
                     continue;
                 }
 
-                // 规则 2（一致性）：upsert 命中既有记录时，机构代码/成本中心须与既有值一致（一个机构名称对应唯一的机构代码和成本中心）
-                if (m.getId() != null) {
-                    if (!m.getOrgCode().equals(orgCode)) {
+                // 规则 1b：命中既有记录（本批次或库内）时，机构名称必须一致——
+                // 防止导入行改写其他机构的部门归属（部门独占一行，归属只随记录本身变化）
+                if (selfId != null && !orgName.equals(m.getOrgName())) {
+                    skipped++;
+                    errors.add("第" + (i + 1) + "行: 部门全路径 " + deptFullPath + " 在 " + l1Branch
+                            + " 下已归属机构「" + m.getOrgName() + "」，不能改为机构「" + orgName
+                            + "」（如需调整请先删除原记录）");
+                    continue;
+                }
+
+                // 规则 2（一致性）：同一分行同名机构的代码/成本中心须一致（基准：库内首条或本批次首条）
+                String[] ref = orgRef.get(l1Branch + "|" + orgName);
+                if (ref == null) {
+                    orgRef.put(l1Branch + "|" + orgName, new String[]{orgCode, costCenterCode});
+                } else {
+                    if (!ref[0].equals(orgCode)) {
                         skipped++;
-                        errors.add("第" + (i + 1) + "行: 机构名称 " + orgName + " 在 " + l1Branch + " 下已对应机构代码 " + m.getOrgCode() + "，与本次 " + orgCode + " 不一致");
+                        errors.add("第" + (i + 1) + "行: 机构名称 " + orgName + " 在 " + l1Branch + " 下已对应机构代码 " + ref[0] + "，与本次 " + orgCode + " 不一致");
                         continue;
                     }
-                    String existingCost = m.getCostCenterCode() == null ? "" : m.getCostCenterCode();
-                    if (!existingCost.equals(costCenterCode.isEmpty() ? "" : costCenterCode)
-                            && !(existingCost.isEmpty() && costCenterCode.isEmpty())) {
+                    String refCost = ref[1];
+                    if (!refCost.equals(costCenterCode)) {
                         skipped++;
-                        errors.add("第" + (i + 1) + "行: 机构名称 " + orgName + " 在 " + l1Branch + " 下已对应成本中心 " + (existingCost.isEmpty() ? "空" : existingCost) + "，与本次 " + (costCenterCode.isEmpty() ? "空" : costCenterCode) + " 不一致");
+                        errors.add("第" + (i + 1) + "行: 机构名称 " + orgName + " 在 " + l1Branch + " 下已对应成本中心 " + (refCost.isEmpty() ? "空" : refCost) + "，与本次 " + (costCenterCode.isEmpty() ? "空" : costCenterCode) + " 不一致");
                         continue;
                     }
                 }
-
-                // 记录旧部门占用，便于保存后释放
-                String oldL1 = m.getL1Branch();
-                String oldDepts = m.getDeptFullPath();
-
-                // upsert 命中既有记录（同分行同名）时，部门全路径累积合并（同分行同名同码同成本属同一机构的多部门占用）
-                String mergedDepts = m.getId() != null
-                        ? mergeDepts(m.getDeptFullPath(), deptFullPath)
-                        : deptFullPath;
 
                 m.setL1Branch(l1Branch);
                 m.setOrgName(orgName);
                 m.setOrgCode(orgCode);
                 m.setCostCenterCode(nullableCost(costCenterCode));
-                m.setDeptFullPath(mergedDepts);
+                m.setDeptFullPath(deptFullPath);
                 m.setRemark(remark);
                 repository.save(m);
                 repository.flush();
-                nameCache.put(l1Branch + "|" + orgName, m);
-                // 更新占用表：释放旧部门占用，登记新占用（机构代码/成本中心可共用，无需维护占用表）
-                unregisterDepts(deptOwner, oldL1, oldDepts, m.getId());
-                registerDepts(deptOwner, l1Branch, mergedDepts, m.getId());
+                deptCache.put(deptKey(l1Branch, deptFullPath), m);
+                // 登记部门占用（新增记录 id 已生成）
+                deptOwner.put(deptKey(l1Branch, deptFullPath), m.getId());
                 count++;
             }
         } catch (IOException e) {
@@ -381,45 +407,43 @@ public class AllocationOrgMappingController {
 
     /**
      * 新增时业务规则校验（不合规抛错）
-     * 规则 1：部门全路径同分行唯一
+     * 规则 1：部门全路径同分行唯一；规则 2：同分行同名机构代码/成本中心一致
      * （机构代码同分行唯一 v1.12.150 放开；成本中心跨分行 v1.12.151 放开）
      */
     private void validateCreate(String l1Branch, String orgName, String orgCode,
                                 String costCenterCode, String deptFullPath) {
         // 规则 1：部门全路径在同一一级分行内唯一
         checkDeptUniqueness(l1Branch, deptFullPath, null);
+        // 规则 2：同分行同名机构的代码/成本中心一致
+        checkOrgConsistency(l1Branch, orgName, orgCode, costCenterCode, null);
     }
 
     /**
      * 编辑时业务规则校验（排除自身，不合规抛错）
-     * 规则 1：部门全路径同分行唯一
-     * （机构代码同分行唯一 v1.12.150 放开；成本中心跨分行 v1.12.151 放开）
+     * 规则 1：部门全路径同分行唯一；规则 2：同分行同名机构代码/成本中心一致
      */
     private void validateUpdate(Long id, String l1Branch, String orgName, String orgCode,
                                 String costCenterCode, String deptFullPath) {
         checkDeptUniqueness(l1Branch, deptFullPath, id);
+        checkOrgConsistency(l1Branch, orgName, orgCode, costCenterCode, id);
     }
 
-    /** 规范化部门全路径：拆分、去空、去重、重新以、连接 */
-    private String normalizeDepts(String raw) {
-        if (raw == null || raw.isBlank()) return "";
-        List<String> parts = new ArrayList<>();
-        for (String p : raw.split(DEPT_SEPARATOR)) {
-            String t = p.trim();
-            if (!t.isEmpty() && !parts.contains(t)) parts.add(t);
+    /** 同分行同名机构的代码/成本中心一致性校验（排除自身 id） */
+    private void checkOrgConsistency(String l1Branch, String orgName, String orgCode,
+                                     String costCenterCode, Long excludeId) {
+        for (AllocationOrgMapping m : repository.findAllByDeletedAtIsNull()) {
+            if (excludeId != null && m.getId().equals(excludeId)) continue;
+            if (!m.getL1Branch().equals(l1Branch) || !m.getOrgName().equals(orgName)) continue;
+            if (!m.getOrgCode().equals(orgCode)) {
+                throw new RuntimeException("机构名称 " + orgName + " 在 " + l1Branch + " 下已对应机构代码 " + m.getOrgCode() + "，与本次 " + orgCode + " 不一致");
+            }
+            String existingCost = m.getCostCenterCode() == null ? "" : m.getCostCenterCode();
+            String newCost = costCenterCode == null ? "" : costCenterCode;
+            if (!existingCost.equals(newCost)) {
+                throw new RuntimeException("机构名称 " + orgName + " 在 " + l1Branch + " 下已对应成本中心 " + (existingCost.isEmpty() ? "空" : existingCost) + "，与本次 " + (newCost.isEmpty() ? "空" : newCost) + " 不一致");
+            }
+            return; // 首条同名记录校验通过即可
         }
-        return String.join(DEPT_SEPARATOR, parts);
-    }
-
-    /** 合并两组部门全路径（去重、保持既有值在前） */
-    private String mergeDepts(String existing, String incoming) {
-        if (existing == null || existing.isBlank()) return incoming == null ? "" : incoming;
-        if (incoming == null || incoming.isBlank()) return existing;
-        List<String> parts = new ArrayList<>(splitDepts(existing));
-        for (String d : splitDepts(incoming)) {
-            if (!parts.contains(d)) parts.add(d);
-        }
-        return String.join(DEPT_SEPARATOR, parts);
     }
 
     /** 统一空成本中心的落库值：空串存 NULL */
@@ -427,64 +451,20 @@ public class AllocationOrgMappingController {
         return costCenterCode == null || costCenterCode.isBlank() ? null : costCenterCode;
     }
 
-    /** 部门全路径在同一一级分行内唯一校验（排除自身 id，不含软删除记录） */
+    /** 部门全路径在同一一级分行内唯一校验（排除自身 id，不含软删除记录；部门独占一行无多值） */
     private void checkDeptUniqueness(String l1Branch, String deptFullPath, Long excludeId) {
         if (deptFullPath == null || deptFullPath.isBlank()) return;
-        for (String d : splitDepts(deptFullPath)) {
-            for (AllocationOrgMapping m : repository.findAllByDeletedAtIsNull()) {
-                if (excludeId != null && m.getId().equals(excludeId)) continue;
-                if (!m.getL1Branch().equals(l1Branch)) continue; // 不同一级分行允许相同部门全路径
-                for (String e : splitDepts(m.getDeptFullPath())) {
-                    if (d.equals(e)) {
-                        throw new RuntimeException("部门全路径「" + d + "」在 " + l1Branch + " 下已存在（机构: " + m.getOrgName() + "）");
-                    }
-                }
+        for (AllocationOrgMapping m : repository.findAllByDeletedAtIsNull()) {
+            if (excludeId != null && m.getId().equals(excludeId)) continue;
+            if (!m.getL1Branch().equals(l1Branch)) continue; // 不同一级分行允许相同部门全路径
+            if (deptFullPath.equals(m.getDeptFullPath())) {
+                throw new RuntimeException("部门全路径「" + deptFullPath + "」在 " + l1Branch + " 下已存在（机构: " + m.getOrgName() + "）");
             }
         }
-    }
-
-    /** 拆分部门全路径为去空列表 */
-    private List<String> splitDepts(String deptFullPath) {
-        if (deptFullPath == null || deptFullPath.isBlank()) return List.of();
-        List<String> parts = new ArrayList<>();
-        for (String p : deptFullPath.split(DEPT_SEPARATOR)) {
-            String t = p.trim();
-            if (!t.isEmpty()) parts.add(t);
-        }
-        return parts;
-    }
-
-    /**
-     * 导入用部门冲突检测：占用者为自身记录时放行（支持更新自己的部门）。
-     * 返回冲突的部门名（无冲突返回 null）。
-     */
-    private String findDeptConflict(Map<String, Long> deptOwner, String l1Branch, String deptFullPath, Long selfId) {
-        if (deptFullPath == null || deptFullPath.isBlank()) return null;
-        for (String d : splitDepts(deptFullPath)) {
-            Long owner = deptOwner.get(deptKey(l1Branch, d));
-            if (owner != null && !owner.equals(selfId)) {
-                return d;
-            }
-        }
-        return null;
     }
 
     private String deptKey(String l1Branch, String dept) {
         return l1Branch + "|" + dept;
-    }
-
-    private void registerDepts(Map<String, Long> deptOwner, String l1Branch, String deptFullPath, Long id) {
-        if (id == null || deptFullPath == null || deptFullPath.isBlank()) return;
-        for (String d : splitDepts(deptFullPath)) {
-            deptOwner.put(deptKey(l1Branch, d), id);
-        }
-    }
-
-    private void unregisterDepts(Map<String, Long> deptOwner, String l1Branch, String deptFullPath, Long id) {
-        if (id == null || deptFullPath == null || deptFullPath.isBlank()) return;
-        for (String d : splitDepts(deptFullPath)) {
-            deptOwner.remove(deptKey(l1Branch, d), id);
-        }
     }
 
     private Map<String, Object> toMap(AllocationOrgMapping m) {

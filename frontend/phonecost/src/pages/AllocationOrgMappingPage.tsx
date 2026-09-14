@@ -18,11 +18,10 @@ import { useAuthStore } from '../store/auth';
 
 /**
  * 分摊机构对照表页面 — 基础数据菜单
- * 列：一级分行、机构名称、机构代码、成本中心代码、部门全路径（多个以、分隔）、备注、操作（编辑、删除）
- * 规则：1) 同一一级分行下，部门全路径唯一；同一部门全路径可出现在不同一级分行
- *       2) 同一一级分行下，机构名称对应的机构代码/成本中心代码唯一；不同机构名称可共用同一机构代码
- * 成本中心可跨分行（同一部门可挂靠多个一级分行，v1.12.151）
- *       4) 导入时不合规数据逐行提示
+ * 列：一级分行、机构名称、机构代码、成本中心代码、部门全路径（独占一行）、备注、操作（编辑、删除）
+ * 规则：1) 每个部门全路径独占一条记录；同一部门全路径可出现在不同一级分行
+ *       2) 同一一级分行下，机构名称对应的机构代码/成本中心代码一致；不同机构名称可共用机构代码
+ * 成本中心可跨分行（v1.12.151）；导入时不合规数据逐行提示
  */
 const AllocationOrgMappingPage: React.FC = () => {
   const { t } = useTranslation();
@@ -395,9 +394,18 @@ const AllocationOrgMappingPage: React.FC = () => {
           <Form.Item
             name="dept_full_path"
             label={t('allocationOrgMapping.colDeptFullPath')}
+            rules={[
+              { required: true, message: t('allocationOrgMapping.deptRequired') },
+              {
+                validator: (_, value) =>
+                  value && value.includes('、')
+                    ? Promise.reject(new Error(t('allocationOrgMapping.deptSingleOnly')))
+                    : Promise.resolve(),
+              },
+            ]}
             extra={t('allocationOrgMapping.deptHint')}
           >
-            <Input.TextArea maxLength={2000} rows={3} />
+            <Input.TextArea maxLength={512} rows={2} />
           </Form.Item>
           <Form.Item name="remark" label={t('allocationOrgMapping.colRemark')}>
             <Input.TextArea maxLength={512} rows={2} />

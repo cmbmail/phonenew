@@ -16,8 +16,8 @@ public interface AllocationOrgMappingRepository extends JpaRepository<Allocation
 
     Optional<AllocationOrgMapping> findByIdAndDeletedAtIsNull(Long id);
 
-    /** 按 一级分行+机构名称 定位记录（导入 upsert 键；机构名称/代码/成本中心可重复） */
-    Optional<AllocationOrgMapping> findByL1BranchAndOrgNameAndDeletedAtIsNull(String l1Branch, String orgName);
+    /** 按 一级分行+部门全路径 定位记录（导入 upsert 键；部门全路径独占一行） */
+    Optional<AllocationOrgMapping> findByL1BranchAndDeptFullPathAndDeletedAtIsNull(String l1Branch, String deptFullPath);
 
     Page<AllocationOrgMapping> findByDeletedAtIsNull(Pageable pageable);
 
