@@ -136,31 +136,33 @@ public class DataImportController {
 
             // 2. 加载所有号码分摊机构记录（跨月），按 billingMonth DESC 排序，
             //    同号码取最近月份有值的记录：优先取 alloc_dept/org_code/cost_center 非空且最新的记录
-            Map<String, AllocationOrgEntry> allocOrgMap = new HashMap<>();
+            //    注意：使用 String[] 快照而非托管实体——直接 set 实体会被脏检查写回 allocation_org_entry 源表（v1.12.153 修复）
+            Map<String, String[]> allocOrgMap = new HashMap<>();
             List<AllocationOrgEntry> allocOrgEntries = allocationOrgEntryRepository.findAllActiveOrderedByMonthDesc();
             for (AllocationOrgEntry aoe : allocOrgEntries) {
                 String phone = aoe.getPhoneNumber();
                 if (phone == null || phone.isEmpty()) continue;
-                AllocationOrgEntry existing = allocOrgMap.get(phone);
+                String[] existing = allocOrgMap.get(phone);
                 if (existing == null) {
                     // 首次出现，直接放入（最近月份的记录）
-                    allocOrgMap.put(phone, aoe);
+                    allocOrgMap.put(phone, new String[]{
+                            aoe.getAllocDept() == null ? "" : aoe.getAllocDept(),
+                            aoe.getOrgCode() == null ? "" : aoe.getOrgCode(),
+                            aoe.getCostCenter() == null ? "" : aoe.getCostCenter()
+                    });
                 } else {
-                    // 已有记录，如果现有的字段为空而当前记录有值，则用当前记录覆盖
-                    boolean existingHasAlloc = existing.getAllocDept() != null && !existing.getAllocDept().isEmpty();
-                    boolean existingHasOrg = existing.getOrgCode() != null && !existing.getOrgCode().isEmpty();
-                    boolean existingHasCost = existing.getCostCenter() != null && !existing.getCostCenter().isEmpty();
-                    if (!existingHasAlloc || !existingHasOrg || !existingHasCost) {
-                        // 现有记录缺少某些字段，尝试从当前记录补充
-                        if (!existingHasAlloc && aoe.getAllocDept() != null && !aoe.getAllocDept().isEmpty()) {
-                            existing.setAllocDept(aoe.getAllocDept());
-                        }
-                        if (!existingHasOrg && aoe.getOrgCode() != null && !aoe.getOrgCode().isEmpty()) {
-                            existing.setOrgCode(aoe.getOrgCode());
-                        }
-                        if (!existingHasCost && aoe.getCostCenter() != null && !aoe.getCostCenter().isEmpty()) {
-                            existing.setCostCenter(aoe.getCostCenter());
-                        }
+                    // 已有记录，如果现有的字段为空而当前记录有值，则用当前记录补充（仅改内存快照，不碰源表）
+                    boolean existingHasAlloc = !existing[0].isEmpty();
+                    boolean existingHasOrg = !existing[1].isEmpty();
+                    boolean existingHasCost = !existing[2].isEmpty();
+                    if (!existingHasAlloc && aoe.getAllocDept() != null && !aoe.getAllocDept().isEmpty()) {
+                        existing[0] = aoe.getAllocDept();
+                    }
+                    if (!existingHasOrg && aoe.getOrgCode() != null && !aoe.getOrgCode().isEmpty()) {
+                        existing[1] = aoe.getOrgCode();
+                    }
+                    if (!existingHasCost && aoe.getCostCenter() != null && !aoe.getCostCenter().isEmpty()) {
+                        existing[2] = aoe.getCostCenter();
                     }
                 }
             }
@@ -174,26 +176,26 @@ public class DataImportController {
                     skipped++;
                     continue;
                 }
-                AllocationOrgEntry match = allocOrgMap.get(phone);
+                String[] match = allocOrgMap.get(phone);
                 if (match == null) {
                     skipped++;
                     continue;
                 }
                 boolean changed = false;
-                if (match.getAllocDept() != null && !match.getAllocDept().isEmpty()) {
+                if (!match[0].isEmpty()) {
                     String old = entry.getAllocDept();
-                    entry.setAllocDept(match.getAllocDept());
-                    if (old == null || !old.equals(match.getAllocDept())) changed = true;
+                    entry.setAllocDept(match[0]);
+                    if (old == null || !old.equals(match[0])) changed = true;
                 }
-                if (match.getOrgCode() != null && !match.getOrgCode().isEmpty()) {
+                if (!match[1].isEmpty()) {
                     String old = entry.getOrgCode();
-                    entry.setOrgCode(match.getOrgCode());
-                    if (old == null || !old.equals(match.getOrgCode())) changed = true;
+                    entry.setOrgCode(match[1]);
+                    if (old == null || !old.equals(match[1])) changed = true;
                 }
-                if (match.getCostCenter() != null && !match.getCostCenter().isEmpty()) {
+                if (!match[2].isEmpty()) {
                     String old = entry.getCostCenter();
-                    entry.setCostCenter(match.getCostCenter());
-                    if (old == null || !old.equals(match.getCostCenter())) changed = true;
+                    entry.setCostCenter(match[2]);
+                    if (old == null || !old.equals(match[2])) changed = true;
                 }
                 if (changed) {
                     updated++;

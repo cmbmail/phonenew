@@ -941,6 +941,7 @@ export default {
     batchDeleteNoSelection: '请先选择要删除的记录',
     importSuccess: '导入成功：共 {{count}} 条',
     importWithSkip: '导入完成：成功 {{count}} 条，跳过 {{skipped}} 条（唯一性冲突）',
+    importOrgSynced: '已按机构级同步 {{count}} 行机构代码/成本中心',
     importFailed: '导入失败：{{error}}',
     orgCodeRequired: '请输入机构代码',
     orgNameRequired: '请输入机构名称',

@@ -168,6 +168,11 @@ const AllocationPhoneOwnership: React.FC = () => {
 
   // ==================== Export ====================
   const handleExport = () => {
+    // v1.12.153：月份未选时提示，而不是静默导出全量无月份数据
+    if (!selectedMonth) {
+      message.warning(t('allocationOwnership.selectMonthFirst'));
+      return;
+    }
     exportOwnership(selectedMonth);
   };
 

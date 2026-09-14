@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { COLORS } from '../theme/morandi';
-import { Card, Table, Row, Col, message, Input, Button, Space, Modal, Form, Popconfirm, Tooltip } from 'antd';
+import { Card, Table, Row, Col, message, Input, Button, Space, Modal, Form, Popconfirm, Tooltip, List } from 'antd';
 import { SearchOutlined, UploadOutlined, DownloadOutlined, ExportOutlined, ReloadOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
@@ -20,12 +20,13 @@ import { useAuthStore } from '../store/auth';
  * 分摊机构对照表页面 — 基础数据菜单
  * 列：一级分行、机构名称、机构代码、成本中心代码、部门全路径（独占一行）、备注、操作（编辑、删除）
  * 规则：1) 每个部门全路径独占一条记录；同一部门全路径可出现在不同一级分行
- *       2) 同一一级分行下，机构名称对应的机构代码/成本中心代码一致；不同机构名称可共用机构代码
+ *       2) 同一一级分行下，机构代码/成本中心为机构级属性：变更时自动同步该机构全部行（v1.12.153）
  * 成本中心可跨分行（v1.12.151）；导入时不合规数据逐行提示
  */
 const AllocationOrgMappingPage: React.FC = () => {
   const { t } = useTranslation();
   const canEdit = useAuthStore((s) => s.role === 1 || s.role === 2);
+  const canDelete = useAuthStore((s) => s.role === 1);
 
   // ==================== Data state ====================
   const [entries, setEntries] = useState<Record<string, unknown>[]>([]);
@@ -114,9 +115,10 @@ const AllocationOrgMappingPage: React.FC = () => {
       setModalOpen(false);
       fetchData(appliedSearch, page, pageSize);
     } catch (err) {
-      // 表单校验错误不提示，接口错误由 request 拦截器统一弹出
+      // 表单校验错误不提示；接口错误提取后端返回的具体原因（v1.12.153）
       if (err instanceof Error && !('errorFields' in (err as unknown as object))) {
-        message.error(t('allocationOrgMapping.saveFailed'));
+        const detail = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+        message.error(detail || t('allocationOrgMapping.saveFailed'));
       }
     } finally {
       setSaving(false);
@@ -159,15 +161,41 @@ const AllocationOrgMappingPage: React.FC = () => {
   const handleImportFile = async (file: File) => {
     try {
       const result = await importAllocationOrgMapping(file);
-      if (result.skipped > 0) {
-        message.warning(t('allocationOrgMapping.importWithSkip', { count: result.imported, skipped: result.skipped }));
+      const detailErrors: string[] = Array.isArray(result.errors) ? result.errors : [];
+      const synced = typeof result.org_synced === 'number' ? (result.org_synced as number) : 0;
+      if (detailErrors.length > 0) {
+        // 弹窗展示逐行错误明细（v1.12.153）：不再只给计数，用户可直接看到哪行、为何被跳过
+        Modal.warning({
+          title: t('allocationOrgMapping.importWithSkip', { count: result.imported, skipped: result.skipped }),
+          width: 640,
+          content: (
+            <>
+              {synced > 0 && (
+                <div style={{ marginBottom: 8 }}>
+                  {t('allocationOrgMapping.importOrgSynced', { count: synced })}
+                </div>
+              )}
+              <List
+                size="small"
+                bordered
+                style={{ maxHeight: 360, overflow: 'auto' }}
+                dataSource={detailErrors}
+                renderItem={(item: string) => (
+                  <List.Item style={{ fontSize: 13 }}><span style={{ color: '#cf1322' }}>{item}</span></List.Item>
+                )}
+              />
+            </>
+          ),
+        });
       } else {
-        message.success(t('allocationOrgMapping.importSuccess', { count: result.imported }));
+        const syncTip = synced > 0 ? ' ' + t('allocationOrgMapping.importOrgSynced', { count: synced }) : '';
+        message.success(t('allocationOrgMapping.importSuccess', { count: result.imported }) + syncTip);
       }
       fetchData(appliedSearch, page, pageSize);
     } catch (err) {
+      const detail = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
       message.error(t('allocationOrgMapping.importFailed', {
-        error: err instanceof Error ? err.message : t('common.unknown'),
+        error: detail || (err instanceof Error ? err.message : t('common.unknown')),
       }));
     }
   };
@@ -231,17 +259,19 @@ const AllocationOrgMappingPage: React.FC = () => {
           <Button type="link" size="small" onClick={() => openEditModal(record)}>
             {t('common.edit')}
           </Button>
-          <Popconfirm
-            title={t('allocationOrgMapping.deleteConfirmTitle')}
-            description={t('allocationOrgMapping.deleteConfirmContent')}
-            onConfirm={() => handleDelete(record.id as number)}
-            okText={t('common.confirm')}
-            cancelText={t('common.cancel')}
-          >
-            <Button type="link" size="small" danger>
-              {t('common.delete')}
-            </Button>
-          </Popconfirm>
+          {canDelete && (
+            <Popconfirm
+              title={t('allocationOrgMapping.deleteConfirmTitle')}
+              description={t('allocationOrgMapping.deleteConfirmContent')}
+              onConfirm={() => handleDelete(record.id as number)}
+              okText={t('common.confirm')}
+              cancelText={t('common.cancel')}
+            >
+              <Button type="link" size="small" danger>
+                {t('common.delete')}
+              </Button>
+            </Popconfirm>
+          )}
         </Space>
       ),
     },
@@ -255,25 +285,27 @@ const AllocationOrgMappingPage: React.FC = () => {
         styles={{ header: { background: COLORS.sageLight } }}
         extra={
           <Space>
+            {canDelete && (
+              <Popconfirm
+                title={t('allocationOrgMapping.batchDeleteConfirmTitle')}
+                description={t('allocationOrgMapping.batchDeleteConfirmContent', { count: selectedRowKeys.length })}
+                onConfirm={handleBatchDelete}
+                okText={t('common.confirm')}
+                cancelText={t('common.cancel')}
+                disabled={selectedRowKeys.length === 0 || batchDeleting}
+              >
+                <Button
+                  icon={<DeleteOutlined />}
+                  danger
+                  disabled={selectedRowKeys.length === 0 || batchDeleting}
+                  loading={batchDeleting}
+                >
+                  {t('allocationOrgMapping.batchDelete')}{selectedRowKeys.length > 0 ? `(${selectedRowKeys.length})` : ''}
+                </Button>
+              </Popconfirm>
+            )}
             {canEdit && (
               <>
-                <Popconfirm
-                  title={t('allocationOrgMapping.batchDeleteConfirmTitle')}
-                  description={t('allocationOrgMapping.batchDeleteConfirmContent', { count: selectedRowKeys.length })}
-                  onConfirm={handleBatchDelete}
-                  okText={t('common.confirm')}
-                  cancelText={t('common.cancel')}
-                  disabled={selectedRowKeys.length === 0 || batchDeleting}
-                >
-                  <Button
-                    icon={<DeleteOutlined />}
-                    danger
-                    disabled={selectedRowKeys.length === 0 || batchDeleting}
-                    loading={batchDeleting}
-                  >
-                    {t('allocationOrgMapping.batchDelete')}{selectedRowKeys.length > 0 ? `(${selectedRowKeys.length})` : ''}
-                  </Button>
-                </Popconfirm>
                 <Button icon={<PlusOutlined />} type="primary" onClick={openAddModal}>
                   {t('allocationOrgMapping.add')}
                 </Button>
@@ -338,10 +370,10 @@ const AllocationOrgMappingPage: React.FC = () => {
           loading={loading}
           size="small"
           scroll={{ x: 1200 }}
-          rowSelection={{
+          rowSelection={canDelete ? {
             selectedRowKeys,
             onChange: (keys) => setSelectedRowKeys(keys),
-          }}
+          } : undefined}
           pagination={{
             current: page + 1,
             pageSize,

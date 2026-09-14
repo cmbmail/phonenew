@@ -945,17 +945,20 @@ public class BranchBillExportService {
     private Map<String, AllocationOrgEntry> buildAllocOrgMap(String billingMonth) {
         if (billingMonth == null || billingMonth.isBlank()) return Collections.emptyMap();
         Map<String, AllocationOrgEntry> map = new LinkedHashMap<>();
-        // Load all months ordered DESC so the most recent month's data takes priority
+        // Load all months ordered DESC so the most recent month's data takes priority.
+        // Supplement-missing-fields logic runs on detached copies (new entity instances) to avoid
+        // dirty-writing the managed entities back into allocation_org_entry (v1.12.153 fix,
+        // aligned with DataImportController.syncAllocationOrg).
         List<AllocationOrgEntry> entries = allocationOrgEntryRepository.findAllActiveOrderedByMonthDesc();
         for (AllocationOrgEntry e : entries) {
             String phone = e.getPhoneNumber();
             if (phone == null || phone.isEmpty()) continue;
             AllocationOrgEntry existing = map.get(phone);
             if (existing == null) {
-                // First occurrence = most recent month's record
-                map.put(phone, e);
+                // First occurrence = most recent month's record; snapshot as detached copy
+                map.put(phone, copyAllocOrg(e));
             } else {
-                // Supplement missing fields from earlier months
+                // Supplement missing fields from earlier months (on the detached copy only)
                 boolean existingHasAlloc = existing.getAllocDept() != null && !existing.getAllocDept().isEmpty();
                 boolean existingHasOrgCode = existing.getOrgCode() != null && !existing.getOrgCode().isEmpty();
                 boolean existingHasCostCenter = existing.getCostCenter() != null && !existing.getCostCenter().isEmpty();
@@ -971,6 +974,17 @@ public class BranchBillExportService {
             }
         }
         return map;
+    }
+
+    /** Create a detached copy of an AllocationOrgEntry (id=null so Hibernate treats it as new/unmanaged) */
+    private AllocationOrgEntry copyAllocOrg(AllocationOrgEntry src) {
+        AllocationOrgEntry copy = new AllocationOrgEntry();
+        copy.setL1Branch(src.getL1Branch());
+        copy.setPhoneNumber(src.getPhoneNumber());
+        copy.setAllocDept(src.getAllocDept());
+        copy.setOrgCode(src.getOrgCode());
+        copy.setCostCenter(src.getCostCenter());
+        return copy;
     }
 
     /**

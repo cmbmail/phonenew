@@ -379,9 +379,10 @@ const AllocationOrgPage: React.FC = () => {
     const branch = preselectBranchId != null ? orgList.find(o => o.id === preselectBranchId) : undefined;
     const options = buildDeptOptions(branch);
     setVerifyDeptOptions(options);
+    // v1.12.153：修复三元笔误——预填值仅当其存在于该分行选项中时才填入，否则留空待用户选择
     verifyEditForm.setFieldsValue({
       branch_id: preselectBranchId,
-      alloc_dept: options.length > 0 ? allocDept : allocDept,
+      alloc_dept: options.some(o => o.value === allocDept) ? allocDept : undefined,
     });
     setVerifyEditOpen(true);
   };
