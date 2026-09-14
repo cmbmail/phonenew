@@ -25,7 +25,8 @@ import java.util.*;
 /**
  * 分摊机构对照表（业务规则）
  * 1) 同一一级分行下，部门全路径唯一；同一部门全路径可出现在不同一级分行
- * 2) 同一一级分行下，机构名称对应的机构代码唯一；同名机构的成本中心代码一致
+ * 2) 同一一级分行下，机构名称对应的机构代码/成本中心代码唯一（同名机构多部门行导入时累积合并部门全路径）；
+ *    不同机构名称可共用同一机构代码（v1.12.150 放开，如分行内多机构挂靠同一代码）
  * 3) 同一成本中心代码不能出现在不同分行（全局唯一）
  * 导入时不符合规则的数据逐行提示，不阻断其他行
  */
@@ -212,13 +213,10 @@ public class AllocationOrgMappingController {
         // 规则占用表（均不含软删除行）：
         // (一级分行 + 部门) → 占用记录 id；同分行下部门全路径唯一（规则 1）
         Map<String, Long> deptOwner = new HashMap<>();
-        // (一级分行 + 机构代码) → 占用记录 id；同分行下机构代码唯一（规则 2）
-        Map<String, Long> branchCodeOwner = new HashMap<>();
         // (成本中心) → 占用记录 id；成本中心全局唯一，不可跨分行（规则 3）
         Map<String, Long> costOwner = new HashMap<>();
         for (AllocationOrgMapping m : repository.findAllByDeletedAtIsNull()) {
             registerDepts(deptOwner, m.getL1Branch(), m.getDeptFullPath(), m.getId());
-            branchCodeOwner.putIfAbsent(m.getL1Branch() + "|" + m.getOrgCode(), m.getId());
             if (m.getCostCenterCode() != null && !m.getCostCenterCode().isBlank()) {
                 costOwner.putIfAbsent(m.getCostCenterCode(), m.getId());
             }
@@ -260,14 +258,6 @@ public class AllocationOrgMappingController {
                     continue;
                 }
 
-                // 规则 2：同一一级分行下机构代码唯一（占用者为自身时放行）
-                Long codeOwner = branchCodeOwner.get(l1Branch + "|" + orgCode);
-                if (codeOwner != null && !codeOwner.equals(selfId)) {
-                    skipped++;
-                    errors.add("第" + (i + 1) + "行: 机构代码 " + orgCode + " 在 " + l1Branch + " 下已被其他机构使用");
-                    continue;
-                }
-
                 // 规则 3：同一成本中心不可出现在不同分行（占用者为自身时放行）
                 if (!costCenterCode.isEmpty()) {
                     Long cOwner = costOwner.get(costCenterCode);
@@ -298,7 +288,6 @@ public class AllocationOrgMappingController {
                 // 记录旧部门占用，便于保存后释放
                 String oldL1 = m.getL1Branch();
                 String oldDepts = m.getDeptFullPath();
-                String oldOrgCode = m.getOrgCode();
                 String oldCost = m.getCostCenterCode();
 
                 // upsert 命中既有记录（同分行同名）时，部门全路径累积合并（同分行同名同码同成本属同一机构的多部门占用）
@@ -315,13 +304,9 @@ public class AllocationOrgMappingController {
                 repository.save(m);
                 repository.flush();
                 nameCache.put(l1Branch + "|" + orgName, m);
-                // 更新占用表：释放旧占用，登记新占用
+                // 更新占用表：释放旧部门占用，登记新占用（机构代码可共用，无需维护占用表）
                 unregisterDepts(deptOwner, oldL1, oldDepts, m.getId());
                 registerDepts(deptOwner, l1Branch, mergedDepts, m.getId());
-                if (oldOrgCode != null && !oldOrgCode.isBlank()) {
-                    branchCodeOwner.remove(oldL1 + "|" + oldOrgCode, m.getId());
-                }
-                branchCodeOwner.putIfAbsent(l1Branch + "|" + orgCode, m.getId());
                 if (oldCost != null && !oldCost.isBlank()) {
                     costOwner.remove(oldCost, m.getId());
                 }
@@ -419,17 +404,14 @@ public class AllocationOrgMappingController {
 
     /**
      * 新增时业务规则校验（不合规抛错）
-     * 规则 1：部门全路径同分行唯一；规则 2：机构代码同分行唯一；规则 3：成本中心不可跨分行
+     * 规则 1：部门全路径同分行唯一；规则 3：成本中心不可跨分行
+     * （机构代码同分行唯一已放开——不同机构名可共用代码，v1.12.150）
      */
     private void validateCreate(String l1Branch, String orgName, String orgCode,
                                 String costCenterCode, String deptFullPath) {
         // 规则 1：部门全路径在同一一级分行内唯一
         checkDeptUniqueness(l1Branch, deptFullPath, null);
         for (AllocationOrgMapping m : repository.findAllByDeletedAtIsNull()) {
-            // 规则 2：同一一级分行下机构代码唯一
-            if (m.getL1Branch().equals(l1Branch) && m.getOrgCode().equals(orgCode)) {
-                throw new RuntimeException("机构代码 " + orgCode + " 在 " + l1Branch + " 下已被 " + m.getOrgName() + " 使用");
-            }
             // 规则 3：同一成本中心不可出现在不同分行
             if (costCenterCode != null && !costCenterCode.isBlank()
                     && costCenterCode.equals(m.getCostCenterCode())
@@ -441,15 +423,13 @@ public class AllocationOrgMappingController {
 
     /**
      * 编辑时业务规则校验（排除自身，不合规抛错）
+     * （机构代码同分行唯一已放开，v1.12.150）
      */
     private void validateUpdate(Long id, String l1Branch, String orgName, String orgCode,
                                 String costCenterCode, String deptFullPath) {
         checkDeptUniqueness(l1Branch, deptFullPath, id);
         for (AllocationOrgMapping m : repository.findAllByDeletedAtIsNull()) {
             if (m.getId().equals(id)) continue;
-            if (m.getL1Branch().equals(l1Branch) && m.getOrgCode().equals(orgCode)) {
-                throw new RuntimeException("机构代码 " + orgCode + " 在 " + l1Branch + " 下已被 " + m.getOrgName() + " 使用");
-            }
             if (costCenterCode != null && !costCenterCode.isBlank()
                     && costCenterCode.equals(m.getCostCenterCode())
                     && !m.getL1Branch().equals(l1Branch)) {
