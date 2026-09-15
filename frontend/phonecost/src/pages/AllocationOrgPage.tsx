@@ -68,11 +68,17 @@ const AllocationOrgPage: React.FC = () => {
   const [availableMonths, setAvailableMonths] = useState<string[]>([]);
   const [selectedMonth, setSelectedMonth] = useState<string | undefined>(undefined);
 
-  // Import
+  // Import (import Tab)
   const [uploading, setUploading] = useState(false);
   const [importMonthModal, setImportMonthModal] = useState(false);
   const [importBillingMonth, setImportBillingMonth] = useState<string>(dayjs().format('YYYY-MM'));
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Import (exception Tab)
+  const [excUploading, setExcUploading] = useState(false);
+  const [excImportMonthModal, setExcImportMonthModal] = useState(false);
+  const [excBillingMonth, setExcBillingMonth] = useState<string>(dayjs().format('YYYY-MM'));
+  const excFileInputRef = useRef<HTMLInputElement>(null);
 
   // Edit
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -95,6 +101,23 @@ const AllocationOrgPage: React.FC = () => {
     onError: (p: ImportProgress) => {
       message.error(t('allocationOrg.importFailed', { error: p.message || t('common.unknown') }));
       setUploading(false);
+    },
+  });
+
+  // Async import progress (exception Tab)
+  const { progress: excImportProgress, polling: excImportPolling, startPolling: startExcPolling, percent: excImportPercent } = useImportProgress({
+    onComplete: (p: ImportProgress) => {
+      message.success(t('allocationOrg.exceptionImportSuccess', { total: p.total }));
+      fetchMonths('exception');
+      if (excBillingMonth) {
+        setSelectedMonth(excBillingMonth);
+        fetchData(excBillingMonth, 'exception', '', 0, pageSize);
+      }
+      setExcUploading(false);
+    },
+    onError: (p: ImportProgress) => {
+      message.error(t('allocationOrg.importFailed', { error: p.message || t('common.unknown') }));
+      setExcUploading(false);
     },
   });
 
@@ -248,6 +271,36 @@ const AllocationOrgPage: React.FC = () => {
         error: err instanceof Error ? err.message : t('common.unknown'),
       }));
       setUploading(false);
+    }
+  };
+
+  // ==================== Exception import handlers ====================
+  const handleExcImportClick = () => {
+    setExcImportMonthModal(true);
+  };
+
+  const handleExcConfirmMonth = () => {
+    if (!excBillingMonth) {
+      message.warning(t('allocationOrg.selectMonthFirst'));
+      return;
+    }
+    setExcImportMonthModal(false);
+    setTimeout(() => {
+      excFileInputRef.current?.click();
+    }, 100);
+  };
+
+  const handleExcFileSelected = async (file: File) => {
+    const month = excBillingMonth;
+    setExcUploading(true);
+    try {
+      const result = await importAllocOrg(file, month, 'exception');
+      startExcPolling(result.batch_id, getAllocOrgProgress);
+    } catch (err) {
+      message.error(t('allocationOrg.importFailed', {
+        error: err instanceof Error ? err.message : t('common.unknown'),
+      }));
+      setExcUploading(false);
     }
   };
 
@@ -716,6 +769,32 @@ const AllocationOrgPage: React.FC = () => {
                   placeholder={t('allocationOrg.selectMonth')}
                   options={availableMonths.map(m => ({ label: m, value: m }))}
                 />
+                {activeTab === 'exception' && canEdit && (
+                  <Dropdown
+                    menu={{
+                      items: [
+                        { key: 'import', icon: <UploadOutlined />, label: t('allocationOrg.importLabel'), disabled: excUploading },
+                        { key: 'download', icon: <DownloadOutlined />, label: t('allocationOrg.downloadTemplate') },
+                      ],
+                      onClick: ({ key }) => {
+                        if (key === 'import') handleExcImportClick();
+                        if (key === 'download') downloadAllocOrgTemplate('exception');
+                      },
+                    }}
+                  >
+                    <Button icon={<UploadOutlined />} loading={excUploading && !excImportPolling} disabled={excUploading}>
+                      {t('allocationOrg.importLabel')}<DownOutlined />
+                    </Button>
+                  </Dropdown>
+                )}
+                {activeTab === 'exception' && excImportPolling && excImportProgress && (
+                  <Progress
+                    percent={excImportPercent}
+                    size="small"
+                    style={{ width: 160, display: 'inline-block', verticalAlign: 'middle' }}
+                    format={() => `${excImportProgress.processed}/${excImportProgress.total}`}
+                  />
+                )}
                 <Button icon={<ExportOutlined />} onClick={handleExport}>
                   {t('allocationOrg.export')}
                 </Button>
@@ -766,6 +845,43 @@ const AllocationOrgPage: React.FC = () => {
           onChange={(_, dateString) => {
             const val = typeof dateString === 'string' ? dateString : dateString.format('YYYY-MM');
             setImportBillingMonth(val);
+          }}
+          allowClear={false}
+        />
+      </Modal>
+
+      {/* Exception import month picker modal */}
+      <input
+        ref={excFileInputRef}
+        type="file"
+        accept=".xlsx,.xls"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) {
+            handleExcFileSelected(file);
+            e.target.value = '';
+          }
+        }}
+      />
+      <Modal
+        title={t('allocationOrg.exceptionImportMonthTitle')}
+        open={excImportMonthModal}
+        onOk={handleExcConfirmMonth}
+        onCancel={() => setExcImportMonthModal(false)}
+        okText={t('common.confirm')}
+        cancelText={t('common.cancel')}
+        okButtonProps={{ disabled: !excBillingMonth }}
+      >
+        <p style={{ marginBottom: 12 }}>{t('allocationOrg.exceptionImportMonthHint')}</p>
+        <DatePicker
+          picker="month"
+          style={{ width: '100%' }}
+          format="YYYY-MM"
+          value={excBillingMonth ? dayjs(excBillingMonth, 'YYYY-MM') : null}
+          onChange={(_, dateString) => {
+            const val = typeof dateString === 'string' ? dateString : dateString.format('YYYY-MM');
+            setExcBillingMonth(val);
           }}
           allowClear={false}
         />

@@ -238,8 +238,12 @@ public class AllocationOrgController {
     public ResponseEntity<ApiResponse<Map<String, Object>>> importAllocationOrg(
             @RequestParam("file") MultipartFile file,
             @RequestParam(value = "billing_month", required = false) String billingMonth,
+            @RequestParam(value = "source", required = false) String source,
             @RequestAttribute("userId") Long userId) {
-        AllocationOrgBatch batch = importService.importAllocationOrg(file, userId, billingMonth);
+        boolean isException = "exception".equalsIgnoreCase(source);
+        AllocationOrgBatch batch = isException
+                ? importService.importExceptionList(file, userId, billingMonth)
+                : importService.importAllocationOrg(file, userId, billingMonth);
         Map<String, Object> result = new HashMap<>();
         result.put("batch_id", batch.getId());
         result.put("batch_no", batch.getBatchNo());
@@ -269,18 +273,23 @@ public class AllocationOrgController {
     // ==================== Template ====================
 
     @GetMapping("/template")
-    public ResponseEntity<byte[]> downloadTemplate() {
+    public ResponseEntity<byte[]> downloadTemplate(
+            @RequestParam(value = "source", required = false) String source) {
+        boolean isException = "exception".equalsIgnoreCase(source);
         try (Workbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            Sheet sheet = wb.createSheet("号码分摊机构");
+            String sheetName = isException ? "例外号码清单" : "号码分摊机构";
+            Sheet sheet = wb.createSheet(sheetName);
             Row headerRow = sheet.createRow(0);
-            // 模板简化为 3 列：号码、一级分行、备注（分摊部门/机构代码/成本中心自动匹配；分机号/部门全路径自动匹配）
-            String[] headers = {"号码", "一级分行", "备注"};
+            String[] headers = isException
+                    ? new String[]{"号码", "用户名称", "分机号", "部门全路径", "备注"}
+                    : new String[]{"号码", "一级分行", "备注"};
             for (int i = 0; i < headers.length; i++) {
                 headerRow.createCell(i).setCellValue(headers[i]);
                 sheet.setColumnWidth(i, 6000);
             }
             wb.write(out);
-            String fileName = URLEncoder.encode("号码分摊机构导入模板.xlsx", StandardCharsets.UTF_8);
+            String fileTitle = isException ? "例外号码清单导入模板.xlsx" : "号码分摊机构导入模板.xlsx";
+            String fileName = URLEncoder.encode(fileTitle, StandardCharsets.UTF_8);
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + fileName)
                     .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))

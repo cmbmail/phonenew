@@ -5,10 +5,11 @@ import type { AsyncImportResult, ImportProgress, MatchResult, OwnershipBatch, Ow
 import type { BillBatch, BillDetail } from '../types/bill';
 // ==================== Allocation Org (号码分摊机构) ====================
 
-export const importAllocOrg = (file: File, billingMonth: string) => {
+export const importAllocOrg = (file: File, billingMonth: string, source?: string) => {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('billing_month', billingMonth);
+  if (source) formData.append('source', source);
   return apiUpload<AsyncImportResult>('/import/allocation-org', formData);
 };
 
@@ -97,10 +98,11 @@ export const deleteAllocOrgEntry = (id: number) =>
 export const deleteAllocOrgBatch = (id: number) =>
   apiDelete<{ id: number; deleted: boolean }>(`/import/allocation-org/batches/${id}`);
 
-export const downloadAllocOrgTemplate = () => {
+export const downloadAllocOrgTemplate = (source?: string) => {
   const token = useAuthStore.getState().token;
   const baseUrl = getApiBaseUrl();
-  const url = `${baseUrl}/import/allocation-org/template`;
+  const params = source ? `?source=${encodeURIComponent(source)}` : '';
+  const url = `${baseUrl}/import/allocation-org/template${params}`;
   fetch(url, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   })
@@ -112,7 +114,7 @@ export const downloadAllocOrgTemplate = () => {
       const blobUrl = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = blobUrl;
-      link.download = '号码分摊机构导入模板.xlsx';
+      link.download = source === 'exception' ? '例外号码清单导入模板.xlsx' : '号码分摊机构导入模板.xlsx';
       link.click();
       URL.revokeObjectURL(blobUrl);
     })
@@ -134,13 +136,20 @@ export const exportAllocOrg = (billingMonth?: string, source?: string) => {
   })
     .then(res => {
       if (!res.ok) throw new Error('Export failed');
-      return res.blob();
+      // 从 Content-Disposition 提取服务端文件名
+      const cd = res.headers.get('Content-Disposition') || '';
+      let fileName = '号码分摊机构导出.xlsx';
+      const match = cd.match(/filename\*=UTF-8''(.+)/);
+      if (match) {
+        fileName = decodeURIComponent(match[1]);
+      }
+      return res.blob().then(blob => ({ blob, fileName }));
     })
-    .then(blob => {
+    .then(({ blob, fileName }) => {
       const blobUrl = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = blobUrl;
-      link.download = '号码分摊机构导出.xlsx';
+      link.download = fileName;
       link.click();
       URL.revokeObjectURL(blobUrl);
     })

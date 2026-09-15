@@ -105,6 +105,170 @@ public class AllocationOrgImportService {
         return progressMap.get(batchId);
     }
 
+    /**
+     * 导入例外号码清单（生成 PUSH-EXC- 批次，change_type=exception）
+     * 模板 5 列：号码、用户名称、分机号、部门全路径、备注
+     */
+    public AllocationOrgBatch importExceptionList(MultipartFile file, Long userId, String billingMonth) {
+        String batchNo = "PUSH-EXC-" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
+                + "-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+
+        Long branchOrgId = resolveBranchOrgId(userId);
+
+        AllocationOrgBatch batch = AllocationOrgBatch.builder()
+                .batchNo(batchNo)
+                .fileName(file.getOriginalFilename() != null ? file.getOriginalFilename() : "")
+                .totalCount(0)
+                .billingMonth(billingMonth)
+                .importStatus((byte) 0)
+                .importedBy(userId)
+                .branchOrgId(branchOrgId)
+                .build();
+        batch = batchRepo.save(batch);
+
+        ImportProgress progress = new ImportProgress();
+        progressMap.put(batch.getId(), progress);
+
+        Path tempFile;
+        try {
+            tempFile = Files.createTempFile("exc-list-", ".xlsx");
+            file.transferTo(tempFile);
+        } catch (Exception e) {
+            batch.setImportStatus((byte) 2);
+            batch.setErrorMessage("保存临时文件失败: " + e.getMessage());
+            batchRepo.save(batch);
+            throw new RuntimeException("保存临时文件失败", e);
+        }
+
+        final Long batchId = batch.getId();
+        final java.util.Map<String, Long> branchNameToOrgId = buildBranchNameMap();
+        executor.submit(() -> doImportExceptionAsync(tempFile, batchId, batchNo, progress, branchNameToOrgId));
+
+        return batch;
+    }
+
+    private void doImportExceptionAsync(Path tempFile, Long batchId, String batchNo, ImportProgress progress, java.util.Map<String, Long> branchNameToOrgId) {
+        long startMs = System.currentTimeMillis();
+        progress.setStatus("READING");
+
+        try {
+            // 例外清单模板 5 列：号码、用户名称、分机号、部门全路径、备注
+            try (InputStream is = Files.newInputStream(tempFile)) {
+                EasyExcel.read(is, new ReadListener() {
+                    int count = 0;
+                    @Override
+                    public void invoke(Object data, AnalysisContext context) {
+                        count++;
+                        progress.setProcessed(count);
+                        progress.setStatus("READING");
+                    }
+                    @Override
+                    public void doAfterAllAnalysed(AnalysisContext context) {
+                        progress.setTotal(count);
+                    }
+                }).sheet().doRead();
+            }
+
+            progress.setStatus("WRITING");
+            try (InputStream is = Files.newInputStream(tempFile)) {
+                EasyExcel.read(is, new ReadListener() {
+                    int rowIdx = 0;
+                    List<java.util.Map<Integer, String>> batchRows = new java.util.ArrayList<>();
+
+                    @Override
+                    public void invoke(Object data, AnalysisContext context) {
+                        @SuppressWarnings("unchecked")
+                        java.util.Map<Integer, String> row = (java.util.Map<Integer, String>) data;
+                        batchRows.add(row);
+                        rowIdx++;
+                        if (batchRows.size() >= BATCH_SIZE) {
+                            flushExceptionBatch(batchId, batchRows, branchNameToOrgId);
+                            batchRows.clear();
+                            progress.setProcessed(rowIdx);
+                        }
+                    }
+
+                    @Override
+                    public void doAfterAllAnalysed(AnalysisContext context) {
+                        if (!batchRows.isEmpty()) {
+                            flushExceptionBatch(batchId, batchRows, branchNameToOrgId);
+                            batchRows.clear();
+                        }
+                        progress.setProcessed(rowIdx);
+                        progress.setTotal(rowIdx);
+                    }
+                }).sheet().headRowNumber(1).doRead();
+            }
+
+            long elapsedMs = System.currentTimeMillis() - startMs;
+            progress.setElapsedMs(elapsedMs);
+            progress.setStatus("COMPLETED");
+
+            AllocationOrgBatch batch = batchRepo.findById(batchId).orElse(null);
+            if (batch != null) {
+                batch.setImportStatus((byte) 1);
+                batch.setTotalCount(progress.getTotal());
+                batchRepo.save(batch);
+            }
+
+        } catch (Exception e) {
+            log.error("Exception list import failed for batch {}", batchId, e);
+            progress.setStatus("FAILED");
+            progress.setMessage(e.getMessage());
+
+            AllocationOrgBatch batch = batchRepo.findById(batchId).orElse(null);
+            if (batch != null) {
+                batch.setImportStatus((byte) 2);
+                batch.setErrorMessage(e.getMessage() != null ? e.getMessage().substring(0, Math.min(e.getMessage().length(), 2000)) : "");
+                batchRepo.save(batch);
+            }
+        } finally {
+            try { Files.deleteIfExists(tempFile); } catch (Exception ignored) {}
+        }
+    }
+
+    /**
+     * 批量写入例外清单条目（PUSH-EXC- 批次，change_type=exception）
+     * 模板列：[0]号码 [1]用户名称 [2]分机号 [3]部门全路径 [4]备注
+     */
+    private void flushExceptionBatch(Long batchId, List<java.util.Map<Integer, String>> rows, java.util.Map<String, Long> branchNameToOrgId) {
+        String sql = "INSERT INTO allocation_org_entry (batch_id, phone_number, username, l1_branch, branch_org_id, " +
+                     "dept_path, extension, change_type, alloc_dept, org_code, cost_center, remark, created_at, updated_at) " +
+                     "VALUES (?, ?, ?, ?, ?, ?, ?, 'exception', '', '', '', ?, NOW(), NOW())";
+
+        jdbcTemplate.batchUpdate(sql, rows, rows.size(), (ps, row) -> {
+            ps.setLong(1, batchId);
+            ps.setString(2, safeGet(row, 0));  // phone_number
+            ps.setString(3, safeGet(row, 1));  // username
+
+            // 从部门全路径解析一级分行（第一段）
+            String deptPath = safeGet(row, 3);
+            String l1Branch = parseL1Branch(deptPath);
+            ps.setString(4, l1Branch);
+
+            Long branchOrgId = branchNameToOrgId.get(l1Branch);
+            if (branchOrgId != null) {
+                ps.setLong(5, branchOrgId);
+            } else {
+                ps.setNull(5, java.sql.Types.BIGINT);
+            }
+
+            ps.setString(6, deptPath);           // dept_path
+            ps.setString(7, safeGet(row, 2));   // extension
+            ps.setString(8, safeGet(row, 4));   // remark
+        });
+    }
+
+    /**
+     * 从部门全路径解析一级分行（取第一段，以「-」分隔）
+     */
+    private String parseL1Branch(String deptPath) {
+        if (deptPath == null || deptPath.isBlank()) return "";
+        String trimmed = deptPath.trim();
+        int idx = trimmed.indexOf('-');
+        return idx > 0 ? trimmed.substring(0, idx) : trimmed;
+    }
+
     private void doImportAsync(Path tempFile, Long batchId, String batchNo, ImportProgress progress, java.util.Map<String, Long> branchNameToOrgId) {
         long startMs = System.currentTimeMillis();
         progress.setStatus("READING");
