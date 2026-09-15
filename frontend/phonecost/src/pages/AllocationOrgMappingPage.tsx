@@ -21,7 +21,7 @@ import { useAuthStore } from '../store/auth';
  * 列：一级分行、机构名称、机构代码、成本中心代码、部门全路径（独占一行）、备注、操作（编辑、删除）
  * 规则：1) 每个部门全路径独占一条记录；同一部门全路径可出现在不同一级分行
  *       2) 同一一级分行下，机构代码/成本中心为机构级属性：变更时自动同步该机构全部行（v1.12.153）
- * 成本中心可跨分行（v1.12.151）；导入时不合规数据逐行提示
+ * 成本中心可跨分行（v1.12.151）；导入不合规数据逐行提示；导入为全量覆盖（v1.12.154）
  */
 const AllocationOrgMappingPage: React.FC = () => {
   const { t } = useTranslation();
@@ -163,10 +163,18 @@ const AllocationOrgMappingPage: React.FC = () => {
       const result = await importAllocationOrgMapping(file);
       const detailErrors: string[] = Array.isArray(result.errors) ? result.errors : [];
       const synced = typeof result.org_synced === 'number' ? (result.org_synced as number) : 0;
+      const added = typeof result.added === 'number' ? (result.added as number) : 0;
+      const updated = typeof result.updated === 'number' ? (result.updated as number) : 0;
+      const deleted = typeof result.deleted === 'number' ? (result.deleted as number) : 0;
+      // v1.12.154：导入为全量覆盖——提示新增/更新/删除三类计数，后端字段缺失时回退旧计数
+      const statsLine = t('allocationOrgMapping.importFullResult', {
+        added, updated, deleted,
+        count: result.imported,
+      });
       if (detailErrors.length > 0) {
         // 弹窗展示逐行错误明细（v1.12.153）：不再只给计数，用户可直接看到哪行、为何被跳过
         Modal.warning({
-          title: t('allocationOrgMapping.importWithSkip', { count: result.imported, skipped: result.skipped }),
+          title: statsLine + ' ' + t('allocationOrgMapping.importWithSkipSuffix', { skipped: result.skipped }),
           width: 640,
           content: (
             <>
@@ -189,7 +197,7 @@ const AllocationOrgMappingPage: React.FC = () => {
         });
       } else {
         const syncTip = synced > 0 ? ' ' + t('allocationOrgMapping.importOrgSynced', { count: synced }) : '';
-        message.success(t('allocationOrgMapping.importSuccess', { count: result.imported }) + syncTip);
+        message.success(statsLine + syncTip);
       }
       fetchData(appliedSearch, page, pageSize);
     } catch (err) {
@@ -309,9 +317,16 @@ const AllocationOrgMappingPage: React.FC = () => {
                 <Button icon={<PlusOutlined />} type="primary" onClick={openAddModal}>
                   {t('allocationOrgMapping.add')}
                 </Button>
-                <Button icon={<UploadOutlined />} onClick={() => fileInputRef.current?.click()}>
-                  {t('allocationOrgMapping.importLabel')}
-                </Button>
+                <Popconfirm
+                  title={t('allocationOrgMapping.importModeHint')}
+                  onConfirm={() => fileInputRef.current?.click()}
+                  okText={t('common.confirm')}
+                  cancelText={t('common.cancel')}
+                >
+                  <Button icon={<UploadOutlined />}>
+                    {t('allocationOrgMapping.importLabel')}
+                  </Button>
+                </Popconfirm>
                 <Button icon={<DownloadOutlined />} onClick={() => downloadAllocationOrgMappingTemplate()}>
                   {t('allocationOrgMapping.downloadTemplate')}
                 </Button>

@@ -249,7 +249,9 @@ public class AllocationOrgMappingController {
         return ResponseEntity.ok(ApiResponse.ok(result));
     }
 
-    // ==================== Import ====================
+    // ==================== Import（全量覆盖模式，v1.12.154）====================
+    // 导入后表内数据完全以文件为准：文件内未包含的旧记录自动删除；
+    // 分行用户仅在其本行范围内执行覆盖（不影响他行数据）。
 
     @PostMapping("/import")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_BRANCH')")
@@ -257,7 +259,9 @@ public class AllocationOrgMappingController {
     public ResponseEntity<ApiResponse<Map<String, Object>>> importExcel(
             @RequestParam("file") MultipartFile file,
             @RequestAttribute("userId") Long userId) {
-        int count = 0;
+        int added = 0;
+        int updated = 0;
+        int deleted = 0;
         int skipped = 0;
         int orgSynced = 0;
         List<String> errors = new ArrayList<>();
@@ -271,6 +275,8 @@ public class AllocationOrgMappingController {
         // 规则占用表（均不含软删除行）：
         // (一级分行 + 部门) → 占用记录 id；同分行下部门全路径唯一（规则 1）
         Map<String, Long> deptOwner = new HashMap<>();
+        // 本批次成功写入的记录 id（用于全量覆盖：文件外的旧记录删除，v1.12.154）
+        Set<Long> importedIds = new java.util.HashSet<>();
         for (AllocationOrgMapping m : repository.findAllByDeletedAtIsNull()) {
             deptOwner.put(deptKey(m.getL1Branch(), m.getDeptFullPath()), m.getId());
         }
@@ -363,16 +369,36 @@ public class AllocationOrgMappingController {
                 m.setCostCenterCode(nullableCost(costCenterCode));
                 m.setDeptFullPath(deptFullPath);
                 m.setRemark(remark);
+                boolean isNew = (selfId == null);
                 repository.save(m);
                 repository.flush();
                 deptCache.put(deptKey(l1Branch, deptFullPath), m);
+                importedIds.add(m.getId());
                 // 登记部门占用（新增记录 id 已生成）
                 deptOwner.put(deptKey(l1Branch, deptFullPath), m.getId());
                 // 机构级同步：命中既有记录且代码/成本中心与本行不同时，同步该机构同分行其他行（v1.12.153）
                 if (selfId != null) {
                     orgSynced += syncOrgValues(l1Branch, orgName, orgCode, costCenterCode, selfId);
                 }
-                count++;
+                if (isNew) {
+                    added++;
+                } else {
+                    updated++;
+                }
+            }
+
+            // 全量覆盖（v1.12.154）：文件外的旧记录自动删除——导入后表内数据完全以文件为准。
+            // admin/总行（allowedBranch == null）删除全部未在文件中的记录；
+            // 分行用户仅删除本行范围内未在文件中的记录（不能影响他行数据）。
+            List<AllocationOrgMapping> toDelete = new ArrayList<>();
+            for (AllocationOrgMapping m : repository.findAllByDeletedAtIsNull()) {
+                if (importedIds.contains(m.getId())) continue;
+                if (allowedBranch != null && !allowedBranch.equals(m.getL1Branch())) continue;
+                toDelete.add(m);
+            }
+            if (!toDelete.isEmpty()) {
+                repository.deleteAllInBatch(toDelete);
+                deleted = toDelete.size();
             }
         } catch (IOException e) {
             throw new RuntimeException("导入失败: " + e.getMessage(), e);
@@ -383,7 +409,10 @@ public class AllocationOrgMappingController {
             throw new RuntimeException("导入失败: " + e.getMessage(), e);
         }
         Map<String, Object> result = new HashMap<>();
-        result.put("imported", count);
+        result.put("imported", added + updated);
+        result.put("added", added);
+        result.put("updated", updated);
+        result.put("deleted", deleted);
         result.put("skipped", skipped);
         result.put("org_synced", orgSynced);
         result.put("errors", errors);

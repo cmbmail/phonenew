@@ -289,7 +289,15 @@ export const batchDeleteAllocationOrgMapping = (ids: number[]) =>
 export const importAllocationOrgMapping = (file: File) => {
   const formData = new FormData();
   formData.append('file', file);
-  return apiUpload<{ imported: number; skipped: number; errors?: string[] }>('/import/allocation-org-mapping/import', formData);
+  return apiUpload<{
+    imported: number;
+    added?: number;
+    updated?: number;
+    deleted?: number;
+    skipped: number;
+    org_synced?: number;
+    errors?: string[];
+  }>('/import/allocation-org-mapping/import', formData);
 };
 
 export const exportAllocationOrgMapping = () => {
