@@ -66,7 +66,7 @@ public class DataImportController {
     private final RecordingDataBatchRepository recordingDataBatchRepository;
     private final RecordingDataEntryRepository recordingDataEntryRepository;
     private final AllocationDeptEntryRepository allocationDeptEntryRepository;
-    private final AllocationOrgEntryRepository allocationOrgEntryRepository;
+    private final AllocationOrgMappingRepository allocationOrgMappingRepository;
     private final ComparisonArchiveRepository comparisonArchiveRepository;
 
     private static final com.fasterxml.jackson.databind.ObjectMapper JSON_MAPPER = new com.fasterxml.jackson.databind.ObjectMapper();
@@ -116,109 +116,12 @@ public class DataImportController {
 
     @PostMapping("/ownership/sync-allocation-org")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_BRANCH')")
-    @Transactional
     public ResponseEntity<ApiResponse<Map<String, Object>>> syncAllocationOrg(
             @RequestBody Map<String, String> body,
             @RequestAttribute("userId") Long userId) {
-        String billingMonth = body.get("billing_month");
-        if (billingMonth == null || billingMonth.isEmpty()) {
-            throw new IllegalArgumentException("billing_month 不能为空");
-        }
-        try {
-            // 1. 加载该月份所有号码归属记录（非软删除）
-            List<PhoneOwnershipEntry> ownershipEntries = ownershipEntryRepository.findAllByBillingMonth(billingMonth);
-            if (ownershipEntries.isEmpty()) {
-                return ResponseEntity.ok(ApiResponse.ok(Map.of(
-                        "total", 0, "updated", 0, "skipped", 0,
-                        "message", "该月份无号码归属数据"
-                )));
-            }
-
-            // 2. 加载所有号码分摊机构记录（跨月），按 billingMonth DESC 排序，
-            //    同号码取最近月份有值的记录：优先取 alloc_dept/org_code/cost_center 非空且最新的记录
-            //    注意：使用 String[] 快照而非托管实体——直接 set 实体会被脏检查写回 allocation_org_entry 源表（v1.12.153 修复）
-            Map<String, String[]> allocOrgMap = new HashMap<>();
-            List<AllocationOrgEntry> allocOrgEntries = allocationOrgEntryRepository.findAllActiveOrderedByMonthDesc();
-            for (AllocationOrgEntry aoe : allocOrgEntries) {
-                String phone = aoe.getPhoneNumber();
-                if (phone == null || phone.isEmpty()) continue;
-                String[] existing = allocOrgMap.get(phone);
-                if (existing == null) {
-                    // 首次出现，直接放入（最近月份的记录）
-                    allocOrgMap.put(phone, new String[]{
-                            aoe.getAllocDept() == null ? "" : aoe.getAllocDept(),
-                            aoe.getOrgCode() == null ? "" : aoe.getOrgCode(),
-                            aoe.getCostCenter() == null ? "" : aoe.getCostCenter()
-                    });
-                } else {
-                    // 已有记录，如果现有的字段为空而当前记录有值，则用当前记录补充（仅改内存快照，不碰源表）
-                    boolean existingHasAlloc = !existing[0].isEmpty();
-                    boolean existingHasOrg = !existing[1].isEmpty();
-                    boolean existingHasCost = !existing[2].isEmpty();
-                    if (!existingHasAlloc && aoe.getAllocDept() != null && !aoe.getAllocDept().isEmpty()) {
-                        existing[0] = aoe.getAllocDept();
-                    }
-                    if (!existingHasOrg && aoe.getOrgCode() != null && !aoe.getOrgCode().isEmpty()) {
-                        existing[1] = aoe.getOrgCode();
-                    }
-                    if (!existingHasCost && aoe.getCostCenter() != null && !aoe.getCostCenter().isEmpty()) {
-                        existing[2] = aoe.getCostCenter();
-                    }
-                }
-            }
-
-            // 3. 按号码匹配，将 alloc_dept / org_code / cost_center 写入 phone_ownership_entry
-            int updated = 0;
-            int skipped = 0;
-            for (PhoneOwnershipEntry entry : ownershipEntries) {
-                String phone = entry.getPhoneNumber();
-                if (phone == null || phone.isEmpty()) {
-                    skipped++;
-                    continue;
-                }
-                String[] match = allocOrgMap.get(phone);
-                if (match == null) {
-                    skipped++;
-                    continue;
-                }
-                boolean changed = false;
-                if (!match[0].isEmpty()) {
-                    String old = entry.getAllocDept();
-                    entry.setAllocDept(match[0]);
-                    if (old == null || !old.equals(match[0])) changed = true;
-                }
-                if (!match[1].isEmpty()) {
-                    String old = entry.getOrgCode();
-                    entry.setOrgCode(match[1]);
-                    if (old == null || !old.equals(match[1])) changed = true;
-                }
-                if (!match[2].isEmpty()) {
-                    String old = entry.getCostCenter();
-                    entry.setCostCenter(match[2]);
-                    if (old == null || !old.equals(match[2])) changed = true;
-                }
-                if (changed) {
-                    updated++;
-                }
-            }
-
-            // 4. 批量保存
-            ownershipEntryRepository.saveAll(ownershipEntries);
-            ownershipEntryRepository.flush();
-
-            auditLogService.log(userId, "SYNC_ALLOCATION_ORG", "ownership_batch", null,
-                    Map.of("billing_month", billingMonth, "total", ownershipEntries.size(),
-                           "updated", updated, "skipped", skipped));
-
-            return ResponseEntity.ok(ApiResponse.ok(Map.of(
-                    "total", ownershipEntries.size(),
-                    "updated", updated,
-                    "skipped", skipped,
-                    "message", "同步完成"
-            )));
-        } catch (Exception e) {
-            throw new IllegalArgumentException("同步分摊机构数据失败: " + e.getMessage());
-        }
+        // v1.12.155：分摊号码归属三列已改为「一级分行+部门全路径 → 分摊机构对照表」实时匹配，接口废弃
+        throw new IllegalArgumentException(
+                "该功能已废弃：分摊部门/机构代码/成本中心已改为按「一级分行+部门全路径」实时匹配分摊机构对照表，页面刷新后自动生效，无需同步");
     }
 
     @GetMapping("/ownership/progress/{batchId}")
@@ -386,15 +289,8 @@ public class DataImportController {
             }
         }
 
-        // Build allocation_org_entry phone → {alloc_dept, org_code, cost_center} map (same billing month)
-        Map<String, AllocationOrgEntry> allocOrgMap = new HashMap<>();
-        List<AllocationOrgEntry> allocOrgEntries = allocationOrgEntryRepository.findAllByBillingMonth(billingMonth);
-        for (AllocationOrgEntry aoe : allocOrgEntries) {
-            String phone = aoe.getPhoneNumber();
-            if (phone != null && !phone.isEmpty() && !allocOrgMap.containsKey(phone)) {
-                allocOrgMap.put(phone, aoe);
-            }
-        }
+        // v1.12.155: 分摊机构对照表索引：一级分行+部门全路径 → [分摊部门, 机构代码, 成本中心]
+        Map<String, String[]> orgMappingIndex = buildOrgMappingIndex();
 
         // Build per-entry branch/dept matched from allocation dept
         List<Map<String, Object>> enrichedEntries = new ArrayList<>();
@@ -464,18 +360,11 @@ public class DataImportController {
             e.put("exception_mismatch", exceptionMismatch);
              e.put("status", entry.getStatus() != null ? entry.getStatus() : 0);
 
-            // New fields for 4-step matching output (号码归属8列)
-            // alloc_dept, org_code, cost_center: prefer same-month allocation_org_entry, fallback to stored value in ownership entry
-            AllocationOrgEntry allocOrgMatch = entry.getPhoneNumber() != null ? allocOrgMap.get(entry.getPhoneNumber()) : null;
-            String allocDeptVal = (allocOrgMatch != null && allocOrgMatch.getAllocDept() != null && !allocOrgMatch.getAllocDept().isEmpty()) ? allocOrgMatch.getAllocDept()
-                    : (entry.getAllocDept() != null ? entry.getAllocDept() : "");
-            String orgCodeVal = (allocOrgMatch != null && allocOrgMatch.getOrgCode() != null && !allocOrgMatch.getOrgCode().isEmpty()) ? allocOrgMatch.getOrgCode()
-                    : (entry.getOrgCode() != null ? entry.getOrgCode() : "");
-            String costCenterVal = (allocOrgMatch != null && allocOrgMatch.getCostCenter() != null && !allocOrgMatch.getCostCenter().isEmpty()) ? allocOrgMatch.getCostCenter()
-                    : (entry.getCostCenter() != null ? entry.getCostCenter() : "");
-            e.put("alloc_dept", allocDeptVal);
-            e.put("org_code", orgCodeVal);
-            e.put("cost_center", costCenterVal);
+            // v1.12.155: 分摊部门/机构代码/成本中心改为 一级分行+部门全路径 → 分摊机构对照表实时匹配（匹配不到为空）
+            String[] orgMatch = matchOrgByMapping(matchedBranch, dirDepts, orgMappingIndex);
+            e.put("alloc_dept", orgMatch[0]);
+            e.put("org_code", orgMatch[1]);
+            e.put("cost_center", orgMatch[2]);
 
              e.put("updated_at", entry.getUpdatedAt() != null ? entry.getUpdatedAt().toString() : "");
 
@@ -503,8 +392,16 @@ public class DataImportController {
             }
             String l1 = entry.getL1Branch();
             if (l1 != null && !l1.isEmpty()) distinctL1.add(l1);
-            String ad = entry.getAllocDept();
-            if (ad != null && !ad.isEmpty()) distinctAlloc.add(ad);
+            // v1.12.155: 分摊部门统计改为对照表实时匹配结果（与页面三列口径一致）
+            String statL1 = (l1 != null && !l1.isEmpty()) ? l1 : "";
+            if (statL1.isEmpty()) {
+                String statFp = entry.getFullPath();
+                String[] statL1Match = (statFp != null && !statFp.isEmpty()) ? allocDeptMap.get(statFp) : null;
+                statL1 = (statL1Match != null) ? statL1Match[0] : "";
+            }
+            java.util.LinkedHashSet<String> statDepts = phone != null ? dirDeptMap.get(phone) : null;
+            String[] statMatch = matchOrgByMapping(statL1, statDepts, orgMappingIndex);
+            if (!statMatch[0].isEmpty()) distinctAlloc.add(statMatch[0]);
         }
         result.put("stats_total", totalCount);
         result.put("stats_used", usedCount);
@@ -514,6 +411,56 @@ public class DataImportController {
         result.put("stats_exceptions", exceptionCount);
 
         return ResponseEntity.ok(ApiResponse.ok(result));
+    }
+
+    // ==================== 分摊机构对照表实时匹配（v1.12.155） ====================
+
+    /**
+     * 构建分摊机构对照表（allocation_org_mapping）索引：
+     * key = 一级分行 + '\u0001' + 部门全路径，value = [分摊部门, 机构代码, 成本中心]。
+     * 对照表 dept_full_path 含「、」多值（历史合并格式）时逐个登记。
+     */
+    private Map<String, String[]> buildOrgMappingIndex() {
+        Map<String, String[]> index = new HashMap<>();
+        for (AllocationOrgMapping m : allocationOrgMappingRepository.findAllByDeletedAtIsNull()) {
+            if (m.getDeptFullPath() == null || m.getDeptFullPath().isBlank()) continue;
+            String l1 = m.getL1Branch() != null ? m.getL1Branch().trim() : "";
+            for (String p : m.getDeptFullPath().split("、")) {
+                if (p == null || p.isBlank()) continue;
+                index.putIfAbsent(l1 + "\u0001" + p.trim(), new String[]{
+                        m.getOrgName() != null ? m.getOrgName() : "",
+                        m.getOrgCode() != null ? m.getOrgCode() : "",
+                        m.getCostCenterCode() != null ? m.getCostCenterCode() : ""
+                });
+            }
+        }
+        return index;
+    }
+
+    /**
+     * 按「一级分行 + 部门全路径（多个）」匹配分摊机构对照表，
+     * 返回 [分摊部门, 机构代码, 成本中心]（多值「、」拼接去重，匹配不到为空串）。
+     * 与号码分摊机构页导入 Tab 的匹配口径一致（AllocationOrgController.buildMatchResolver）。
+     */
+    private String[] matchOrgByMapping(String l1Branch, java.util.LinkedHashSet<String> deptPaths,
+                                       Map<String, String[]> orgMappingIndex) {
+        if (deptPaths == null || deptPaths.isEmpty() || l1Branch == null || l1Branch.isBlank()) {
+            return new String[]{"", "", ""};
+        }
+        String l1 = l1Branch.trim();
+        List<String> ad = new ArrayList<>();
+        List<String> oc = new ArrayList<>();
+        List<String> cc = new ArrayList<>();
+        for (String dp : deptPaths) {
+            if (dp == null || dp.isBlank()) continue;
+            String[] m = orgMappingIndex.get(l1 + "\u0001" + dp.trim());
+            if (m != null) {
+                if (!m[0].isEmpty() && !ad.contains(m[0])) ad.add(m[0]);
+                if (!m[1].isEmpty() && !oc.contains(m[1])) oc.add(m[1]);
+                if (!m[2].isEmpty() && !cc.contains(m[2])) cc.add(m[2]);
+            }
+        }
+        return new String[]{String.join("、", ad), String.join("、", oc), String.join("、", cc)};
     }
 
     @GetMapping("/ownership/exceptions-by-month")
@@ -1329,17 +1276,8 @@ public class DataImportController {
             }
         }
 
-        // Build allocation_org_entry phone → {alloc_dept, org_code, cost_center} map (same billing month)
-        Map<String, AllocationOrgEntry> allocOrgMap = new HashMap<>();
-        if (!billingMonth.isEmpty()) {
-            List<AllocationOrgEntry> allocOrgEntries = allocationOrgEntryRepository.findAllByBillingMonth(billingMonth);
-            for (AllocationOrgEntry aoe : allocOrgEntries) {
-                String p = aoe.getPhoneNumber();
-                if (p != null && !p.isEmpty() && !allocOrgMap.containsKey(p)) {
-                    allocOrgMap.put(p, aoe);
-                }
-            }
-        }
+        // v1.12.155: 分摊机构对照表索引：一级分行+部门全路径 → [分摊部门, 机构代码, 成本中心]
+        Map<String, String[]> orgMappingIndex = buildOrgMappingIndex();
 
         try (Workbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             Sheet sheet = wb.createSheet("号码归属");
@@ -1381,24 +1319,27 @@ public class DataImportController {
                 }
                 row.createCell(2).setCellValue(l1 != null ? l1 : "");
 
-                // alloc_dept, org_code, cost_center: prefer same-month allocation_org_entry, fallback to stored value in ownership entry
-                AllocationOrgEntry allocOrgMatch = allocOrgMap.get(phone);
-                String allocDept = (allocOrgMatch != null && allocOrgMatch.getAllocDept() != null && !allocOrgMatch.getAllocDept().isEmpty()) ? allocOrgMatch.getAllocDept()
-                        : (entry.getAllocDept() != null ? entry.getAllocDept() : "");
-                row.createCell(3).setCellValue(allocDept);
-
                 // Full path: from directory_entry (same month) if available, else from entry
                 java.util.LinkedHashSet<String> dirDepts = dirDeptMap.get(phone);
                 String fpValue = (dirDepts != null && !dirDepts.isEmpty()) ? String.join("、", dirDepts)
                         : (entry.getFullPath() != null ? entry.getFullPath() : "");
                 row.createCell(4).setCellValue(fpValue);
 
-                String orgCodeExp = (allocOrgMatch != null && allocOrgMatch.getOrgCode() != null && !allocOrgMatch.getOrgCode().isEmpty()) ? allocOrgMatch.getOrgCode()
-                        : (entry.getOrgCode() != null ? entry.getOrgCode() : "");
-                String costCenterExp = (allocOrgMatch != null && allocOrgMatch.getCostCenter() != null && !allocOrgMatch.getCostCenter().isEmpty()) ? allocOrgMatch.getCostCenter()
-                        : (entry.getCostCenter() != null ? entry.getCostCenter() : "");
-                row.createCell(5).setCellValue(orgCodeExp);
-                row.createCell(6).setCellValue(costCenterExp);
+                // v1.12.155: 分摊部门/机构代码/成本中心改为 一级分行+部门全路径 → 分摊机构对照表实时匹配（匹配不到为空）
+                java.util.LinkedHashSet<String> deptsForMatch = dirDepts;
+                if (deptsForMatch == null || deptsForMatch.isEmpty()) {
+                    // 与部门全路径列口径一致：无通讯录匹配时回退 entry 存储全路径（按「、」拆分）
+                    deptsForMatch = new java.util.LinkedHashSet<>();
+                    if (fpValue != null && !fpValue.isEmpty()) {
+                        for (String p : fpValue.split("、")) {
+                            if (p != null && !p.isBlank()) deptsForMatch.add(p.trim());
+                        }
+                    }
+                }
+                String[] orgMatch = matchOrgByMapping(l1, deptsForMatch, orgMappingIndex);
+                row.createCell(3).setCellValue(orgMatch[0]);
+                row.createCell(5).setCellValue(orgMatch[1]);
+                row.createCell(6).setCellValue(orgMatch[2]);
                 row.createCell(7).setCellValue(entry.getIsException() != null && entry.getIsException() == 1 ? "是" : "否");
             }
 

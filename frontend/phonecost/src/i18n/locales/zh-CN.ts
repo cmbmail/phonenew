@@ -362,10 +362,6 @@ export default {
     statsAllocDepts: '分摊部门',
     statsL1Branches: '一级分行',
     statsExceptions: '例外',
-    syncAllocOrg: '同步分摊机构',
-    syncConfirm: '确认将 {{month}} 月号码分摊机构的分摊部门、机构代码、成本中心按号码同步到分摊号码归属？',
-    syncSuccess: '同步完成：{{month}} 月共 {{total}} 条，更新 {{updated}} 条',
-    syncFailed: '同步失败：{{error}}',
   },
 
   // ==================== Branch Number (数据维护-分行号码) ====================

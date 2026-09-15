@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { COLORS } from '../theme/morandi';
-import { Card, Table, Tag, Row, Col, message, Input, Button, Space, Select, Modal, Popconfirm, Progress, DatePicker, Statistic } from 'antd';
-import { SearchOutlined, UploadOutlined, DownloadOutlined, ExportOutlined, ReloadOutlined, SyncOutlined } from '@ant-design/icons';
+import { Card, Table, Tag, Row, Col, message, Input, Button, Space, Select, Modal, Progress, DatePicker, Statistic } from 'antd';
+import { SearchOutlined, UploadOutlined, DownloadOutlined, ExportOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
 
@@ -12,7 +12,6 @@ import {
   importOwnership,
   getOwnershipProgress,
   downloadOwnershipTemplate,
-  syncAllocationOrg,
 } from '../api/import';
 import { useImportProgress } from '../hooks/useImportProgress';
 import { useAuthStore } from '../store/auth';
@@ -47,9 +46,6 @@ const AllocationPhoneOwnership: React.FC = () => {
   const [importMonthModal, setImportMonthModal] = useState(false);
   const [importBillingMonth, setImportBillingMonth] = useState<string>(dayjs().format('YYYY-MM'));
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Sync allocation org
-  const [syncing, setSyncing] = useState(false);
 
   // Async import progress
   const { progress: importProgress, polling: importPolling, startPolling, percent: importPercent } = useImportProgress({
@@ -139,30 +135,6 @@ const AllocationPhoneOwnership: React.FC = () => {
         error: err instanceof Error ? err.message : t('common.unknown'),
       }));
       setUploading(false);
-    }
-  };
-
-  // ==================== Sync allocation org ====================
-  const handleSync = async () => {
-    if (!selectedMonth) {
-      message.warning(t('allocationOwnership.selectMonthFirst'));
-      return;
-    }
-    setSyncing(true);
-    try {
-      const result = await syncAllocationOrg(selectedMonth);
-      message.success(t('allocationOwnership.syncSuccess', {
-        updated: result.updated,
-        total: result.total,
-        month: selectedMonth,
-      }));
-      fetchData(selectedMonth, appliedSearch, page, pageSize);
-    } catch (err) {
-      message.error(t('allocationOwnership.syncFailed', {
-        error: err instanceof Error ? err.message : t('common.unknown'),
-      }));
-    } finally {
-      setSyncing(false);
     }
   };
 
@@ -296,21 +268,6 @@ const AllocationPhoneOwnership: React.FC = () => {
                 style={{ width: 160, display: 'inline-block', verticalAlign: 'middle' }}
                 format={() => `${importProgress.processed}/${importProgress.total}`}
               />
-            )}
-            {canEdit && (
-              <Popconfirm
-                title={t('allocationOwnership.syncConfirm', { month: selectedMonth || '' })}
-                onConfirm={handleSync}
-                okText={t('common.confirm')}
-                cancelText={t('common.cancel')}
-              >
-                <Button
-                  icon={<SyncOutlined />}
-                  loading={syncing}
-                >
-                  {t('allocationOwnership.syncAllocOrg')}
-                </Button>
-              </Popconfirm>
             )}
             <Button icon={<ExportOutlined />} onClick={handleExport}>
               {t('allocationOwnership.export')}

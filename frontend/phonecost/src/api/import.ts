@@ -354,12 +354,6 @@ export const generateOwnership = (billingMonth: string) =>
     { billing_month: billingMonth }
   );
 
-export const syncAllocationOrg = (billingMonth: string) =>
-  apiPost<{ total: number; updated: number; skipped: number; message: string }>(
-    '/import/ownership/sync-allocation-org',
-    { billing_month: billingMonth }
-  );
-
 export const importOwnership = (file: File, billingMonth?: string) => {
   const formData = new FormData();
   formData.append('file', file);
