@@ -24,7 +24,9 @@ import java.util.stream.Collectors;
  *    - phone_number → phone_number
  *    - dept_path 中一级分行名 → l1_branch（提取 "-" 分隔的第一段分行名，如 "广州分行"）
  *    - dept_path 剩余部分 → alloc_dept
- * 2. 例外数据差异：取有差异的例外条目，同样提取写入
+ *    - 批次前缀 COMP-，随导入批次展示在「号码分摊机构」Tab
+ * 2. 例外数据：推送当月全部例外条目（is_seconded=1），批次前缀 PUSH-EXC-
+ *    - 作为「例外号码清单」Tab 数据源，查询时自动与上一自然月通讯录对比
  *
  * 每次推送创建一个独立批次，billing_month 取待核对月份（month2）。
  */
@@ -93,12 +95,12 @@ public class ComparisonPushService {
                 .filter(s -> !s.isEmpty())
                 .distinct()
                 .collect(Collectors.toList());
-        int deletedCount = softDeleteOldPushEntries(month2, phoneNumbers);
+        int deletedCount = softDeleteOldPushEntries(month2, phoneNumbers, List.of("PUSH-COMP-%", "COMP-%"));
         log.info("推送通讯录差异：软删除 {} 条同月份同号码旧推送数据 (month={})", deletedCount, month2);
 
         // 4. 创建推送批次
         Long branchOrgId = dataScopeService.resolveBranchOrgId(userId);
-        String batchNo = "PUSH-COMP-" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
+        String batchNo = "COMP-" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
                 + "-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
 
         AllocationOrgBatch batch = AllocationOrgBatch.builder()
@@ -158,7 +160,8 @@ public class ComparisonPushService {
     }
 
     /**
-     * 推送例外数据差异到号码分摊机构
+     * 推送例外数据到号码分摊机构（例外号码清单）
+     * 全量推送当月全部例外条目（is_seconded=1），差异由查询时与上一自然月通讯录自动对比
      *
      * @param month  通讯录月份（空则取最新）
      * @param userId 当前操作用户
@@ -166,27 +169,42 @@ public class ComparisonPushService {
      */
     @Transactional
     public Map<String, Object> pushExceptionComparison(String month, Long userId) {
-        // 1. 构建例外差异数据
-        Map<String, Object> full = buildExceptionCompareFull(true, month);
+        // 1. 构建例外数据（全量，含无差异条目）
+        Map<String, Object> full = buildExceptionCompareFull(false, month);
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> entries = (List<Map<String, Object>>) full.get("entries");
 
-        // 只推送有差异的条目
-        List<Map<String, Object>> diffEntries = entries.stream()
-                .filter(e -> Boolean.TRUE.equals(e.get("has_diff")))
-                .collect(Collectors.toList());
+        // 1.1 数据权限隔离：非 admin/财务仅推送本行（按 dept_path 解析一级分行）例外条目
+        Set<String> visibleBranchNames = resolveVisibleL1BranchNames(userId);
+        if (visibleBranchNames != null) {
+            entries = entries.stream()
+                    .filter(e -> {
+                        String dp = safeStr(e.get("latest_dept_path"));
+                        if (dp.isEmpty()) dp = safeStr(e.get("dept_path"));
+                        String l1 = parseDeptPath(dp)[0];
+                        return !l1.isEmpty() && visibleBranchNames.contains(l1);
+                    })
+                    .collect(Collectors.toList());
+            log.info("推送例外数据：用户 {} 数据范围可见 {} 个一级分行，过滤后 {} 条",
+                    userId, visibleBranchNames.size(), entries.size());
+        }
 
-        if (diffEntries.isEmpty()) {
+        if (entries.isEmpty()) {
             Map<String, Object> result = new HashMap<>();
             result.put("pushed", 0);
-            result.put("skipped", entries.size());
-            result.put("message", "无有差异的例外数据需要推送");
+            result.put("changed", 0);
+            result.put("unchanged", 0);
+            result.put("billing_month", full.getOrDefault("billing_month", ""));
+            result.put("message", "无可推送的例外数据");
             return result;
         }
 
+        int changedCount = (int) entries.stream().filter(e -> Boolean.TRUE.equals(e.get("has_diff"))).count();
+        int unchangedCount = entries.size() - changedCount;
+
         // 2. 软删除同月份同号码的旧推送数据（避免重复推送产生重复项）
         String billingMonth = (String) full.getOrDefault("billing_month", month != null ? month : "");
-        List<String> phoneNumbers = diffEntries.stream()
+        List<String> phoneNumbers = entries.stream()
                 .map(e -> {
                     String p = safeStr(e.get("latest_phone_number"));
                     return p.isEmpty() ? safeStr(e.get("phone_number")) : p;
@@ -194,8 +212,8 @@ public class ComparisonPushService {
                 .filter(s -> !s.isEmpty())
                 .distinct()
                 .collect(Collectors.toList());
-        int deletedCount = softDeleteOldPushEntries(billingMonth, phoneNumbers);
-        log.info("推送例外差异：软删除 {} 条同月份同号码旧推送数据 (month={})", deletedCount, billingMonth);
+        int deletedCount = softDeleteOldPushEntries(billingMonth, phoneNumbers, List.of("PUSH-EXC-%"));
+        log.info("推送例外数据：软删除 {} 条同月份同号码旧推送数据 (month={})", deletedCount, billingMonth);
 
         // 3. 创建推送批次
         Long branchOrgId = dataScopeService.resolveBranchOrgId(userId);
@@ -204,8 +222,8 @@ public class ComparisonPushService {
 
         AllocationOrgBatch batch = AllocationOrgBatch.builder()
                 .batchNo(batchNo)
-                .fileName("例外数据差异推送_" + billingMonth)
-                .totalCount(diffEntries.size())
+                .fileName("例外号码清单推送_" + billingMonth)
+                .totalCount(entries.size())
                 .billingMonth(billingMonth)
                 .importStatus((byte) 1)
                 .importedBy(userId)
@@ -219,7 +237,7 @@ public class ComparisonPushService {
         String insertSql = "INSERT INTO allocation_org_entry (batch_id, phone_number, username, l1_branch, branch_org_id, alloc_dept, dept_path, extension, change_type, changed_columns, org_code, cost_center, remark, created_at, updated_at) " +
                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
 
-        jdbcTemplate.batchUpdate(insertSql, diffEntries, diffEntries.size(), (ps, entry) -> {
+        jdbcTemplate.batchUpdate(insertSql, entries, entries.size(), (ps, entry) -> {
             ps.setLong(1, batchId);
             // 例外数据中优先使用最新值，若无则用当前值
             String phone = safeStr(entry.get("latest_phone_number"));
@@ -246,22 +264,23 @@ public class ComparisonPushService {
             ps.setString(7, deptPath); // dept_path（原始部门全路径）
             ps.setString(8, safeStr(entry.get("extension")));
             ps.setString(9, "exception"); // change_type
-            // changed_columns
+            // changed_columns（推送时的差异列快照，仅供参考）
             Object changedCols = entry.get("changed_columns");
             String changedColsStr = changedCols != null ? String.join(",", ((List<?>) changedCols).stream().map(String::valueOf).toArray(String[]::new)) : "";
             ps.setString(10, changedColsStr);
             ps.setString(11, "");        // org_code
             ps.setString(12, "");        // cost_center
-            ps.setString(13, "例外数据差异推送"); // remark
+            ps.setString(13, "例外号码清单推送"); // remark
         });
 
         Map<String, Object> result = new HashMap<>();
         result.put("batch_id", batchId);
         result.put("batch_no", batchNo);
-        result.put("pushed", diffEntries.size());
-        result.put("skipped", entries.size() - diffEntries.size());
+        result.put("pushed", entries.size());
+        result.put("changed", changedCount);
+        result.put("unchanged", unchangedCount);
         result.put("billing_month", billingMonth);
-        result.put("message", "成功推送 " + diffEntries.size() + " 条例外差异数据到号码分摊机构");
+        result.put("message", "成功推送 " + entries.size() + " 条例外号码（其中有差异 " + changedCount + " 条）");
         return result;
     }
 
@@ -460,38 +479,30 @@ public class ComparisonPushService {
     // ==================== 工具方法 ====================
 
     /**
-     * 软删除同月份同号码的旧推送数据（PUSH- 开头批次的 entry）
+     * 软删除同月份同号码的旧推送数据（指定批次号前缀集合的 entry）
      * 避免重复推送时产生重复项，新推送数据覆盖旧数据
      *
      * @param billingMonth 账单月份
      * @param phoneNumbers 要覆盖的号码列表
+     * @param batchPrefixes 批次号前缀集合（如 PUSH-COMP-%/COMP-%、PUSH-EXC-%）
      * @return 被软删除的条目数
      */
-    private int softDeleteOldPushEntries(String billingMonth, List<String> phoneNumbers) {
-        if (phoneNumbers == null || phoneNumbers.isEmpty() || billingMonth == null || billingMonth.isBlank()) {
+    private int softDeleteOldPushEntries(String billingMonth, List<String> phoneNumbers, List<String> batchPrefixes) {
+        if (phoneNumbers == null || phoneNumbers.isEmpty() || billingMonth == null || billingMonth.isBlank()
+                || batchPrefixes == null || batchPrefixes.isEmpty()) {
             return 0;
         }
-        // 构建 IN 占位符
+        // 批次前缀 OR 条件
+        String prefixClause = batchPrefixes.stream()
+                .map(p -> "b.batch_no LIKE '" + p.replace("'", "''") + "'")
+                .collect(Collectors.joining(" OR "));
         String placeholders = String.join(",", Collections.nCopies(phoneNumbers.size(), "?"));
         String sql = "UPDATE allocation_org_entry e " +
                 "INNER JOIN allocation_org_batch b ON e.batch_id = b.id " +
                 "SET e.deleted_at = NOW() " +
                 "WHERE e.deleted_at IS NULL " +
                 "AND b.deleted_at IS NULL " +
-                "AND b.batch_no LIKE 'PUSH-%' " +
-                "AND e.phone_number IN (" + placeholders + ") " +
-                "AND e.l1_branch IN (" +
-                "  SELECT s.name FROM sys_organization s WHERE s.type = 2 AND s.deleted_at IS NULL" +
-                ")"; // 保险：只删同号码的旧推送数据
-        // 使用 billingMonth 过滤 batch
-        // 实际上通过 phone_number + PUSH-% 已经足够精确，billingMonth 用于额外过滤
-        // 但为避免误删其他月份数据，加入 billing_month 条件
-        sql = "UPDATE allocation_org_entry e " +
-                "INNER JOIN allocation_org_batch b ON e.batch_id = b.id " +
-                "SET e.deleted_at = NOW() " +
-                "WHERE e.deleted_at IS NULL " +
-                "AND b.deleted_at IS NULL " +
-                "AND b.batch_no LIKE 'PUSH-%' " +
+                "AND (" + prefixClause + ") " +
                 "AND b.billing_month = ? " +
                 "AND e.phone_number IN (" + placeholders + ")";
         Object[] params = new Object[phoneNumbers.size() + 1];
@@ -500,6 +511,60 @@ public class ComparisonPushService {
             params[i + 1] = phoneNumbers.get(i);
         }
         return jdbcTemplate.update(sql, params);
+    }
+
+    /**
+     * 解析用户可见一级分行（type=2）名称集合。
+     * admin/finance 返回 null（全量可见）；分行/部门返回其可见范围对应的 l1_branch 名称。
+     */
+    private Set<String> resolveVisibleL1BranchNames(Long userId) {
+        DataScope scope = dataScopeService.getDataScope(userId);
+        if (scope.isAllScope()) return null;
+        List<Long> visibleOrgIds = scope.getVisibleOrgIds();
+        if (visibleOrgIds == null || visibleOrgIds.isEmpty()) {
+            // 回退：单 org 沿 path 向上找一级分行
+            if (scope.getSingleOrgId() != null) {
+                return resolveBranchNameFromPath(scope.getSingleOrgId());
+            }
+            return Set.of();
+        }
+        Map<Long, SysOrganization> orgMap = sysOrganizationRepository.findByDeletedAtIsNull().stream()
+                .collect(java.util.stream.Collectors.toMap(SysOrganization::getId, o -> o, (a, b) -> a));
+        Set<String> names = new HashSet<>();
+        for (Long orgId : visibleOrgIds) {
+            SysOrganization org = orgMap.get(orgId);
+            if (org != null && org.getType() != null && org.getType() == 2) {
+                names.add(org.getName());
+            }
+        }
+        // 从 path 解析一级分行名
+        if (scope.getSingleOrgId() != null) {
+            names.addAll(resolveBranchNameFromPath(scope.getSingleOrgId()));
+        }
+        return names;
+    }
+
+    /**
+     * 从组织 path 向上解析最近的一级分行（type=2）名称
+     */
+    private Set<String> resolveBranchNameFromPath(Long orgId) {
+        Set<String> names = new HashSet<>();
+        if (orgId == null) return names;
+        Map<Long, SysOrganization> orgMap = sysOrganizationRepository.findByDeletedAtIsNull().stream()
+                .collect(java.util.stream.Collectors.toMap(SysOrganization::getId, o -> o, (a, b) -> a));
+        SysOrganization org = orgMap.get(orgId);
+        if (org != null && org.getPath() != null) {
+            String[] segments = org.getPath().split("/");
+            for (int i = segments.length - 1; i >= 0; i--) {
+                if (segments[i].isEmpty()) continue;
+                SysOrganization ancestor = orgMap.get(Long.parseLong(segments[i]));
+                if (ancestor != null && ancestor.getType() != null && ancestor.getType() == 2) {
+                    names.add(ancestor.getName());
+                    break;
+                }
+            }
+        }
+        return names;
     }
 
     /**

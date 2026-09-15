@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { COLORS } from '../theme/morandi';
 import { Card, Table, Row, Col, message, Input, Button, Space, Select, Modal, Progress, DatePicker, Tabs, Form, Tag, Popconfirm, Dropdown } from 'antd';
-import { SearchOutlined, UploadOutlined, DownloadOutlined, ExportOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, CheckOutlined, DownOutlined } from '@ant-design/icons';
+import { SearchOutlined, UploadOutlined, DownloadOutlined, ExportOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, DownOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
 
@@ -17,23 +17,19 @@ import {
   updateAllocOrgEntry,
   deleteAllocOrgEntry,
   deleteAllocOrgBatch,
-  verifyAllocOrgEntry,
-  verifyEditAllocOrgEntry,
 } from '../api/import';
 import { useImportProgress } from '../hooks/useImportProgress';
 import { useAuthStore } from '../store/auth';
-import { getOrgTree } from '../api/org';
-import type { Organization } from '../types/organization';
 import type { ImportProgress } from '../types/import';
 
-type SourceTab = 'import' | 'push';
+type SourceTab = 'import' | 'exception' | 'exceptionDiff';
 
 /**
- * 号码分摊机构页面 — 双 Tab：号码分摊机构（import）/ 待核对号码（push）
- * import Tab：月份 + 批次列表 + 批次明细（与数据录入页结构一致）
- * push Tab：按月份直接查明细（保持现状）
- * 列：号码、分机号、部门全路径、一级分行、分摊部门、机构代码、成本中心、备注
- * 分机号/部门全路径：同月通讯录按号码实时匹配；分摊部门/机构代码/成本中心：分摊机构对照表按一级分行+部门全路径实时匹配
+ * 号码分摊机构页面 — 三 Tab：
+ * 1) 号码分摊机构（import）：月份 + 批次列表 + 批次明细（含导入 ALLOC-ORG-、通讯录差异推送 COMP-、分行号码推送 BRN- 批次）
+ *    分机号/部门全路径：同月通讯录按号码实时匹配；分摊部门/机构代码/成本中心：分摊机构对照表实时匹配
+ * 2) 例外号码清单（exception）：数据对比页推送的例外号码（PUSH-EXC-），仅显示与上一自然月通讯录无差异的号码
+ * 3) 差异数据（exceptionDiff）：例外清单中与上一自然月通讯录有差异的号码（用户名称/分机号/部门全路径），附上月值对比
  */
 const AllocationOrgPage: React.FC = () => {
   const { t } = useTranslation();
@@ -44,7 +40,7 @@ const AllocationOrgPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<SourceTab>('import');
 
   // ==================== Data state ====================
-  // push Tab：按月份直接查明细
+  // 例外清单/差异数据 Tab：按月份查询
   const [entries, setEntries] = useState<Record<string, unknown>[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -52,7 +48,7 @@ const AllocationOrgPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [appliedSearch, setAppliedSearch] = useState('');
-  const [appliedChangeType, setAppliedChangeType] = useState('');
+  const [prevMonth, setPrevMonth] = useState('');
 
   // import Tab：月份 + 批次列表 + 批次明细
   const [importMonth, setImportMonth] = useState<string | undefined>(undefined);
@@ -84,16 +80,6 @@ const AllocationOrgPage: React.FC = () => {
   const [editSaving, setEditSaving] = useState(false);
   const [editForm] = Form.useForm();
 
-  // Verify edit (修改分摊部门)
-  const [verifyEditOpen, setVerifyEditOpen] = useState(false);
-  const [verifyEditingEntry, setVerifyEditingEntry] = useState<Record<string, unknown> | null>(null);
-  const [verifyEditSaving, setVerifyEditSaving] = useState(false);
-  const [verifyEditForm] = Form.useForm();
-  // 修改分摊部门：两级选择（一级分行 → 分摊部门）
-  const [orgList, setOrgList] = useState<Organization[]>([]);
-  const [verifyBranchId, setVerifyBranchId] = useState<number | undefined>(undefined);
-  const [verifyDeptOptions, setVerifyDeptOptions] = useState<{ value: string; label: string }[]>([]);
-
   // Async import progress
   const { progress: importProgress, polling: importPolling, startPolling, percent: importPercent } = useImportProgress({
     onComplete: (p: ImportProgress) => {
@@ -115,7 +101,7 @@ const AllocationOrgPage: React.FC = () => {
   // ==================== Fetch months ====================
   const fetchMonths = useCallback(async (source?: SourceTab) => {
     try {
-      const months = await getAllocOrgMonths(source || undefined);
+      const months = await getAllocOrgMonths(source === 'import' ? 'import' : (source === 'exception' || source === 'exceptionDiff') ? 'exception' : undefined);
       setAvailableMonths(months);
       if (months.length > 0) {
         if (source === 'import') {
@@ -130,11 +116,6 @@ const AllocationOrgPage: React.FC = () => {
   }, []);
 
   useEffect(() => { fetchMonths(activeTab); }, [activeTab, fetchMonths]);
-
-  // 加载组织树（修改分摊部门弹窗使用；后端已按用户数据范围过滤）
-  useEffect(() => {
-    getOrgTree().then(setOrgList).catch(() => { /* silent */ });
-  }, []);
 
   // ==================== Fetch batches (import Tab) ====================
   const fetchBatches = useCallback(async (month?: string, source?: SourceTab) => {
@@ -195,16 +176,20 @@ const AllocationOrgPage: React.FC = () => {
     fetchBatchEntries('', 0, batchPageSize, id);
   }, [fetchBatchEntries, batchPageSize]);
 
-  // ==================== Fetch entries (push Tab 按月份) ====================
-  const fetchData = useCallback(async (month: string | undefined, source?: SourceTab, keyword = '', p = 0, size = 50, changeType = '') => {
+  // ==================== Fetch entries (例外清单/差异数据 Tab 按月份) ====================
+  const fetchData = useCallback(async (month: string | undefined, source?: SourceTab, keyword = '', p = 0, size = 50) => {
     if (!month) return;
     setLoading(true);
     try {
-      const data = await getAllocOrgEntriesByMonth(month, keyword || undefined, p, size, source || undefined, changeType || undefined);
+      const data = await getAllocOrgEntriesByMonth(
+        month, keyword || undefined, p, size,
+        source === 'exception' ? 'exception' : source === 'exceptionDiff' ? 'exception-diff' : undefined,
+      );
       setEntries(data.entries || []);
       setTotal(data.total);
       setPage(data.page);
       setPageSize(data.size);
+      setPrevMonth((data as Record<string, unknown>).prev_month as string || '');
     } catch {
       message.error(t('allocationOrg.fetchFailed'));
     } finally {
@@ -213,11 +198,11 @@ const AllocationOrgPage: React.FC = () => {
   }, [t]);
 
   useEffect(() => {
-    if (activeTab === 'push' && selectedMonth) {
-      fetchData(selectedMonth, 'push', appliedSearch, 0, pageSize, appliedChangeType);
+    if ((activeTab === 'exception' || activeTab === 'exceptionDiff') && selectedMonth) {
+      fetchData(selectedMonth, activeTab, appliedSearch, 0, pageSize);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedMonth, activeTab, appliedSearch, appliedChangeType]);
+  }, [selectedMonth, activeTab, appliedSearch]);
 
   // ==================== Tab change ====================
   const handleTabChange = (key: string) => {
@@ -225,12 +210,12 @@ const AllocationOrgPage: React.FC = () => {
     setActiveTab(newTab);
     setSearch('');
     setAppliedSearch('');
-    setAppliedChangeType('');
     setSelectedMonth(undefined);
     setImportMonth(undefined);
     setEntries([]);
     setTotal(0);
     setPage(0);
+    setPrevMonth('');
     setSelectedBatchId(null);
     setBatchEntries([]);
     setBatchTotal(0);
@@ -268,13 +253,13 @@ const AllocationOrgPage: React.FC = () => {
 
   // ==================== Export ====================
   const handleExport = () => {
-    exportAllocOrg(selectedMonth, activeTab);
+    exportAllocOrg(selectedMonth, activeTab === 'exception' ? 'exception' : activeTab === 'exceptionDiff' ? 'exception-diff' : 'import');
   };
 
-  // ==================== Search (push Tab) ====================
+  // ==================== Search (例外清单/差异数据 Tab) ====================
   const handleSearch = () => {
     setAppliedSearch(search);
-    fetchData(selectedMonth, activeTab, search, 0, pageSize, appliedChangeType);
+    fetchData(selectedMonth, activeTab, search, 0, pageSize);
   };
 
   // ==================== Edit handlers ====================
@@ -299,11 +284,7 @@ const AllocationOrgPage: React.FC = () => {
       await updateAllocOrgEntry(editingEntry.id as number, values);
       message.success(t('allocationOrg.editSuccess'));
       setEditModalOpen(false);
-      if (activeTab === 'import') {
-        fetchBatchEntries(batchSearch, batchPage, batchPageSize);
-      } else {
-        fetchData(selectedMonth, activeTab, appliedSearch, page, pageSize, appliedChangeType);
-      }
+      fetchBatchEntries(batchSearch, batchPage, batchPageSize);
     } catch (err) {
       if (err instanceof Error) {
         message.error(t('allocationOrg.editFailed', { error: err.message }));
@@ -318,11 +299,7 @@ const AllocationOrgPage: React.FC = () => {
     try {
       await deleteAllocOrgEntry(record.id as number);
       message.success(t('allocationOrg.deleteSuccess'));
-      if (activeTab === 'import') {
-        fetchBatchEntries(batchSearch, batchPage, batchPageSize);
-      } else {
-        fetchData(selectedMonth, activeTab, appliedSearch, page, pageSize, appliedChangeType);
-      }
+      fetchBatchEntries(batchSearch, batchPage, batchPageSize);
     } catch (err) {
       message.error(t('allocationOrg.deleteFailed', {
         error: err instanceof Error ? err.message : t('common.unknown'),
@@ -348,118 +325,14 @@ const AllocationOrgPage: React.FC = () => {
     }
   };
 
-  // ==================== Verify handlers ====================
-  const handleVerifyConfirm = async (record: Record<string, unknown>) => {
-    try {
-      await verifyAllocOrgEntry(record.id as number);
-      message.success(t('allocationOrg.verifySuccess'));
-      fetchData(selectedMonth, activeTab, appliedSearch, page, pageSize, appliedChangeType);
-    } catch {
-      message.error(t('allocationOrg.verifyFailed'));
-    }
-  };
-
-  const handleVerifyEditOpen = (record: Record<string, unknown>) => {
-    setVerifyEditingEntry(record);
-    // 预填：优先匹配记录中 l1_branch 对应的分行，其次匹配 alloc_dept 所在分行
-    const l1 = (record.l1_branch as string) || '';
-    const allocDept = (record.alloc_dept as string) || '';
-    let preselectBranchId: number | undefined;
-    if (l1) {
-      const match = orgList.find(o => o.type === 2 && o.name === l1);
-      if (match) preselectBranchId = match.id;
-    }
-    if (!preselectBranchId) {
-      // 尝试通过 alloc_dept 前缀匹配分行（分行下包含该部门路径）
-      const match = orgList.find(o => o.type === 2 && allocDept.startsWith(o.name));
-      if (match) preselectBranchId = match.id;
-    }
-    setVerifyBranchId(preselectBranchId);
-    // 构建该分行下的分摊部门选项
-    const branch = preselectBranchId != null ? orgList.find(o => o.id === preselectBranchId) : undefined;
-    const options = buildDeptOptions(branch);
-    setVerifyDeptOptions(options);
-    // v1.12.153：修复三元笔误——预填值仅当其存在于该分行选项中时才填入，否则留空待用户选择
-    verifyEditForm.setFieldsValue({
-      branch_id: preselectBranchId,
-      alloc_dept: options.some(o => o.value === allocDept) ? allocDept : undefined,
-    });
-    setVerifyEditOpen(true);
-  };
-
-  /** 构建某分行下的分摊部门选项：部门（type=4）及子机构；额外加一个"自定义"输入选项 */
-  const buildDeptOptions = (branch: Organization | undefined): { value: string; label: string }[] => {
-    if (!branch) return [];
-    const branchPath = branch.path;
-    // 取该分行子树下所有机构（含部门、支行、子部门），排除分行自身
-    const children = orgList.filter(o =>
-      o.path && branchPath && o.path.startsWith(branchPath) && o.id !== branch.id
-    );
-    // 按 path 深度排序，保证上级在前
-    const depth = (o: Organization) => (o.path ? o.path.split('/').length : 0);
-    const sorted = [...children].sort((a, b) => depth(a) - depth(b));
-    return sorted.map(o => ({ value: o.name, label: o.name }));
-  };
-
-  const handleVerifyBranchChange = (branchId: number) => {
-    setVerifyBranchId(branchId);
-    const branch = orgList.find(o => o.id === branchId);
-    const options = buildDeptOptions(branch);
-    setVerifyDeptOptions(options);
-    // 清空已选分摊部门
-    verifyEditForm.setFieldsValue({ alloc_dept: undefined });
-  };
-
-  const handleVerifyEditSave = async () => {
-    if (!verifyEditingEntry) return;
-    try {
-      const values = await verifyEditForm.validateFields();
-      setVerifyEditSaving(true);
-      await verifyEditAllocOrgEntry(verifyEditingEntry.id as number, {
-        alloc_dept: values.alloc_dept || '',
-        branch_id: values.branch_id,
-      });
-      message.success(t('allocationOrg.verifySuccess'));
-      setVerifyEditOpen(false);
-      if (activeTab === 'import') {
-        fetchBatchEntries(batchSearch, batchPage, batchPageSize);
-      } else {
-        fetchData(selectedMonth, activeTab, appliedSearch, page, pageSize, appliedChangeType);
-      }
-    } catch (err) {
-      if (err instanceof Error) {
-        message.error(t('allocationOrg.verifyFailed'));
-      }
-    } finally {
-      setVerifyEditSaving(false);
-    }
-  };
-
   // ==================== Table columns ====================
-  // 差异推送数据 Tab 列（与数据对比差异数据 Tab 一致）
-  const TYPE_COLORS: Record<string, string> = {
-    added: 'green',
-    removed: 'red',
-    changed: 'orange',
-    exception: 'blue',
-  };
-
-  const pushColumns = [
+  // 例外号码清单 Tab 列
+  const exceptionColumns = [
     {
-      title: t('dataComparison.typeCol'), dataIndex: 'change_type', key: 'change_type', width: 80, align: 'center' as const,
-      render: (type: string) => {
-        const labels: Record<string, string> = {
-          added: t('dataComparison.typeAdded'),
-          removed: t('dataComparison.typeRemoved'),
-          changed: t('dataComparison.typeChanged'),
-          exception: t('dataComparison.exceptionDataTab'),
-        };
-        return <Tag color={TYPE_COLORS[type] || 'default'}>{labels[type] || type || '-'}</Tag>;
-      },
+      title: t('dataComparison.usernameCol'), dataIndex: 'username', key: 'username', width: 120,
     },
-    { title: t('dataComparison.usernameCol'), dataIndex: 'username', key: 'username', width: 120 },
     {
-      title: t('dataComparison.extensionCol'), dataIndex: 'extension', key: 'extension', width: 120, align: 'center' as const,
+      title: t('dataComparison.extensionCol'), dataIndex: 'extension', key: 'extension', width: 110, align: 'center' as const,
       render: (v: string) => v || '-',
     },
     {
@@ -467,38 +340,62 @@ const AllocationOrgPage: React.FC = () => {
       render: (v: string) => <span style={{ fontFamily: 'monospace' }}>{v}</span>,
     },
     {
-      title: t('dataComparison.deptPathCol'), dataIndex: 'dept_path', key: 'dept_path', width: 280,
+      title: t('dataComparison.deptPathCol'), dataIndex: 'dept_path', key: 'dept_path', width: 300,
       ellipsis: true,
     },
     {
-      title: t('dataComparison.changedColumnsCol'), dataIndex: 'changed_columns', key: 'changed_columns', width: 140, align: 'center' as const,
-      render: (cols: string[], record: Record<string, unknown>) => {
-        if (!Array.isArray(cols) || cols.length === 0) return '-';
-        const colLabels: Record<string, string> = {
-          '用户名称': t('dataComparison.usernameCol'),
-          '号码': t('dataComparison.phoneNumberCol'),
-          '部门全路径': t('dataComparison.deptPathCol'),
-          '最新通讯录未找到': t('dataComparison.notFoundCol'),
-        };
-        return <span>{cols.map((c: string) => <Tag key={c} color="orange" style={{ marginBottom: 2 }}>{colLabels[c] || c}</Tag>)}</span>;
+      title: t('allocationOrg.colL1Branch'), dataIndex: 'l1_branch', key: 'l1_branch', width: 110, align: 'center' as const,
+    },
+    {
+      title: t('allocationOrg.colRemark'), dataIndex: 'remark', key: 'remark', width: 180,
+      ellipsis: true,
+    },
+  ];
+
+  // 差异数据 Tab 列（与例外清单对比上月通讯录）
+  const exceptionDiffColumns = [
+    {
+      title: t('dataComparison.usernameCol'), dataIndex: 'username', key: 'username', width: 110,
+    },
+    {
+      title: t('dataComparison.extensionCol'), dataIndex: 'extension', key: 'extension', width: 100, align: 'center' as const,
+      render: (v: string) => v || '-',
+    },
+    {
+      title: t('dataComparison.phoneNumberCol'), dataIndex: 'phone_number', key: 'phone_number', width: 130,
+      render: (v: string) => <span style={{ fontFamily: 'monospace' }}>{v}</span>,
+    },
+    {
+      title: t('dataComparison.deptPathCol'), dataIndex: 'dept_path', key: 'dept_path', width: 240,
+      ellipsis: true,
+    },
+    {
+      title: t('allocationOrg.diffPrevMonth', { month: prevMonth }), key: 'prev', width: 320, align: 'center' as const,
+      render: (_: unknown, record: Record<string, unknown>) => {
+        const items = [
+          { label: t('dataComparison.usernameCol'), cur: record.username, prev: record.prev_username },
+          { label: t('dataComparison.extensionCol'), cur: record.extension, prev: record.prev_extension },
+          { label: t('dataComparison.deptPathCol'), cur: record.dept_path, prev: record.prev_dept_path },
+        ];
+        return (
+          <div style={{ textAlign: 'left' }}>
+            {items.map((it) => (
+              <div key={it.label} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                <span style={{ color: '#999', width: 64, flexShrink: 0 }}>{it.label}</span>
+                <span>{(it.cur as string) || '-'}</span>
+                <span style={{ color: '#999' }}>→</span>
+                <span style={{ color: '#d46b08' }}>{(it.prev as string) || '-'}</span>
+              </div>
+            ))}
+          </div>
+        );
       },
     },
     {
-      title: t('allocationOrg.verifyCol'), key: 'verify', width: 140, align: 'center' as const, fixed: 'right' as const,
-      render: (_: unknown, record: Record<string, unknown>) => {
-        if (record.verified) {
-          return <Tag color="green" icon={<CheckOutlined />}>{t('allocationOrg.verifySuccess')}</Tag>;
-        }
-        return (
-          <Space size="small">
-            <Button type="link" size="small" icon={<CheckOutlined />} onClick={() => handleVerifyConfirm(record)}>
-              {t('allocationOrg.verifyConfirm')}
-            </Button>
-            <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleVerifyEditOpen(record)}>
-              {t('allocationOrg.verifyEditDept')}
-            </Button>
-          </Space>
-        );
+      title: t('dataComparison.changedColumnsCol'), dataIndex: 'changed_columns', key: 'changed_columns', width: 150, align: 'center' as const,
+      render: (cols: string[]) => {
+        if (!Array.isArray(cols) || cols.length === 0) return '-';
+        return <span>{cols.map((c: string) => <Tag key={c} color="orange" style={{ marginBottom: 2 }}>{c}</Tag>)}</span>;
       },
     },
   ];
@@ -757,34 +654,21 @@ const AllocationOrgPage: React.FC = () => {
     </>
   );
 
-  // ==================== Render: push Tab (保持现状：按月份直接查明细) ====================
-  const renderPushTab = () => (
+  // ==================== Render: 例外清单/差异数据 Tab (按月份查询) ====================
+  const renderExceptionTab = () => (
     <>
       {/* Search */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col flex="auto" />
         <Col>
           <Space>
-            <Select
-              value={appliedChangeType || undefined}
-              onChange={(v) => setAppliedChangeType(v || '')}
-              placeholder={t('dataComparison.typeCol')}
-              style={{ width: 120 }}
-              allowClear
-              options={[
-                { value: 'added', label: t('dataComparison.typeAdded') },
-                { value: 'removed', label: t('dataComparison.typeRemoved') },
-                { value: 'changed', label: t('dataComparison.typeChanged') },
-                { value: 'exception', label: t('dataComparison.exceptionDataTab') },
-              ]}
-            />
             <Input
-              placeholder={t('allocationOrg.searchPlaceholder')}
+              placeholder={t('allocationOrg.exceptionSearchPlaceholder')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onPressEnter={handleSearch}
               prefix={<SearchOutlined />}
-              style={{ width: 220 }}
+              style={{ width: 260 }}
               allowClear
             />
             <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>
@@ -796,11 +680,11 @@ const AllocationOrgPage: React.FC = () => {
 
       <Table
         dataSource={entries}
-        columns={pushColumns}
+        columns={activeTab === 'exceptionDiff' ? exceptionDiffColumns : exceptionColumns}
         rowKey="id"
         loading={loading}
         size="small"
-        scroll={{ x: 800 }}
+        scroll={{ x: activeTab === 'exceptionDiff' ? 1000 : 800 }}
         pagination={{
           current: page + 1,
           pageSize,
@@ -808,7 +692,7 @@ const AllocationOrgPage: React.FC = () => {
           showSizeChanger: true,
           showTotal: (total: number) => t('common.totalCount', { count: total }),
           onChange: (p, s) => {
-            fetchData(selectedMonth, activeTab, appliedSearch, p - 1, s, appliedChangeType);
+            fetchData(selectedMonth, activeTab, appliedSearch, p - 1, s);
           },
         }}
       />
@@ -823,7 +707,7 @@ const AllocationOrgPage: React.FC = () => {
         styles={{ header: { background: COLORS.sageLight } }}
         extra={
           <Space>
-            {activeTab === 'push' ? (
+            {activeTab !== 'import' ? (
               <>
                 <Select
                   value={selectedMonth}
@@ -849,14 +733,18 @@ const AllocationOrgPage: React.FC = () => {
               label: t('allocationOrg.importDataTab'),
             },
             {
-              key: 'push',
-              label: t('allocationOrg.pushDataTab'),
+              key: 'exception',
+              label: t('allocationOrg.exceptionListTab'),
+            },
+            {
+              key: 'exceptionDiff',
+              label: t('allocationOrg.exceptionDiffTab'),
             },
           ]}
           style={{ marginBottom: 16 }}
         />
 
-        {activeTab === 'import' ? renderImportTab() : renderPushTab()}
+        {activeTab === 'import' ? renderImportTab() : renderExceptionTab()}
       </Card>
 
       {/* Import month picker modal */}
@@ -917,47 +805,6 @@ const AllocationOrgPage: React.FC = () => {
           </Form.Item>
           <Form.Item name="remark" label={t('allocationOrg.colRemark')}>
             <Input.TextArea rows={2} />
-          </Form.Item>
-        </Form>
-      </Modal>
-
-      {/* Verify edit (修改分摊部门) modal */}
-      <Modal
-        title={t('allocationOrg.verifyEditTitle')}
-        open={verifyEditOpen}
-        onOk={handleVerifyEditSave}
-        onCancel={() => setVerifyEditOpen(false)}
-        okText={t('common.confirm')}
-        cancelText={t('common.cancel')}
-        confirmLoading={verifyEditSaving}
-      >
-        <p style={{ marginBottom: 12, color: '#999' }}>{t('allocationOrg.verifyEditHint')}</p>
-        <Form form={verifyEditForm} layout="vertical" style={{ marginTop: 8 }}>
-          <Form.Item
-            name="branch_id"
-            label={t('allocationOrg.verifyEditBranchLabel')}
-            rules={[{ required: true, message: t('allocationOrg.verifyEditBranchRequired') }]}
-          >
-            <Select
-              placeholder={t('allocationOrg.verifyEditBranchPlaceholder')}
-              onChange={handleVerifyBranchChange}
-              options={orgList.filter(o => o.type === 2).map(o => ({ value: o.id, label: o.name }))}
-              showSearch
-              optionFilterProp="label"
-            />
-          </Form.Item>
-          <Form.Item
-            name="alloc_dept"
-            label={t('allocationOrg.verifyEditDeptLabel')}
-            rules={[{ required: true, message: t('allocationOrg.verifyEditDeptRequired') }]}
-          >
-            <Select
-              placeholder={t('allocationOrg.verifyEditDeptPlaceholder')}
-              options={verifyDeptOptions}
-              showSearch
-              optionFilterProp="label"
-              disabled={verifyBranchId == null}
-            />
           </Form.Item>
         </Form>
       </Modal>

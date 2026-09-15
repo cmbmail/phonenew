@@ -52,11 +52,10 @@ export const getAllocOrgEntriesByBatch = (batchId: number, search?: string, page
   }>(`/import/allocation-org/entries-by-batch/${batchId}`, params);
 };
 
-export const getAllocOrgEntriesByMonth = (billingMonth: string, search?: string, page = 0, size = 50, source?: string, changeType?: string) => {
+export const getAllocOrgEntriesByMonth = (billingMonth: string, search?: string, page = 0, size = 50, source?: string) => {
   const params: Record<string, string> = { billing_month: billingMonth, page: String(page), size: String(size) };
   if (search) params.search = search;
   if (source) params.source = source;
-  if (changeType) params.change_type = changeType;
   return apiGet<{
     entries: Array<{
       id: number;
@@ -69,10 +68,16 @@ export const getAllocOrgEntriesByMonth = (billingMonth: string, search?: string,
       org_code: string;
       cost_center: string;
       remark: string;
+      username?: string;
+      prev_username?: string;
+      prev_extension?: string;
+      prev_dept_path?: string;
+      changed_columns?: string;
     }>;
     total: number;
     page: number;
     size: number;
+    prev_month?: string;
   }>('/import/allocation-org/entries-by-month', params);
 };
 
@@ -91,12 +96,6 @@ export const deleteAllocOrgEntry = (id: number) =>
 
 export const deleteAllocOrgBatch = (id: number) =>
   apiDelete<{ id: number; deleted: boolean }>(`/import/allocation-org/batches/${id}`);
-
-export const verifyAllocOrgEntry = (id: number) =>
-  apiPost<{ id: number; verified: boolean }>(`/import/allocation-org/entries/${id}/verify`);
-
-export const verifyEditAllocOrgEntry = (id: number, data: { alloc_dept?: string; branch_id?: number }) =>
-  apiPost<{ id: number; verified: boolean; alloc_dept: string }>(`/import/allocation-org/entries/${id}/verify-edit`, data);
 
 export const downloadAllocOrgTemplate = () => {
   const token = useAuthStore.getState().token;

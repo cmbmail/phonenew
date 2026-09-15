@@ -3,7 +3,7 @@ package com.phonecost.controller;
 import com.phonecost.domain.AllocationOrgBatch;
 import com.phonecost.domain.AllocationOrgEntry;
 import com.phonecost.domain.AllocationOrgMapping;
-import com.phonecost.domain.SysOrganization;
+import com.phonecost.domain.DirectoryEntry;
 import com.phonecost.repository.AllocationOrgBatchRepository;
 import com.phonecost.repository.AllocationOrgEntryRepository;
 import com.phonecost.repository.AllocationOrgMappingRepository;
@@ -30,6 +30,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.YearMonth;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -47,7 +48,6 @@ public class AllocationOrgController {
     private final DataScopeService dataScopeService;
     private final ComparisonPushService pushService;
     private final BranchNumberPushService branchNumberPushService;
-    private final SysOrganizationRepository orgRepo;
 
     /** Sentinel: 全量数据（admin/财务） */
     private static final Long SCOPE_ALL = -1L;
@@ -59,8 +59,7 @@ public class AllocationOrgController {
                                    DirectoryEntryRepository directoryEntryRepo,
                                    DataScopeService dataScopeService,
                                    ComparisonPushService pushService,
-                                   BranchNumberPushService branchNumberPushService,
-                                   SysOrganizationRepository orgRepo) {
+                                   BranchNumberPushService branchNumberPushService) {
         this.importService = importService;
         this.batchRepo = batchRepo;
         this.entryRepo = entryRepo;
@@ -69,7 +68,6 @@ public class AllocationOrgController {
         this.dataScopeService = dataScopeService;
         this.pushService = pushService;
         this.branchNumberPushService = branchNumberPushService;
-        this.orgRepo = orgRepo;
     }
 
     /**
@@ -303,29 +301,20 @@ public class AllocationOrgController {
         Long scopeBranch = resolveScopeBranchOrg(role, userId);
         List<AllocationOrgBatch> batches;
         boolean hasMonth = billingMonth != null && !billingMonth.isBlank();
-        boolean isPush = "push".equalsIgnoreCase(source);
         boolean isImport = "import".equalsIgnoreCase(source);
 
-        if (isPush || isImport) {
-            // 按来源过滤：import=导入(非PUSH-)，push=推送(PUSH-)
+        if (isImport) {
+            // 号码分摊机构 Tab：导入 ALLOC-ORG-/推送 COMP-/BRN- 批次（排除 PUSH- 例外批次）
             if (scopeBranch == SCOPE_ALL) {
-                batches = isPush
-                        ? (hasMonth
-                            ? batchRepo.findByBillingMonthAndSourcePush(billingMonth)
-                            : batchRepo.findBySourcePush())
-                        : (hasMonth
-                            ? batchRepo.findByBillingMonthAndSourceImport(billingMonth)
-                            : batchRepo.findBySourceImport());
+                batches = hasMonth
+                        ? batchRepo.findByBillingMonthAndSourceImport(billingMonth)
+                        : batchRepo.findBySourceImport();
             } else if (scopeBranch == null) {
                 batches = List.of();
             } else {
-                batches = isPush
-                        ? (hasMonth
-                            ? batchRepo.findByBillingMonthAndSourcePushAndBranchOrgId(billingMonth, scopeBranch)
-                            : batchRepo.findBySourcePushAndBranchOrgId(scopeBranch))
-                        : (hasMonth
-                            ? batchRepo.findByBillingMonthAndSourceImportAndBranchOrgId(billingMonth, scopeBranch)
-                            : batchRepo.findBySourceImportAndBranchOrgId(scopeBranch));
+                batches = hasMonth
+                        ? batchRepo.findByBillingMonthAndSourceImportAndBranchOrgId(billingMonth, scopeBranch)
+                        : batchRepo.findBySourceImportAndBranchOrgId(scopeBranch);
             }
         } else {
             // 原有逻辑：不区分来源
@@ -351,20 +340,25 @@ public class AllocationOrgController {
             @RequestAttribute("role") Byte role) {
         Long scopeBranch = resolveScopeBranchOrg(role, userId);
         List<String> months;
-        boolean isPush = "push".equalsIgnoreCase(source);
         boolean isImport = "import".equalsIgnoreCase(source);
+        boolean isException = "exception".equalsIgnoreCase(source);
 
-        if (isPush || isImport) {
+        if (isImport) {
             if (scopeBranch == SCOPE_ALL) {
-                months = isPush
-                        ? batchRepo.findDistinctBillingMonthsBySourcePush()
-                        : batchRepo.findDistinctBillingMonthsBySourceImport();
+                months = batchRepo.findDistinctBillingMonthsBySourceImport();
             } else if (scopeBranch == null) {
                 months = List.of();
             } else {
-                months = isPush
-                        ? batchRepo.findDistinctBillingMonthsBySourcePushAndBranchOrgId(scopeBranch)
-                        : batchRepo.findDistinctBillingMonthsBySourceImportAndBranchOrgId(scopeBranch);
+                months = batchRepo.findDistinctBillingMonthsBySourceImportAndBranchOrgId(scopeBranch);
+            }
+        } else if (isException) {
+            // 例外号码清单：仅取 PUSH-EXC- 推送批次所在月份
+            if (scopeBranch == SCOPE_ALL) {
+                months = batchRepo.findDistinctBillingMonthsBySourceException();
+            } else if (scopeBranch == null) {
+                months = List.of();
+            } else {
+                months = batchRepo.findDistinctBillingMonthsBySourceExceptionAndBranchOrgId(scopeBranch);
             }
         } else {
             // 原有逻辑：不区分来源
@@ -466,12 +460,17 @@ public class AllocationOrgController {
 
     // ==================== Entries by month ====================
 
+    /**
+     * 按月份查询号码分摊机构明细（分页 + 搜索）
+     * source=import：号码分摊机构 Tab（导入 ALLOC-ORG-/推送 COMP-/BRN- 批次），实时匹配同月通讯录与对照表
+     * source=exception：例外号码清单 Tab（PUSH-EXC- 批次），仅展示与上一自然月通讯录无差异的号码
+     * source=exception-diff：差异数据 Tab，仅展示与上一自然月通讯录有差异的号码（含原值 vs 上月值对比）
+     */
     @GetMapping("/entries-by-month")
     public ResponseEntity<ApiResponse<Map<String, Object>>> listEntriesByMonth(
             @RequestParam("billing_month") String billingMonth,
             @RequestParam(value = "search", required = false) String search,
             @RequestParam(value = "source", required = false) String source,
-            @RequestParam(value = "change_type", required = false) String changeType,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size,
             @RequestAttribute("userId") Long userId,
@@ -481,44 +480,20 @@ public class AllocationOrgController {
         boolean hasSearch = search != null && !search.isBlank();
         String keyword = hasSearch ? search.trim() : "";
         Long scopeBranch = resolveScopeBranchOrg(role, userId);
-        boolean isPush = "push".equalsIgnoreCase(source);
         boolean isImport = "import".equalsIgnoreCase(source);
-        boolean hasChangeType = changeType != null && !changeType.isBlank();
-        String ctVal = hasChangeType ? changeType.trim() : null;
+        boolean isException = "exception".equalsIgnoreCase(source) || "exception-diff".equalsIgnoreCase(source);
+        boolean isDiffOnly = "exception-diff".equalsIgnoreCase(source);
+
+        if (isException) {
+            // 例外号码清单/差异数据：全量加载后与上一自然月通讯录对比，内存分页
+            return ResponseEntity.ok(ApiResponse.ok(
+                    buildExceptionDiffResult(billingMonth, keyword, page, size, scopeBranch, isDiffOnly)));
+        }
 
         Page<AllocationOrgEntry> pageResult;
 
-        if (isPush) {
-            // 推送来源数据
-            if (hasChangeType) {
-                // 按类型过滤
-                if (scopeBranch == SCOPE_ALL) {
-                    pageResult = hasSearch
-                            ? entryRepo.searchByBillingMonthAndSourcePushAndChangeType(billingMonth, ctVal, keyword, pageable)
-                            : entryRepo.findByBillingMonthAndSourcePushAndChangeType(billingMonth, ctVal, pageable);
-                } else if (scopeBranch == null) {
-                    pageResult = Page.empty(pageable);
-                } else {
-                    pageResult = hasSearch
-                            ? entryRepo.searchByBillingMonthAndSourcePushAndBranchOrgIdAndChangeType(billingMonth, scopeBranch, ctVal, keyword, pageable)
-                            : entryRepo.findByBillingMonthAndSourcePushAndBranchOrgIdAndChangeType(billingMonth, scopeBranch, ctVal, pageable);
-                }
-            } else {
-                // 不按类型过滤（原有逻辑）
-                if (scopeBranch == SCOPE_ALL) {
-                    pageResult = hasSearch
-                            ? entryRepo.searchByBillingMonthAndSourcePush(billingMonth, keyword, pageable)
-                            : entryRepo.findByBillingMonthAndSourcePush(billingMonth, pageable);
-                } else if (scopeBranch == null) {
-                    pageResult = Page.empty(pageable);
-                } else {
-                    pageResult = hasSearch
-                            ? entryRepo.searchByBillingMonthAndSourcePushAndBranchOrgId(billingMonth, scopeBranch, keyword, pageable)
-                            : entryRepo.findByBillingMonthAndSourcePushAndBranchOrgId(billingMonth, scopeBranch, pageable);
-                }
-            }
-        } else if (isImport) {
-            // 导入来源数据
+        if (isImport) {
+            // 号码分摊机构 Tab（含导入/COMP-/BRN- 推送批次）
             if (scopeBranch == SCOPE_ALL) {
                 pageResult = hasSearch
                         ? entryRepo.searchByBillingMonthAndSourceImport(billingMonth, keyword, pageable)
@@ -546,7 +521,7 @@ public class AllocationOrgController {
         }
 
         List<Map<String, Object>> entries = new ArrayList<>();
-        // 实时匹配：仅对 import 来源生效（push 来源是差异推送数据，保持现状）
+        // 实时匹配：仅对 import 来源生效
         AllocationOrgMatchResolver resolver = isImport
                 ? buildMatchResolver(billingMonth)
                 : null;
@@ -569,20 +544,6 @@ public class AllocationOrgController {
                 e.put("cost_center", entry.getCostCenter() != null ? entry.getCostCenter() : "");
             }
             e.put("remark", entry.getRemark() != null ? entry.getRemark() : "");
-            // 差异推送数据 Tab 额外返回差异数据列
-            if (isPush) {
-                e.put("username", entry.getUsername() != null ? entry.getUsername() : "");
-                e.put("dept_path", entry.getDeptPath() != null ? entry.getDeptPath() : "");
-                e.put("extension", entry.getExtension() != null ? entry.getExtension() : "");
-                e.put("change_type", entry.getChangeType() != null ? entry.getChangeType() : "");
-                String changedCols = entry.getChangedColumns();
-                if (changedCols != null && !changedCols.isEmpty()) {
-                    e.put("changed_columns", java.util.Arrays.asList(changedCols.split(",")));
-                } else {
-                    e.put("changed_columns", java.util.Collections.emptyList());
-                }
-                e.put("verified", entry.getVerified() != null && entry.getVerified());
-            }
             entries.add(e);
         }
 
@@ -594,87 +555,172 @@ public class AllocationOrgController {
         return ResponseEntity.ok(ApiResponse.ok(result));
     }
 
-    // ==================== Verify entry (待核对) ====================
+    // ==================== Exception list vs 上月通讯录对比 ====================
 
-    /**
-     * 确认核对（不改分摊部门）
-     */
-    @PostMapping("/entries/{id}/verify")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_BRANCH')")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> verifyEntry(
-            @PathVariable Long id,
-            @RequestAttribute("userId") Long userId,
-            @RequestAttribute("role") Byte role) {
-        AllocationOrgEntry entry = entryRepo.findByIdAndDeletedAtIsNull(id)
-                .orElseThrow(() -> new RuntimeException("记录不存在: " + id));
-        // 数据隔离校验
-        Long scopeBranch = resolveScopeBranchOrg(role, userId);
-        if (scopeBranch != SCOPE_ALL) {
-            if (scopeBranch == null || !scopeBranch.equals(entry.getBranchOrgId())) {
-                throw new RuntimeException("无权操作该记录");
-            }
-        }
-        entry.setVerified(true);
-        entry.setVerifiedAt(LocalDateTime.now());
-        entry.setVerifiedBy(userId);
-        entryRepo.save(entry);
-        Map<String, Object> result = new HashMap<>();
-        result.put("id", id);
-        result.put("verified", true);
-        return ResponseEntity.ok(ApiResponse.ok(result));
+    /** 例外清单条目与上月通讯录的对比结果 */
+    private static class ExceptionDiffItem {
+        String id;                 // entry id
+        String phoneNumber;
+        String username;           // 清单中的用户名称
+        String extension;          // 清单中的分机号
+        String deptPath;           // 清单中的部门全路径
+        String l1Branch;
+        String remark;
+        List<String> changedCols;  // 差异列（用户名称/分机号/部门全路径/上月通讯录未找到）
+        String prevUsername;       // 上月通讯录值
+        String prevExtension;
+        String prevDeptPath;
     }
 
     /**
-     * 修改分摊部门并完成核对
+     * 构建例外号码清单/差异数据查询结果：
+     * 例外清单（PUSH-EXC- 批次）按号码与上一自然月通讯录对比：
+     * - 比较用户名称、分机号、部门全路径三项
+     * - 清单 Tab（diffOnly=false）：仅返回无差异条目（有差异的移入差异数据 Tab）
+     * - 差异 Tab（diffOnly=true）：仅返回有差异条目，附上月值与差异列
      */
-    @PostMapping("/entries/{id}/verify-edit")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_BRANCH')")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> verifyEditEntry(
-            @PathVariable Long id,
-            @RequestBody Map<String, Object> body,
-            @RequestAttribute("userId") Long userId,
-            @RequestAttribute("role") Byte role) {
-        AllocationOrgEntry entry = entryRepo.findByIdAndDeletedAtIsNull(id)
-                .orElseThrow(() -> new RuntimeException("记录不存在: " + id));
-        // 数据隔离校验
-        Long scopeBranch = resolveScopeBranchOrg(role, userId);
-        if (scopeBranch != SCOPE_ALL) {
-            if (scopeBranch == null || !scopeBranch.equals(entry.getBranchOrgId())) {
-                throw new RuntimeException("无权操作该记录");
+    private Map<String, Object> buildExceptionDiffResult(String billingMonth, String keyword,
+                                                          int page, int size, Long scopeBranch, boolean diffOnly) {
+        // 1. 加载例外清单条目（PUSH-EXC-）
+        List<AllocationOrgEntry> entries;
+        if (scopeBranch == SCOPE_ALL) {
+            entries = entryRepo.findAllByBillingMonthAndSourceException(billingMonth);
+        } else if (scopeBranch == null) {
+            entries = List.of();
+        } else {
+            entries = entryRepo.findAllByBillingMonthAndSourceExceptionAndBranchOrgId(billingMonth, scopeBranch);
+        }
+
+        // 2. 加载上一自然月通讯录（按号码聚合）
+        String prevMonth = previousNaturalMonth(billingMonth);
+        Map<String, String[]> prevByPhone = loadDirectoryByPhone(prevMonth);
+
+        // 3. 逐条对比
+        List<ExceptionDiffItem> items = new ArrayList<>();
+        for (AllocationOrgEntry entry : entries) {
+            ExceptionDiffItem item = new ExceptionDiffItem();
+            item.id = String.valueOf(entry.getId());
+            item.phoneNumber = entry.getPhoneNumber() != null ? entry.getPhoneNumber() : "";
+            item.username = entry.getUsername() != null ? entry.getUsername() : "";
+            item.extension = entry.getExtension() != null ? entry.getExtension() : "";
+            item.deptPath = entry.getDeptPath() != null ? entry.getDeptPath() : "";
+            item.l1Branch = entry.getL1Branch() != null ? entry.getL1Branch() : "";
+            item.remark = entry.getRemark() != null ? entry.getRemark() : "";
+
+            String[] prev = prevByPhone.get(item.phoneNumber.trim());
+            List<String> changedCols = new ArrayList<>();
+            if (prev == null) {
+                changedCols.add("上月通讯录未找到");
+                item.prevUsername = "";
+                item.prevExtension = "";
+                item.prevDeptPath = "";
+            } else {
+                item.prevUsername = prev[0];
+                item.prevExtension = prev[1];
+                item.prevDeptPath = prev[2];
+                if (!item.username.trim().equals(item.prevUsername)) changedCols.add("用户名称");
+                if (!item.extension.trim().equals(item.prevExtension)) changedCols.add("分机号");
+                if (!item.deptPath.trim().equals(item.prevDeptPath)) changedCols.add("部门全路径");
+            }
+            item.changedCols = changedCols;
+
+            boolean hasDiff = !changedCols.isEmpty();
+            if (diffOnly == hasDiff) {
+                items.add(item);
             }
         }
-        // 更新分摊部门
-        if (body.containsKey("alloc_dept")) {
-            String allocDept = str(body.get("alloc_dept"));
-            entry.setAllocDept(allocDept);
+
+        // 4. 关键词过滤（号码/用户名称/分机号/部门全路径）
+        if (keyword != null && !keyword.isBlank()) {
+            String kw = keyword.toLowerCase();
+            items = items.stream().filter(i ->
+                    i.phoneNumber.toLowerCase().contains(kw)
+                            || i.username.toLowerCase().contains(kw)
+                            || i.extension.toLowerCase().contains(kw)
+                            || i.deptPath.toLowerCase().contains(kw))
+                    .collect(Collectors.toList());
         }
-        // 可选：同步一级分行（branch_id = 选中分行 orgId）
-        if (body.containsKey("branch_id") && body.get("branch_id") != null) {
-            Long branchId = Long.valueOf(String.valueOf(body.get("branch_id")));
-            // 校验该 org 存在且为一级分行（type=2）
-            SysOrganization branch = orgRepo.findByIdAndDeletedAtIsNull(branchId)
-                    .orElseThrow(() -> new RuntimeException("一级分行不存在: " + branchId));
-            if (branch.getType() == null || branch.getType() != 2) {
-                throw new RuntimeException("所选机构不是一级分行: " + branchId);
-            }
-            // 数据隔离校验：非全量用户只能选择自己的分行
-            if (scopeBranch != SCOPE_ALL && !branchId.equals(scopeBranch)) {
-                throw new RuntimeException("无权选择该一级分行");
-            }
-            entry.setBranchOrgId(branchId);
-            entry.setL1Branch(branch.getName());
+
+        // 5. 内存分页
+        int start = page * size;
+        List<ExceptionDiffItem> pageItems = (start < items.size())
+                ? items.subList(start, Math.min(start + size, items.size()))
+                : List.of();
+
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (ExceptionDiffItem item : pageItems) {
+            Map<String, Object> e = new HashMap<>();
+            e.put("id", item.id);
+            e.put("phone_number", item.phoneNumber);
+            e.put("username", item.username);
+            e.put("extension", item.extension);
+            e.put("dept_path", item.deptPath);
+            e.put("l1_branch", item.l1Branch);
+            e.put("remark", item.remark);
+            e.put("prev_username", item.prevUsername);
+            e.put("prev_extension", item.prevExtension);
+            e.put("prev_dept_path", item.prevDeptPath);
+            e.put("changed_columns", item.changedCols);
+            e.put("has_diff", !item.changedCols.isEmpty());
+            e.put("prev_month", prevMonth);
+            rows.add(e);
         }
-        entry.setVerified(true);
-        entry.setVerifiedAt(LocalDateTime.now());
-        entry.setVerifiedBy(userId);
-        entryRepo.save(entry);
+
         Map<String, Object> result = new HashMap<>();
-        result.put("id", id);
-        result.put("verified", true);
-        result.put("alloc_dept", entry.getAllocDept() != null ? entry.getAllocDept() : "");
-        result.put("l1_branch", entry.getL1Branch() != null ? entry.getL1Branch() : "");
-        result.put("branch_org_id", entry.getBranchOrgId());
-        return ResponseEntity.ok(ApiResponse.ok(result));
+        result.put("entries", rows);
+        result.put("total", (long) items.size());
+        result.put("page", page);
+        result.put("size", size);
+        result.put("prev_month", prevMonth);
+        return result;
+    }
+
+    /** 计算上一自然月（YYYY-MM 格式） */
+    private String previousNaturalMonth(String billingMonth) {
+        try {
+            YearMonth ym = YearMonth.parse(billingMonth);
+            return ym.minusMonths(1).toString();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    /**
+     * 加载指定月份通讯录，按号码聚合 username/extension/dept_path（多值「、」拼接）
+     * 返回 phone → [username, extension, dept_path]
+     */
+    private Map<String, String[]> loadDirectoryByPhone(String month) {
+        Map<String, LinkedHashSet<String>> nameByPhone = new HashMap<>();
+        Map<String, LinkedHashSet<String>> extByPhone = new HashMap<>();
+        Map<String, LinkedHashSet<String>> deptByPhone = new HashMap<>();
+        if (month != null && !month.isBlank()) {
+            List<DirectoryEntry> dirEntries = directoryEntryRepo.findByBillingMonth(month);
+            for (DirectoryEntry d : dirEntries) {
+                String pn = d.getPhoneNumber() != null ? d.getPhoneNumber().trim() : "";
+                if (pn.isEmpty()) continue;
+                if (d.getUsername() != null && !d.getUsername().isBlank()) {
+                    nameByPhone.computeIfAbsent(pn, k -> new LinkedHashSet<>()).add(d.getUsername().trim());
+                }
+                if (d.getExtension() != null && !d.getExtension().isBlank()) {
+                    extByPhone.computeIfAbsent(pn, k -> new LinkedHashSet<>()).add(d.getExtension().trim());
+                }
+                if (d.getDeptPath() != null && !d.getDeptPath().isBlank()) {
+                    deptByPhone.computeIfAbsent(pn, k -> new LinkedHashSet<>()).add(d.getDeptPath().trim());
+                }
+            }
+        }
+        Map<String, String[]> result = new HashMap<>();
+        Set<String> phones = new LinkedHashSet<>();
+        phones.addAll(nameByPhone.keySet());
+        phones.addAll(extByPhone.keySet());
+        phones.addAll(deptByPhone.keySet());
+        for (String pn : phones) {
+            String names = String.join("、", nameByPhone.getOrDefault(pn, new LinkedHashSet<>()));
+            String exts = String.join("、", extByPhone.getOrDefault(pn, new LinkedHashSet<>()));
+            String depts = String.join("、", deptByPhone.getOrDefault(pn, new LinkedHashSet<>()));
+            result.put(pn, new String[]{names, exts, depts});
+        }
+        return result;
     }
 
     // ==================== Update entry ====================
@@ -791,19 +837,19 @@ public class AllocationOrgController {
             @RequestAttribute("userId") Long userId,
             @RequestAttribute("role") Byte role) {
         Long scopeBranch = resolveScopeBranchOrg(role, userId);
-        boolean isPush = "push".equalsIgnoreCase(source);
         boolean isImport = "import".equalsIgnoreCase(source);
+        boolean isException = "exception".equalsIgnoreCase(source) || "exception-diff".equalsIgnoreCase(source);
+        boolean isDiffOnly = "exception-diff".equalsIgnoreCase(source);
+
+        // 例外号码清单/差异数据导出（附上月对比列）
+        if (isException) {
+            Map<String, Object> data = buildExceptionDiffResult(billingMonth, null, 0, Integer.MAX_VALUE, scopeBranch, isDiffOnly);
+            return exportExceptionList(billingMonth, isDiffOnly, data);
+        }
+
         List<AllocationOrgEntry> entries;
 
-        if (isPush) {
-            if (scopeBranch == SCOPE_ALL) {
-                entries = entryRepo.findAllByBillingMonthAndSourcePush(billingMonth);
-            } else if (scopeBranch == null) {
-                entries = List.of();
-            } else {
-                entries = entryRepo.findAllByBillingMonthAndSourcePushAndBranchOrgId(billingMonth, scopeBranch);
-            }
-        } else if (isImport) {
+        if (isImport) {
             if (scopeBranch == SCOPE_ALL) {
                 entries = entryRepo.findAllByBillingMonthAndSourceImport(billingMonth);
             } else if (scopeBranch == null) {
@@ -833,7 +879,7 @@ public class AllocationOrgController {
 
             // 导出列：号码、分机号、部门全路径、一级分行、分摊部门、机构代码、成本中心、备注
             // import 来源：分机号/部门全路径来自同月通讯录实时匹配；分摊部门/机构代码/成本中心取自分摊机构对照表（匹配不到为空）
-            // push 来源：保持推送数据原样（三列来自推送批次）
+            // 非来源（全量）：保持原值
             String[] headers = {"号码", "分机号", "部门全路径", "一级分行", "分摊部门", "机构代码", "成本中心", "备注"};
             Row headerRow = sheet.createRow(0);
             for (int i = 0; i < headers.length; i++) {
@@ -877,5 +923,75 @@ public class AllocationOrgController {
         } catch (IOException e) {
             throw new IllegalStateException("导出失败", e);
         }
+    }
+
+    /**
+     * 例外号码清单/差异数据导出（附上月对比列）
+     */
+    @SuppressWarnings("unchecked")
+    private ResponseEntity<byte[]> exportExceptionList(String billingMonth, boolean diffOnly, Map<String, Object> data) {
+        List<Map<String, Object>> entries = (List<Map<String, Object>>) data.get("entries");
+        String prevMonth = String.valueOf(data.getOrDefault("prev_month", ""));
+
+        try (Workbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            String sheetName = diffOnly ? "差异数据" : "例外号码清单";
+            Sheet sheet = wb.createSheet(sheetName);
+
+            CellStyle headerStyle = wb.createCellStyle();
+            Font headerFont = wb.createFont();
+            headerFont.setBold(true);
+            headerStyle.setFont(headerFont);
+            headerStyle.setFillForegroundColor(IndexedColors.PALE_BLUE.getIndex());
+            headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+
+            String[] headers = diffOnly
+                    ? new String[]{"号码", "用户名称", "分机号", "部门全路径", "一级分行",
+                    "上月用户名称(" + prevMonth + ")", "上月分机号", "上月部门全路径", "差异列", "备注"}
+                    : new String[]{"号码", "用户名称", "分机号", "部门全路径", "一级分行", "备注"};
+            Row headerRow = sheet.createRow(0);
+            for (int i = 0; i < headers.length; i++) {
+                Cell cell = headerRow.createCell(i);
+                cell.setCellValue(headers[i]);
+                cell.setCellStyle(headerStyle);
+                sheet.setColumnWidth(i, 6000);
+            }
+
+            int rowIdx = 1;
+            for (Map<String, Object> e : entries) {
+                Row row = sheet.createRow(rowIdx++);
+                row.createCell(0).setCellValue(strOrEmpty(e.get("phone_number")));
+                row.createCell(1).setCellValue(strOrEmpty(e.get("username")));
+                row.createCell(2).setCellValue(strOrEmpty(e.get("extension")));
+                row.createCell(3).setCellValue(strOrEmpty(e.get("dept_path")));
+                row.createCell(4).setCellValue(strOrEmpty(e.get("l1_branch")));
+                if (diffOnly) {
+                    row.createCell(5).setCellValue(strOrEmpty(e.get("prev_username")));
+                    row.createCell(6).setCellValue(strOrEmpty(e.get("prev_extension")));
+                    row.createCell(7).setCellValue(strOrEmpty(e.get("prev_dept_path")));
+                    Object cols = e.get("changed_columns");
+                    String colsStr = (cols instanceof List)
+                            ? String.join(",", ((List<?>) cols).stream().map(String::valueOf).toArray(String[]::new))
+                            : "";
+                    row.createCell(8).setCellValue(colsStr);
+                    row.createCell(9).setCellValue(strOrEmpty(e.get("remark")));
+                } else {
+                    row.createCell(5).setCellValue(strOrEmpty(e.get("remark")));
+                }
+            }
+
+            wb.write(out);
+            String fileTitle = diffOnly ? "差异数据导出_" : "例外号码清单导出_";
+            String fileName = URLEncoder.encode(fileTitle + billingMonth + ".xlsx", StandardCharsets.UTF_8);
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + fileName)
+                    .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                    .body(out.toByteArray());
+        } catch (IOException e) {
+            throw new IllegalStateException("导出失败", e);
+        }
+    }
+
+    private String strOrEmpty(Object v) {
+        return v != null ? String.valueOf(v) : "";
     }
 }
