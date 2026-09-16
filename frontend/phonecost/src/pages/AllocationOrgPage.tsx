@@ -400,6 +400,18 @@ const AllocationOrgPage: React.FC = () => {
       title: t('allocationOrg.colL1Branch'), dataIndex: 'l1_branch', key: 'l1_branch', width: 110, align: 'center' as const,
     },
     {
+      title: t('allocationOrg.colAllocDept'), dataIndex: 'alloc_dept', key: 'alloc_dept', width: 180,
+      ellipsis: true,
+    },
+    {
+      title: t('allocationOrg.colOrgCode'), dataIndex: 'org_code', key: 'org_code', width: 90, align: 'center' as const,
+      render: (v: string) => v ? <span style={{ fontFamily: 'monospace' }}>{v}</span> : '-',
+    },
+    {
+      title: t('allocationOrg.colCostCenter'), dataIndex: 'cost_center', key: 'cost_center', width: 90, align: 'center' as const,
+      render: (v: string) => v ? <span style={{ fontFamily: 'monospace' }}>{v}</span> : '-',
+    },
+    {
       title: t('allocationOrg.colRemark'), dataIndex: 'remark', key: 'remark', width: 180,
       ellipsis: true,
     },
@@ -421,6 +433,21 @@ const AllocationOrgPage: React.FC = () => {
     {
       title: t('dataComparison.deptPathCol'), dataIndex: 'dept_path', key: 'dept_path', width: 240,
       ellipsis: true,
+    },
+    {
+      title: t('allocationOrg.colL1Branch'), dataIndex: 'l1_branch', key: 'l1_branch', width: 100, align: 'center' as const,
+    },
+    {
+      title: t('allocationOrg.colAllocDept'), dataIndex: 'alloc_dept', key: 'alloc_dept', width: 160,
+      ellipsis: true,
+    },
+    {
+      title: t('allocationOrg.colOrgCode'), dataIndex: 'org_code', key: 'org_code', width: 85, align: 'center' as const,
+      render: (v: string) => v ? <span style={{ fontFamily: 'monospace' }}>{v}</span> : '-',
+    },
+    {
+      title: t('allocationOrg.colCostCenter'), dataIndex: 'cost_center', key: 'cost_center', width: 85, align: 'center' as const,
+      render: (v: string) => v ? <span style={{ fontFamily: 'monospace' }}>{v}</span> : '-',
     },
     {
       title: t('allocationOrg.diffPrevMonth', { month: prevMonth }), key: 'prev', width: 320, align: 'center' as const,
@@ -737,7 +764,7 @@ const AllocationOrgPage: React.FC = () => {
         rowKey="id"
         loading={loading}
         size="small"
-        scroll={{ x: activeTab === 'exceptionDiff' ? 1000 : 800 }}
+        scroll={{ x: activeTab === 'exceptionDiff' ? 1500 : 1300 }}
         pagination={{
           current: page + 1,
           pageSize,

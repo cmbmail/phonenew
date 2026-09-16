@@ -107,7 +107,7 @@ public class AllocationOrgImportService {
 
     /**
      * 导入例外号码清单（生成 PUSH-EXC- 批次，change_type=exception）
-     * 模板 5 列：号码、用户名称、分机号、部门全路径、备注
+     * 模板 6 列：号码、一级分行、分摊部门、机构代码、成本中心、备注
      */
     public AllocationOrgBatch importExceptionList(MultipartFile file, Long userId, String billingMonth) {
         String batchNo = "PUSH-EXC-" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
@@ -152,7 +152,7 @@ public class AllocationOrgImportService {
         progress.setStatus("READING");
 
         try {
-            // 例外清单模板 5 列：号码、用户名称、分机号、部门全路径、备注
+            // 例外清单模板 6 列：号码、一级分行、分摊部门、机构代码、成本中心、备注
             try (InputStream is = Files.newInputStream(tempFile)) {
                 EasyExcel.read(is, new ReadListener() {
                     int count = 0;
@@ -229,44 +229,33 @@ public class AllocationOrgImportService {
 
     /**
      * 批量写入例外清单条目（PUSH-EXC- 批次，change_type=exception）
-     * 模板列：[0]号码 [1]用户名称 [2]分机号 [3]部门全路径 [4]备注
+     * 模板列：[0]号码 [1]一级分行 [2]分摊部门 [3]机构代码 [4]成本中心 [5]备注
+     * 用户名称/分机号/部门全路径置空（导入数据不参与上月通讯录对比）
      */
     private void flushExceptionBatch(Long batchId, List<java.util.Map<Integer, String>> rows, java.util.Map<String, Long> branchNameToOrgId) {
         String sql = "INSERT INTO allocation_org_entry (batch_id, phone_number, username, l1_branch, branch_org_id, " +
                      "dept_path, extension, change_type, alloc_dept, org_code, cost_center, remark, created_at, updated_at) " +
-                     "VALUES (?, ?, ?, ?, ?, ?, ?, 'exception', '', '', '', ?, NOW(), NOW())";
+                     "VALUES (?, ?, '', ?, ?, '', '', 'exception', ?, ?, ?, ?, NOW(), NOW())";
 
         jdbcTemplate.batchUpdate(sql, rows, rows.size(), (ps, row) -> {
             ps.setLong(1, batchId);
             ps.setString(2, safeGet(row, 0));  // phone_number
-            ps.setString(3, safeGet(row, 1));  // username
 
-            // 从部门全路径解析一级分行（第一段）
-            String deptPath = safeGet(row, 3);
-            String l1Branch = parseL1Branch(deptPath);
-            ps.setString(4, l1Branch);
-
+            // 一级分行直接取列值，按名称匹配分行 orgId（未匹配时设为 NULL）
+            String l1Branch = safeGet(row, 1);
+            ps.setString(3, l1Branch);
             Long branchOrgId = branchNameToOrgId.get(l1Branch);
             if (branchOrgId != null) {
-                ps.setLong(5, branchOrgId);
+                ps.setLong(4, branchOrgId);
             } else {
-                ps.setNull(5, java.sql.Types.BIGINT);
+                ps.setNull(4, java.sql.Types.BIGINT);
             }
 
-            ps.setString(6, deptPath);           // dept_path
-            ps.setString(7, safeGet(row, 2));   // extension
-            ps.setString(8, safeGet(row, 4));   // remark
+            ps.setString(5, safeGet(row, 2));  // alloc_dept 分摊部门
+            ps.setString(6, safeGet(row, 3));  // org_code 机构代码
+            ps.setString(7, safeGet(row, 4));  // cost_center 成本中心
+            ps.setString(8, safeGet(row, 5));  // remark 备注
         });
-    }
-
-    /**
-     * 从部门全路径解析一级分行（取第一段，以「-」分隔）
-     */
-    private String parseL1Branch(String deptPath) {
-        if (deptPath == null || deptPath.isBlank()) return "";
-        String trimmed = deptPath.trim();
-        int idx = trimmed.indexOf('-');
-        return idx > 0 ? trimmed.substring(0, idx) : trimmed;
     }
 
     private void doImportAsync(Path tempFile, Long batchId, String batchNo, ImportProgress progress, java.util.Map<String, Long> branchNameToOrgId) {

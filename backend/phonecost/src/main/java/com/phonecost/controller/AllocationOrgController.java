@@ -88,13 +88,30 @@ public class AllocationOrgController {
      * 查询时实时匹配器：
      * 1) 同月通讯录（directory_entry JOIN directory_batch）按号码聚合 extension/dept_path 多值（「、」分隔）
      * 2) 分摊机构对照表（allocation_org_mapping）构建 l1Branch+deptPath → orgName/orgCode/costCenterCode 映射
+     * 3) 同月例外号码清单（PUSH-EXC- 导入数据）按号码直接携带分摊部门/机构代码/成本中心（优先级高于对照表）
      */
     private static class AllocationOrgMatchResolver {
         final Map<String, String[]> extByPhone = new HashMap<>();
         final Map<String, String[]> deptByPhone = new HashMap<>();
         final Map<String, AllocationOrgMapping> mappingByBranchDept = new HashMap<>();
+        /** 号码 → [allocDept, orgCode, costCenter]（同月例外清单导入数据，分摊三列优先数据源） */
+        final Map<String, String[]> exceptionAllocByPhone = new HashMap<>();
 
-        /** 按号码取匹配结果：extension（多值）、dept_path（多值）、alloc_dept/org_code/cost_center（对照表匹配，匹配不到为空串） */
+        /** 判断例外清单条目是否携带分摊信息（三列中任一非空） */
+        static boolean hasAllocInfo(AllocationOrgEntry e) {
+            return (e.getAllocDept() != null && !e.getAllocDept().isBlank())
+                    || (e.getOrgCode() != null && !e.getOrgCode().isBlank())
+                    || (e.getCostCenter() != null && !e.getCostCenter().isBlank());
+        }
+
+        static String[] allocTrioOf(AllocationOrgEntry e) {
+            return new String[]{
+                    e.getAllocDept() != null ? e.getAllocDept() : "",
+                    e.getOrgCode() != null ? e.getOrgCode() : "",
+                    e.getCostCenter() != null ? e.getCostCenter() : ""};
+        }
+
+        /** 按号码取匹配结果：extension（多值）、dept_path（多值）、alloc_dept/org_code/cost_center（例外清单优先，对照表兜底，匹配不到为空串） */
         Map<String, String> resolve(String phoneNumber, String l1Branch) {
             Map<String, String> r = new HashMap<>();
             String phone = phoneNumber != null ? phoneNumber.trim() : "";
@@ -102,7 +119,15 @@ public class AllocationOrgController {
             String[] depts = deptByPhone.get(phone);
             r.put("extension", exts != null && exts.length > 0 ? String.join("、", exts) : "");
             r.put("dept_path", depts != null && depts.length > 0 ? String.join("、", depts) : "");
-            // 匹配不到（无部门全路径或无对照记录）→ 三列为空，便于发现对照表缺口
+            // 分摊三列：优先同月例外号码清单（导入数据直接携带），匹配不到再走对照表
+            String[] excAlloc = phone.isEmpty() ? null : exceptionAllocByPhone.get(phone);
+            if (excAlloc != null) {
+                r.put("alloc_dept", excAlloc[0]);
+                r.put("org_code", excAlloc[1]);
+                r.put("cost_center", excAlloc[2]);
+                return r;
+            }
+            // 兜底：同月通讯录部门全路径 → 对照表（匹配不到为空，便于发现对照表缺口）
             String allocDept = "";
             String orgCode = "";
             String costCenter = "";
@@ -129,6 +154,26 @@ public class AllocationOrgController {
             return r;
         }
 
+        /** 按一级分行+部门全路径从对照表匹配分摊三列（例外清单 Tab 推送条目兜底用，单一部门全路径） */
+        Map<String, String> resolveAllocByBranchDept(String l1Branch, String deptPath) {
+            Map<String, String> r = new HashMap<>();
+            String allocDept = "";
+            String orgCode = "";
+            String costCenter = "";
+            if (deptPath != null && !deptPath.isBlank()) {
+                AllocationOrgMapping m = mappingByBranchDept.get(key(l1Branch, deptPath.trim()));
+                if (m != null) {
+                    allocDept = m.getOrgName() != null ? m.getOrgName() : "";
+                    orgCode = m.getOrgCode() != null ? m.getOrgCode() : "";
+                    costCenter = m.getCostCenterCode() != null ? m.getCostCenterCode() : "";
+                }
+            }
+            r.put("alloc_dept", allocDept);
+            r.put("org_code", orgCode);
+            r.put("cost_center", costCenter);
+            return r;
+        }
+
         private static String key(String l1Branch, String deptPath) {
             String b = l1Branch != null ? l1Branch.trim() : "";
             return b + "\u0001" + deptPath;
@@ -147,7 +192,7 @@ public class AllocationOrgController {
     }
 
     /**
-     * 构建指定月份的实时匹配器（每次调用实时读取，通讯录/对照表更新后立即生效）
+     * 构建指定月份的实时匹配器（每次调用实时读取，通讯录/对照表/例外清单更新后立即生效）
      */
     private AllocationOrgMatchResolver buildMatchResolver(String billingMonth) {
         AllocationOrgMatchResolver resolver = new AllocationOrgMatchResolver();
@@ -171,18 +216,42 @@ public class AllocationOrgController {
             resolver.deptByPhone.put(e.getKey(), e.getValue().toArray(new String[0]));
         }
 
-        // 2) 分摊机构对照表：l1Branch+deptPath → mapping（同一部门全路径在同一一级分行下唯一）
-        List<AllocationOrgMapping> mappings = mappingRepo.findAllByDeletedAtIsNull();
-        for (AllocationOrgMapping m : mappings) {
+        // 2) 分摊机构对照表 + 3) 同月例外号码清单分摊信息
+        resolver.mappingByBranchDept.putAll(loadMappingByBranchDept());
+        resolver.exceptionAllocByPhone.putAll(loadExceptionAllocByPhone(billingMonth));
+        return resolver;
+    }
+
+    /**
+     * 分摊机构对照表：l1Branch+deptPath → mapping（同一部门全路径在同一一级分行下唯一）
+     */
+    private Map<String, AllocationOrgMapping> loadMappingByBranchDept() {
+        Map<String, AllocationOrgMapping> map = new HashMap<>();
+        for (AllocationOrgMapping m : mappingRepo.findAllByDeletedAtIsNull()) {
             if (m.getDeptFullPath() == null || m.getDeptFullPath().isBlank()) continue;
             String l1 = m.getL1Branch() != null ? m.getL1Branch().trim() : "";
             String[] paths = m.getDeptFullPath().split("、");
             for (String p : paths) {
                 if (p == null || p.isBlank()) continue;
-                resolver.mappingByBranchDept.putIfAbsent(l1 + "\u0001" + p.trim(), m);
+                map.putIfAbsent(l1 + "\u0001" + p.trim(), m);
             }
         }
-        return resolver;
+        return map;
+    }
+
+    /**
+     * 同月例外号码清单（PUSH-EXC-）中携带分摊信息的条目：号码 → [allocDept, orgCode, costCenter]
+     * （后写入覆盖先写入，重复导入时最新批次优先）
+     */
+    private Map<String, String[]> loadExceptionAllocByPhone(String billingMonth) {
+        Map<String, String[]> map = new HashMap<>();
+        for (AllocationOrgEntry e : entryRepo.findAllByBillingMonthAndSourceException(billingMonth)) {
+            if (e.getPhoneNumber() == null || e.getPhoneNumber().isBlank()) continue;
+            if (AllocationOrgMatchResolver.hasAllocInfo(e)) {
+                map.put(e.getPhoneNumber().trim(), AllocationOrgMatchResolver.allocTrioOf(e));
+            }
+        }
+        return map;
     }
 
     // ==================== Push from Comparison ====================
@@ -281,7 +350,7 @@ public class AllocationOrgController {
             Sheet sheet = wb.createSheet(sheetName);
             Row headerRow = sheet.createRow(0);
             String[] headers = isException
-                    ? new String[]{"号码", "用户名称", "分机号", "部门全路径", "备注"}
+                    ? new String[]{"号码", "一级分行", "分摊部门", "机构代码", "成本中心", "备注"}
                     : new String[]{"号码", "一级分行", "备注"};
             for (int i = 0; i < headers.length; i++) {
                 headerRow.createCell(i).setCellValue(headers[i]);
@@ -471,7 +540,7 @@ public class AllocationOrgController {
 
     /**
      * 按月份查询号码分摊机构明细（分页 + 搜索）
-     * source=import：号码分摊机构 Tab（导入 ALLOC-ORG-/推送 COMP-/BRN- 批次），实时匹配同月通讯录与对照表
+     * source=import：号码分摊机构 Tab（导入 ALLOC-ORG-/推送 COMP-/BRN- 批次），实时匹配同月通讯录；分摊三列优先同月例外号码清单，匹配不到再查对照表
      * source=exception：例外号码清单 Tab（PUSH-EXC- 批次），仅展示与上一自然月通讯录无差异的号码
      * source=exception-diff：差异数据 Tab，仅展示与上一自然月通讯录有差异的号码（含原值 vs 上月值对比）
      */
@@ -574,6 +643,9 @@ public class AllocationOrgController {
         String extension;          // 清单中的分机号
         String deptPath;           // 清单中的部门全路径
         String l1Branch;
+        String allocDept;          // 分摊部门（导入条目直存；推送条目：例外清单同号匹配 → 对照表兜底）
+        String orgCode;            // 机构代码
+        String costCenter;         // 成本中心
         String remark;
         List<String> changedCols;  // 差异列（用户名称/分机号/部门全路径/上月通讯录未找到）
         String prevUsername;       // 上月通讯录值
@@ -585,8 +657,9 @@ public class AllocationOrgController {
      * 构建例外号码清单/差异数据查询结果：
      * 例外清单（PUSH-EXC- 批次）按号码与上一自然月通讯录对比：
      * - 比较用户名称、分机号、部门全路径三项
-     * - 清单 Tab（diffOnly=false）：仅返回无差异条目（有差异的移入差异数据 Tab）
-     * - 差异 Tab（diffOnly=true）：仅返回有差异条目，附上月值与差异列
+     * - 导入条目（用户三字段全空）不参与上月对比，直接进例外清单 Tab
+     * - 推送条目（有用户信息）保持对比：清单 Tab（diffOnly=false）仅返回无差异条目；差异 Tab（diffOnly=true）仅返回有差异条目
+     * - 分摊三列：导入条目直接显示自身值；推送条目优先按号码从例外清单同号导入条目匹配，匹配不到再按 一级分行+部门全路径 从对照表匹配
      */
     private Map<String, Object> buildExceptionDiffResult(String billingMonth, String keyword,
                                                           int page, int size, Long scopeBranch, boolean diffOnly) {
@@ -604,6 +677,17 @@ public class AllocationOrgController {
         String prevMonth = previousNaturalMonth(billingMonth);
         Map<String, String[]> prevByPhone = loadDirectoryByPhone(prevMonth);
 
+        // 2.5 分摊三列匹配上下文：例外清单同号导入条目（后写入覆盖）+ 对照表（兜底）
+        Map<String, String[]> exceptionAllocByPhone = new HashMap<>();
+        for (AllocationOrgEntry e : entries) {
+            if (e.getPhoneNumber() == null || e.getPhoneNumber().isBlank()) continue;
+            if (AllocationOrgMatchResolver.hasAllocInfo(e)) {
+                exceptionAllocByPhone.put(e.getPhoneNumber().trim(), AllocationOrgMatchResolver.allocTrioOf(e));
+            }
+        }
+        AllocationOrgMatchResolver mappingOnly = new AllocationOrgMatchResolver();
+        mappingOnly.mappingByBranchDept.putAll(loadMappingByBranchDept());
+
         // 3. 逐条对比
         List<ExceptionDiffItem> items = new ArrayList<>();
         for (AllocationOrgEntry entry : entries) {
@@ -616,9 +700,36 @@ public class AllocationOrgController {
             item.l1Branch = entry.getL1Branch() != null ? entry.getL1Branch() : "";
             item.remark = entry.getRemark() != null ? entry.getRemark() : "";
 
+            // 分摊三列：自身携带 → 例外清单同号导入条目 → 对照表（一级分行+部门全路径）
+            String[] ownTrio = AllocationOrgMatchResolver.allocTrioOf(entry);
+            if (AllocationOrgMatchResolver.hasAllocInfo(entry)) {
+                item.allocDept = ownTrio[0];
+                item.orgCode = ownTrio[1];
+                item.costCenter = ownTrio[2];
+            } else {
+                String[] excAlloc = item.phoneNumber.trim().isEmpty()
+                        ? null : exceptionAllocByPhone.get(item.phoneNumber.trim());
+                if (excAlloc != null) {
+                    item.allocDept = excAlloc[0];
+                    item.orgCode = excAlloc[1];
+                    item.costCenter = excAlloc[2];
+                } else {
+                    Map<String, String> fallback = mappingOnly.resolveAllocByBranchDept(item.l1Branch, item.deptPath);
+                    item.allocDept = fallback.get("alloc_dept");
+                    item.orgCode = fallback.get("org_code");
+                    item.costCenter = fallback.get("cost_center");
+                }
+            }
+
+            // 上月通讯录对比：导入条目（用户三字段全空）不参与对比，视为无差异直接进例外清单 Tab
+            boolean imported = item.username.isBlank() && item.extension.isBlank() && item.deptPath.isBlank();
             String[] prev = prevByPhone.get(item.phoneNumber.trim());
             List<String> changedCols = new ArrayList<>();
-            if (prev == null) {
+            if (imported) {
+                item.prevUsername = "";
+                item.prevExtension = "";
+                item.prevDeptPath = "";
+            } else if (prev == null) {
                 changedCols.add("上月通讯录未找到");
                 item.prevUsername = "";
                 item.prevExtension = "";
@@ -639,14 +750,17 @@ public class AllocationOrgController {
             }
         }
 
-        // 4. 关键词过滤（号码/用户名称/分机号/部门全路径）
+        // 4. 关键词过滤（号码/用户名称/分机号/部门全路径/分摊三列）
         if (keyword != null && !keyword.isBlank()) {
             String kw = keyword.toLowerCase();
             items = items.stream().filter(i ->
                     i.phoneNumber.toLowerCase().contains(kw)
                             || i.username.toLowerCase().contains(kw)
                             || i.extension.toLowerCase().contains(kw)
-                            || i.deptPath.toLowerCase().contains(kw))
+                            || i.deptPath.toLowerCase().contains(kw)
+                            || i.allocDept.toLowerCase().contains(kw)
+                            || i.orgCode.toLowerCase().contains(kw)
+                            || i.costCenter.toLowerCase().contains(kw))
                     .collect(Collectors.toList());
         }
 
@@ -665,6 +779,9 @@ public class AllocationOrgController {
             e.put("extension", item.extension);
             e.put("dept_path", item.deptPath);
             e.put("l1_branch", item.l1Branch);
+            e.put("alloc_dept", item.allocDept);
+            e.put("org_code", item.orgCode);
+            e.put("cost_center", item.costCenter);
             e.put("remark", item.remark);
             e.put("prev_username", item.prevUsername);
             e.put("prev_extension", item.prevExtension);
@@ -887,7 +1004,7 @@ public class AllocationOrgController {
             headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
 
             // 导出列：号码、分机号、部门全路径、一级分行、分摊部门、机构代码、成本中心、备注
-            // import 来源：分机号/部门全路径来自同月通讯录实时匹配；分摊部门/机构代码/成本中心取自分摊机构对照表（匹配不到为空）
+            // import 来源：分机号/部门全路径来自同月通讯录实时匹配；分摊部门/机构代码/成本中心优先同月例外号码清单（按号码），匹配不到再查对照表（匹配不到为空）
             // 非来源（全量）：保持原值
             String[] headers = {"号码", "分机号", "部门全路径", "一级分行", "分摊部门", "机构代码", "成本中心", "备注"};
             Row headerRow = sheet.createRow(0);
@@ -954,9 +1071,9 @@ public class AllocationOrgController {
             headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
 
             String[] headers = diffOnly
-                    ? new String[]{"号码", "用户名称", "分机号", "部门全路径", "一级分行",
+                    ? new String[]{"号码", "用户名称", "分机号", "部门全路径", "一级分行", "分摊部门", "机构代码", "成本中心",
                     "上月用户名称(" + prevMonth + ")", "上月分机号", "上月部门全路径", "差异列", "备注"}
-                    : new String[]{"号码", "用户名称", "分机号", "部门全路径", "一级分行", "备注"};
+                    : new String[]{"号码", "用户名称", "分机号", "部门全路径", "一级分行", "分摊部门", "机构代码", "成本中心", "备注"};
             Row headerRow = sheet.createRow(0);
             for (int i = 0; i < headers.length; i++) {
                 Cell cell = headerRow.createCell(i);
@@ -973,18 +1090,21 @@ public class AllocationOrgController {
                 row.createCell(2).setCellValue(strOrEmpty(e.get("extension")));
                 row.createCell(3).setCellValue(strOrEmpty(e.get("dept_path")));
                 row.createCell(4).setCellValue(strOrEmpty(e.get("l1_branch")));
+                row.createCell(5).setCellValue(strOrEmpty(e.get("alloc_dept")));
+                row.createCell(6).setCellValue(strOrEmpty(e.get("org_code")));
+                row.createCell(7).setCellValue(strOrEmpty(e.get("cost_center")));
                 if (diffOnly) {
-                    row.createCell(5).setCellValue(strOrEmpty(e.get("prev_username")));
-                    row.createCell(6).setCellValue(strOrEmpty(e.get("prev_extension")));
-                    row.createCell(7).setCellValue(strOrEmpty(e.get("prev_dept_path")));
+                    row.createCell(8).setCellValue(strOrEmpty(e.get("prev_username")));
+                    row.createCell(9).setCellValue(strOrEmpty(e.get("prev_extension")));
+                    row.createCell(10).setCellValue(strOrEmpty(e.get("prev_dept_path")));
                     Object cols = e.get("changed_columns");
                     String colsStr = (cols instanceof List)
                             ? String.join(",", ((List<?>) cols).stream().map(String::valueOf).toArray(String[]::new))
                             : "";
-                    row.createCell(8).setCellValue(colsStr);
-                    row.createCell(9).setCellValue(strOrEmpty(e.get("remark")));
+                    row.createCell(11).setCellValue(colsStr);
+                    row.createCell(12).setCellValue(strOrEmpty(e.get("remark")));
                 } else {
-                    row.createCell(5).setCellValue(strOrEmpty(e.get("remark")));
+                    row.createCell(8).setCellValue(strOrEmpty(e.get("remark")));
                 }
             }
 
