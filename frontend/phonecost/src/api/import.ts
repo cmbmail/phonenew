@@ -146,8 +146,18 @@ export const exportAllocOrg = (billingMonth?: string, source?: string, batchId?:
   fetch(url, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   })
-    .then(res => {
-      if (!res.ok) throw new Error('Export failed');
+    .then(async res => {
+      if (!res.ok) {
+        // 读取服务端错误消息（如「请选择月份或批次」）
+        let errMsg = '';
+        try {
+          const body = await res.json();
+          errMsg = body?.message || body?.error || '';
+        } catch {
+          // ignore
+        }
+        throw new Error(errMsg || `Export failed (${res.status})`);
+      }
       // 从 Content-Disposition 提取服务端文件名
       const cd = res.headers.get('Content-Disposition') || '';
       let fileName = '号码分摊机构导出.xlsx';
@@ -165,8 +175,11 @@ export const exportAllocOrg = (billingMonth?: string, source?: string, batchId?:
       link.click();
       URL.revokeObjectURL(blobUrl);
     })
-    .catch(() => {
-      message.error('导出失败，请检查网络或重新登录');
+    .catch((err: unknown) => {
+      const msg = err instanceof Error && err.message && !err.message.startsWith('Export failed')
+        ? err.message
+        : '';
+      message.error(msg || '导出失败，请检查网络或重新登录');
     });
 };
 

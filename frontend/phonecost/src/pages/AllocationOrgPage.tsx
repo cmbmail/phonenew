@@ -767,7 +767,7 @@ const AllocationOrgPage: React.FC = () => {
                 format={() => `${importProgress.processed}/${importProgress.total}`}
               />
             )}
-            <Button icon={<ExportOutlined />} onClick={() => exportAllocOrg(importMonth, 'import')}>
+            <Button icon={<ExportOutlined />} onClick={handleExport}>
               {t('allocationOrg.export')}
             </Button>
           </Space>
