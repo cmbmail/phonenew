@@ -827,6 +827,7 @@ export default {
     exceptionSearchPlaceholder: '搜索号码/用户名称/分机号/部门全路径/分摊部门/机构代码',
     allMonths: '全部月份',
     exportSelectBatchFirst: '请先选择要导出的批次',
+    compareMonthPlaceholder: '对比月份（默认下月）',
     exceptionImportMonthTitle: '选择例外清单导入月份',
     exceptionImportMonthHint: '请选择例外号码清单所属月份',
     exceptionImportSuccess: '例外号码清单导入完成：共 {{total}} 条',
@@ -838,7 +839,7 @@ export default {
     deleteFailed: '删除失败：{{error}}',
     deleteConfirmTitle: '确认删除',
     deleteConfirmContent: '确定删除该条号码分摊记录？',
-    diffPrevMonth: '上月（{{month}}）',
+    diffPrevMonth: '对比月（{{month}}）',
     // Batch framework (月份 + 批次列表 + 批次明细)
     batchListTitle: '导入批次',
     batchDetailTitle: '批次明细',

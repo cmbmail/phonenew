@@ -16,6 +16,7 @@ import {
   updateAllocOrgEntry,
   deleteAllocOrgEntry,
   deleteAllocOrgBatch,
+  getDirectoryMonths,
 } from '../api/import';
 import { useImportProgress } from '../hooks/useImportProgress';
 import { useAuthStore } from '../store/auth';
@@ -50,6 +51,9 @@ const AllocationOrgPage: React.FC = () => {
   const [excBatchSearch, setExcBatchSearch] = useState('');
   const [excBatchLoading, setExcBatchLoading] = useState(false);
   const [excPrevMonth, setExcPrevMonth] = useState('');
+  // 差异数据 Tab：对比月份（默认=指定月+1，可手动选其他通讯录月份）
+  const [excCompareMonth, setExcCompareMonth] = useState<string | undefined>(undefined);
+  const [directoryMonths, setDirectoryMonths] = useState<string[]>([]);
 
   // import Tab：月份 + 批次列表 + 批次明细
   const [importMonth, setImportMonth] = useState<string | undefined>(undefined);
@@ -222,7 +226,12 @@ const AllocationOrgPage: React.FC = () => {
     }
   }, [activeTab, t]);
 
-  // 例外/差异 Tab：月份变化（含清空）→ 重新加载批次列表（按 Tab 来源过滤，空月份=全部批次）
+  // 通讯录月份列表（差异 Tab 对比月份下拉选项）+ 默认对比月 = 指定月 + 1
+  useEffect(() => {
+    getDirectoryMonths().then((m) => setDirectoryMonths(m || [])).catch(() => {});
+  }, []);
+
+  // 例外/差异 Tab：月份变化 → 重置批次 + 默认对比月份 = 指定月 + 1
   useEffect(() => {
     if (activeTab === 'exception' || activeTab === 'exceptionDiff') {
       setExcSelectedBatchId(null);
@@ -230,6 +239,10 @@ const AllocationOrgPage: React.FC = () => {
       setExcBatchTotal(0);
       setExcBatchPage(0);
       setExcBatchSearch('');
+      // 差异数据 Tab：默认对比月 = 指定月 + 1
+      if (excMonth) {
+        setExcCompareMonth(dayjs(excMonth).add(1, 'month').format('YYYY-MM'));
+      }
       fetchExcBatches(excMonth);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -244,16 +257,17 @@ const AllocationOrgPage: React.FC = () => {
       const res = await getAllocOrgEntriesByBatch(
         id, searchVal ?? excBatchSearch, p ?? excBatchPage, s ?? excBatchPageSize,
         activeTab === 'exceptionDiff' ? 'exception-diff' : 'exception',
+        activeTab === 'exceptionDiff' ? excCompareMonth : undefined,
       );
       setExcBatchEntries(res.entries || []);
       setExcBatchTotal(res.total || 0);
-      setExcPrevMonth((res as Record<string, unknown>).prev_month as string || '');
+      setExcPrevMonth((res as Record<string, unknown>).compare_month as string || '');
     } catch {
       message.error(t('allocationOrg.fetchBatchEntriesFailed'));
     } finally {
       setExcBatchLoading(false);
     }
-  }, [excSelectedBatchId, excBatchSearch, excBatchPage, excBatchPageSize, activeTab, t]);
+  }, [excSelectedBatchId, excBatchSearch, excBatchPage, excBatchPageSize, activeTab, excCompareMonth, t]);
 
   const selectExcBatch = useCallback((id: number) => {
     setExcSelectedBatchId(id);
@@ -261,6 +275,14 @@ const AllocationOrgPage: React.FC = () => {
     setExcBatchSearch('');
     fetchExcBatchEntries('', 0, excBatchPageSize, id);
   }, [fetchExcBatchEntries, excBatchPageSize]);
+
+  // 差异 Tab：对比月份变化 → 重新加载选中批次明细
+  useEffect(() => {
+    if (activeTab === 'exceptionDiff' && excSelectedBatchId != null) {
+      fetchExcBatchEntries(excBatchSearch, excBatchPage, excBatchPageSize);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [excCompareMonth]);
 
   // ==================== Tab change ====================
   const handleTabChange = (key: string) => {
@@ -352,7 +374,12 @@ const AllocationOrgPage: React.FC = () => {
         message.warning(t('allocationOrg.exportSelectBatchFirst'));
         return;
       }
-      exportAllocOrg(excMonth, activeTab === 'exceptionDiff' ? 'exception-diff' : 'exception', excSelectedBatchId);
+      exportAllocOrg(
+        excMonth,
+        activeTab === 'exceptionDiff' ? 'exception-diff' : 'exception',
+        excSelectedBatchId,
+        activeTab === 'exceptionDiff' ? excCompareMonth : undefined,
+      );
     }
   };
 
@@ -552,9 +579,9 @@ const AllocationOrgPage: React.FC = () => {
       title: t('allocationOrg.diffPrevMonth', { month: excPrevMonth }), key: 'prev', width: 320, align: 'center' as const,
       render: (_: unknown, record: Record<string, unknown>) => {
         const items = [
-          { label: t('dataComparison.usernameCol'), cur: record.username, prev: record.prev_username },
-          { label: t('dataComparison.extensionCol'), cur: record.extension, prev: record.prev_extension },
-          { label: t('dataComparison.deptPathCol'), cur: record.dept_path, prev: record.prev_dept_path },
+          { label: t('dataComparison.usernameCol'), cur: record.username, prev: record.compare_username },
+          { label: t('dataComparison.extensionCol'), cur: record.extension, prev: record.compare_extension },
+          { label: t('dataComparison.deptPathCol'), cur: record.dept_path, prev: record.compare_dept_path },
         ];
         return (
           <div style={{ textAlign: 'left' }}>
@@ -853,6 +880,15 @@ const AllocationOrgPage: React.FC = () => {
                 style={{ width: 160 }}
                 options={availableMonths.map((m: string) => ({ value: m, label: m }))}
               />
+              {isDiff && (
+                <Select
+                  value={excCompareMonth}
+                  onChange={(v) => setExcCompareMonth(v)}
+                  placeholder={t('allocationOrg.compareMonthPlaceholder')}
+                  style={{ width: 160 }}
+                  options={directoryMonths.map((m: string) => ({ value: m, label: m }))}
+                />
+              )}
               <Button size="small" icon={<ReloadOutlined />} onClick={() => fetchExcBatches(excMonth)}>
                 {t('common.refresh')}
               </Button>

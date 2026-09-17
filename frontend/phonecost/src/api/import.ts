@@ -30,11 +30,12 @@ export const getAllocOrgBatches = (billingMonth?: string, source?: string) => {
   return apiGet<Array<Record<string, any>>>('/import/allocation-org/batches', params);
 };
 
-// 号码分摊机构批次明细（按批次 ID 分页查询；source: exception=例外批次全部条目+差异标记, exception-diff=仅差异条目）
-export const getAllocOrgEntriesByBatch = (batchId: number, search?: string, page = 0, size = 50, source?: string) => {
+// 号码分摊机构批次明细（按批次 ID 分页查询；source: exception=例外批次全部条目+差异标记, exception-diff=仅差异条目；compareMonth=对比月通讯录月份，默认=批次月+1）
+export const getAllocOrgEntriesByBatch = (batchId: number, search?: string, page = 0, size = 50, source?: string, compareMonth?: string) => {
   const params: Record<string, string> = { page: String(page), size: String(size) };
   if (search) params.search = search;
   if (source) params.source = source;
+  if (compareMonth) params.compare_month = compareMonth;
   return apiGet<{
     entries: Array<{
       id: number;
@@ -48,23 +49,24 @@ export const getAllocOrgEntriesByBatch = (batchId: number, search?: string, page
       org_code: string;
       cost_center: string;
       remark: string;
-      prev_username?: string;
-      prev_extension?: string;
-      prev_dept_path?: string;
+      compare_username?: string;
+      compare_extension?: string;
+      compare_dept_path?: string;
       changed_columns?: string[];
       has_diff?: boolean;
     }>;
     total: number;
     page: number;
     size: number;
-    prev_month?: string;
+    compare_month?: string;
   }>(`/import/allocation-org/entries-by-batch/${batchId}`, params);
 };
 
-export const getAllocOrgEntriesByMonth = (billingMonth: string, search?: string, page = 0, size = 50, source?: string) => {
+export const getAllocOrgEntriesByMonth = (billingMonth: string, search?: string, page = 0, size = 50, source?: string, compareMonth?: string) => {
   const params: Record<string, string> = { billing_month: billingMonth, page: String(page), size: String(size) };
   if (search) params.search = search;
   if (source) params.source = source;
+  if (compareMonth) params.compare_month = compareMonth;
   return apiGet<{
     entries: Array<{
       id: number;
@@ -78,15 +80,15 @@ export const getAllocOrgEntriesByMonth = (billingMonth: string, search?: string,
       cost_center: string;
       remark: string;
       username?: string;
-      prev_username?: string;
-      prev_extension?: string;
-      prev_dept_path?: string;
+      compare_username?: string;
+      compare_extension?: string;
+      compare_dept_path?: string;
       changed_columns?: string;
     }>;
     total: number;
     page: number;
     size: number;
-    prev_month?: string;
+    compare_month?: string;
   }>('/import/allocation-org/entries-by-month', params);
 };
 
@@ -134,13 +136,14 @@ export const downloadAllocOrgTemplate = (source?: string) => {
     });
 };
 
-export const exportAllocOrg = (billingMonth?: string, source?: string, batchId?: number) => {
+export const exportAllocOrg = (billingMonth?: string, source?: string, batchId?: number, compareMonth?: string) => {
   const token = useAuthStore.getState().token;
   const baseUrl = getApiBaseUrl();
   const params: string[] = [];
   if (billingMonth) params.push(`billing_month=${encodeURIComponent(billingMonth)}`);
   if (source) params.push(`source=${encodeURIComponent(source)}`);
   if (batchId != null) params.push(`batch_id=${batchId}`);
+  if (compareMonth) params.push(`compare_month=${encodeURIComponent(compareMonth)}`);
   const queryStr = params.length > 0 ? `?${params.join('&')}` : '';
   const url = `${baseUrl}/import/allocation-org/export${queryStr}`;
   fetch(url, {

@@ -502,6 +502,7 @@ public class AllocationOrgController {
             @PathVariable Long batchId,
             @RequestParam(value = "search", required = false) String search,
             @RequestParam(value = "source", required = false) String source,
+            @RequestParam(value = "compare_month", required = false) String compareMonth,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size,
             @RequestAttribute("userId") Long userId,
@@ -514,13 +515,13 @@ public class AllocationOrgController {
         AllocationOrgBatch batch = batchRepo.findByIdAndDeletedAtIsNull(batchId).orElse(null);
         String batchMonth = batch != null ? batch.getBillingMonth() : null;
 
-        // 例外批次（推送 PUSH-EXC- / 导入 EXC-IMP-）：原始值 + 上月对比 + 分摊匹配（与按月聚合视图一致）
+        // 例外批次（推送 PUSH-EXC- / 导入 EXC-IMP-）：原始值 + 对比月通讯录差异标记 + 分摊匹配（与按月聚合视图一致）
         boolean isExceptionBatch = batch != null && batch.getBatchNo() != null
                 && (batch.getBatchNo().startsWith("PUSH-EXC-") || batch.getBatchNo().startsWith("EXC-IMP-"));
         if (isExceptionBatch) {
             boolean diffOnly = "exception-diff".equalsIgnoreCase(source);
             return ResponseEntity.ok(ApiResponse.ok(
-                    buildExceptionBatchDetail(batchId, batchMonth, keyword, page, size, scopeBranch, diffOnly)));
+                    buildExceptionBatchDetail(batchId, batchMonth, compareMonth, keyword, page, size, scopeBranch, diffOnly)));
         }
 
         // 全量加载该批次未删除条目（<=200/页由内存分页处理）
@@ -592,14 +593,16 @@ public class AllocationOrgController {
     /**
      * 按月份查询号码分摊机构明细（分页 + 搜索）
      * source=import：号码分摊机构 Tab（导入 ALLOC-ORG-/推送 COMP-/BRN- 批次），实时匹配同月通讯录；分摊三列优先同月例外号码清单，匹配不到再查对照表
-     * source=exception：例外号码清单 Tab（导入 EXC-IMP- + 推送 PUSH-EXC- 批次聚合），仅展示与上一自然月通讯录无差异的号码
-     * source=exception-diff：差异数据 Tab，仅展示与上一自然月通讯录有差异的号码（含原值 vs 上月值对比）
+     * source=exception：例外号码清单 Tab（导入 EXC-IMP- + 推送 PUSH-EXC- 批次聚合），仅展示与对比月通讯录无差异的号码
+     * source=exception-diff：差异数据 Tab，仅展示与对比月通讯录有差异的号码（含原值 vs 对比月值对比）
+     * compare_month：对比通讯录月份，默认 = billing_month + 1（下一自然月）
      */
     @GetMapping("/entries-by-month")
     public ResponseEntity<ApiResponse<Map<String, Object>>> listEntriesByMonth(
             @RequestParam("billing_month") String billingMonth,
             @RequestParam(value = "search", required = false) String search,
             @RequestParam(value = "source", required = false) String source,
+            @RequestParam(value = "compare_month", required = false) String compareMonth,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size,
             @RequestAttribute("userId") Long userId,
@@ -614,9 +617,9 @@ public class AllocationOrgController {
         boolean isDiffOnly = "exception-diff".equalsIgnoreCase(source);
 
         if (isException) {
-            // 例外号码清单/差异数据：全量加载后与上一自然月通讯录对比，内存分页
+            // 例外号码清单/差异数据：全量加载后与对比月通讯录对比，内存分页
             return ResponseEntity.ok(ApiResponse.ok(
-                    buildExceptionDiffResult(billingMonth, keyword, page, size, scopeBranch, isDiffOnly)));
+                    buildExceptionDiffResult(billingMonth, compareMonth, keyword, page, size, scopeBranch, isDiffOnly)));
         }
 
         Page<AllocationOrgEntry> pageResult;
@@ -684,9 +687,9 @@ public class AllocationOrgController {
         return ResponseEntity.ok(ApiResponse.ok(result));
     }
 
-    // ==================== Exception list vs 上月通讯录对比 ====================
+    // ==================== Exception list vs 对比月份通讯录对比（默认指定月+1） ====================
 
-    /** 例外清单条目与上月通讯录的对比结果 */
+    /** 例外清单条目与对比月通讯录的对比结果 */
     private static class ExceptionDiffItem {
         String id;                 // entry id
         String phoneNumber;
@@ -694,21 +697,21 @@ public class AllocationOrgController {
         String extension;          // 清单中的分机号
         String deptPath;           // 清单中的部门全路径
         String l1Branch;
-        String allocDept;          // 分摊部门（导入条目直存；推送条目：例外清单同号匹配 → 对照表兜底）
+        String allocDept;          // 分摊部门（导入条目直存；推送条目：例外清单同号匹配 → 对照表兑底）
         String orgCode;            // 机构代码
         String costCenter;         // 成本中心
         String remark;
-        List<String> changedCols;  // 差异列（用户名称/分机号/部门全路径/上月通讯录未找到）
-        String prevUsername;       // 上月通讯录值
-        String prevExtension;
-        String prevDeptPath;
+        List<String> changedCols;  // 差异列（用户名称/分机号/部门全路径/对比月通讯录未找到）
+        String compareUsername;    // 对比月通讯录值
+        String compareExtension;
+        String compareDeptPath;
     }
 
     /**
      * 构建例外号码清单/差异数据查询结果（按月聚合全部例外批次：导入 EXC-IMP- + 推送 PUSH-EXC-）：
      * 复用 processExceptionEntries 统一处理逻辑
      */
-    private Map<String, Object> buildExceptionDiffResult(String billingMonth, String keyword,
+    private Map<String, Object> buildExceptionDiffResult(String billingMonth, String compareMonth, String keyword,
                                                           int page, int size, Long scopeBranch, boolean diffOnly) {
         // 1. 加载例外清单条目（导入 + 推送，按月聚合）
         List<AllocationOrgEntry> entries;
@@ -719,15 +722,15 @@ public class AllocationOrgController {
         } else {
             entries = entryRepo.findAllByBillingMonthAndSourceExceptionAndBranchOrgId(billingMonth, scopeBranch);
         }
-        return processExceptionEntries(entries, billingMonth, keyword, page, size, diffOnly);
+        return processExceptionEntries(entries, billingMonth, compareMonth, keyword, page, size, diffOnly);
     }
 
     /**
      * 单个例外批次（推送 PUSH-EXC- / 导入 EXC-IMP-）明细查询结果：
-     * - diffOnly=false：该批次全部条目（原始值 + 上月对比差异标记，不过滤）
-     * - diffOnly=true：该批次仅差异条目（附上月对比值与差异列）
+     * - diffOnly=false：该批次全部条目（原始值 + 对比月差异标记，不过滤）
+     * - diffOnly=true：该批次仅差异条目（附对比月值与差异列）
      */
-    private Map<String, Object> buildExceptionBatchDetail(Long batchId, String batchMonth, String keyword,
+    private Map<String, Object> buildExceptionBatchDetail(Long batchId, String batchMonth, String compareMonth, String keyword,
                                                           int page, int size, Long scopeBranch, boolean diffOnly) {
         List<AllocationOrgEntry> all = entryRepo.findByBatchIdAndDeletedAtIsNull(batchId);
         List<AllocationOrgEntry> scoped;
@@ -739,22 +742,23 @@ public class AllocationOrgController {
             scoped = all.stream().filter(e -> scopeBranch.equals(e.getBranchOrgId())).toList();
         }
         // 批次明细视图：diffOnly=true 仅差异；否则全部条目（null 不过滤）
-        return processExceptionEntries(scoped, batchMonth, keyword, page, size, diffOnly ? Boolean.TRUE : null);
+        return processExceptionEntries(scoped, batchMonth, compareMonth, keyword, page, size, diffOnly ? Boolean.TRUE : null);
     }
 
     /**
      * 例外条目统一处理（按月聚合与单批次明细共用）：
-     * - 与上一自然月通讯录对比：比较用户名称、分机号、部门全路径三项
-     * - 导入条目（用户三字段全空）不参与上月对比，视为无差异
-     * - 分摊三列：自身携带 → 同月例外清单同号导入条目 → 对照表（一级分行+部门全路径）兑底
+     * - 与「对比月份」通讯录对比：比较用户名称、分机号、部门全路径三项；对比月份默认 = 指定月 +1（下月），可传参指定
+     * - 导入条目（用户三字段全空）不参与对比，视为无差异
+     * - 分摊三列：自身携带 → 同月例外清单同号导入条目 → 对照表（一级分行+部门全路径）兜底
      * - diffOnly 过滤：null=不过滤（批次明细全部条目）；false=仅无差异（按月清单视图）；true=仅差异（差异视图）
      * - 关键词过滤 → 内存分页
      */
     private Map<String, Object> processExceptionEntries(List<AllocationOrgEntry> entries, String billingMonth,
-                                                        String keyword, int page, int size, Boolean diffOnly) {
-        // 1. 加载上一自然月通讯录（按号码聚合）
-        String prevMonth = previousNaturalMonth(billingMonth);
-        Map<String, String[]> prevByPhone = loadDirectoryByPhone(prevMonth);
+                                                        String compareMonth, String keyword, int page, int size, Boolean diffOnly) {
+        // 1. 加载对比月通讯录（默认 = 指定月 + 1，即下一自然月；可传 compare_month 指定）
+        String cmpMonth = (compareMonth != null && !compareMonth.isBlank())
+                ? compareMonth.trim() : nextNaturalMonth(billingMonth);
+        Map<String, String[]> compareByPhone = loadDirectoryByPhone(cmpMonth);
 
         // 2. 分摊三列匹配上下文：同月例外清单携带分摊信息的条目（后写入覆盖）+ 对照表（兜底）
         Map<String, String[]> exceptionAllocByPhone = loadExceptionAllocByPhone(billingMonth);
@@ -794,26 +798,26 @@ public class AllocationOrgController {
                 }
             }
 
-            // 上月通讯录对比：导入条目（用户三字段全空）不参与对比，视为无差异直接进例外清单 Tab
+            // 对比月通讯录对比：导入条目（用户三字段全空）不参与对比，视为无差异直接进例外清单 Tab
             boolean imported = item.username.isBlank() && item.extension.isBlank() && item.deptPath.isBlank();
-            String[] prev = prevByPhone.get(item.phoneNumber.trim());
+            String[] cmp = compareByPhone.get(item.phoneNumber.trim());
             List<String> changedCols = new ArrayList<>();
             if (imported) {
-                item.prevUsername = "";
-                item.prevExtension = "";
-                item.prevDeptPath = "";
-            } else if (prev == null) {
-                changedCols.add("上月通讯录未找到");
-                item.prevUsername = "";
-                item.prevExtension = "";
-                item.prevDeptPath = "";
+                item.compareUsername = "";
+                item.compareExtension = "";
+                item.compareDeptPath = "";
+            } else if (cmp == null) {
+                changedCols.add("对比月通讯录未找到");
+                item.compareUsername = "";
+                item.compareExtension = "";
+                item.compareDeptPath = "";
             } else {
-                item.prevUsername = prev[0];
-                item.prevExtension = prev[1];
-                item.prevDeptPath = prev[2];
-                if (!item.username.trim().equals(item.prevUsername)) changedCols.add("用户名称");
-                if (!item.extension.trim().equals(item.prevExtension)) changedCols.add("分机号");
-                if (!item.deptPath.trim().equals(item.prevDeptPath)) changedCols.add("部门全路径");
+                item.compareUsername = cmp[0];
+                item.compareExtension = cmp[1];
+                item.compareDeptPath = cmp[2];
+                if (!item.username.trim().equals(item.compareUsername)) changedCols.add("用户名称");
+                if (!item.extension.trim().equals(item.compareExtension)) changedCols.add("分机号");
+                if (!item.deptPath.trim().equals(item.compareDeptPath)) changedCols.add("部门全路径");
             }
             item.changedCols = changedCols;
 
@@ -858,12 +862,12 @@ public class AllocationOrgController {
             e.put("org_code", item.orgCode);
             e.put("cost_center", item.costCenter);
             e.put("remark", item.remark);
-            e.put("prev_username", item.prevUsername);
-            e.put("prev_extension", item.prevExtension);
-            e.put("prev_dept_path", item.prevDeptPath);
+            e.put("compare_username", item.compareUsername);
+            e.put("compare_extension", item.compareExtension);
+            e.put("compare_dept_path", item.compareDeptPath);
             e.put("changed_columns", item.changedCols);
             e.put("has_diff", !item.changedCols.isEmpty());
-            e.put("prev_month", prevMonth);
+            e.put("compare_month", cmpMonth);
             rows.add(e);
         }
 
@@ -872,7 +876,7 @@ public class AllocationOrgController {
         result.put("total", (long) items.size());
         result.put("page", page);
         result.put("size", size);
-        result.put("prev_month", prevMonth);
+        result.put("compare_month", cmpMonth);
         return result;
     }
 
@@ -881,6 +885,16 @@ public class AllocationOrgController {
         try {
             YearMonth ym = YearMonth.parse(billingMonth);
             return ym.minusMonths(1).toString();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    /** 计算下一自然月（YYYY-MM 格式），差异数据默认对比月份 = 指定月 + 1 */
+    private String nextNaturalMonth(String billingMonth) {
+        try {
+            YearMonth ym = YearMonth.parse(billingMonth);
+            return ym.plusMonths(1).toString();
         } catch (Exception e) {
             return "";
         }
@@ -1042,6 +1056,7 @@ public class AllocationOrgController {
             @RequestParam(value = "billing_month", required = false) String billingMonth,
             @RequestParam(value = "source", required = false) String source,
             @RequestParam(value = "batch_id", required = false) Long batchId,
+            @RequestParam(value = "compare_month", required = false) String compareMonth,
             @RequestAttribute("userId") Long userId,
             @RequestAttribute("role") Byte role) {
         Long scopeBranch = resolveScopeBranchOrg(role, userId);
@@ -1058,7 +1073,7 @@ public class AllocationOrgController {
                     && (batch.getBatchNo().startsWith("PUSH-EXC-") || batch.getBatchNo().startsWith("EXC-IMP-"));
             if (batchIsException) {
                 // 例外批次：source=exception 全部条目 / source=exception-diff 仅差异条目（与页面批次明细一致）
-                Map<String, Object> data = buildExceptionBatchDetail(batchId, batchMonth, null, 0, Integer.MAX_VALUE, scopeBranch, isDiffOnly);
+                Map<String, Object> data = buildExceptionBatchDetail(batchId, batchMonth, compareMonth, null, 0, Integer.MAX_VALUE, scopeBranch, isDiffOnly);
                 return exportExceptionList(batchMonth, isDiffOnly, data, batch.getBatchNo());
             }
             // import 批次（ALLOC-ORG-/COMP-/BRN-）：按批次数据导出（实时匹配列，与页面批次明细一致）
@@ -1075,9 +1090,9 @@ public class AllocationOrgController {
             throw new IllegalArgumentException("请选择月份或批次");
         }
 
-        // 例外号码清单/差异数据导出（附上月对比列）
+        // 例外号码清单/差异数据导出（附对比月列）
         if (isException) {
-            Map<String, Object> data = buildExceptionDiffResult(billingMonth, null, 0, Integer.MAX_VALUE, scopeBranch, isDiffOnly);
+            Map<String, Object> data = buildExceptionDiffResult(billingMonth, compareMonth, null, 0, Integer.MAX_VALUE, scopeBranch, isDiffOnly);
             return exportExceptionList(billingMonth, isDiffOnly, data, null);
         }
 
@@ -1176,7 +1191,7 @@ public class AllocationOrgController {
     @SuppressWarnings("unchecked")
     private ResponseEntity<byte[]> exportExceptionList(String billingMonth, boolean diffOnly, Map<String, Object> data, String batchNo) {
         List<Map<String, Object>> entries = (List<Map<String, Object>>) data.get("entries");
-        String prevMonth = String.valueOf(data.getOrDefault("prev_month", ""));
+        String compareMonth = String.valueOf(data.getOrDefault("compare_month", ""));
 
         try (Workbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             String sheetName = diffOnly ? "差异数据" : "例外号码清单";
@@ -1191,7 +1206,7 @@ public class AllocationOrgController {
 
             String[] headers = diffOnly
                     ? new String[]{"号码", "用户名称", "分机号", "部门全路径", "一级分行", "分摊部门", "机构代码", "成本中心",
-                    "上月用户名称(" + prevMonth + ")", "上月分机号", "上月部门全路径", "差异列", "备注"}
+                    "对比月用户名称(" + compareMonth + ")", "对比月分机号", "对比月部门全路径", "差异列", "备注"}
                     : new String[]{"号码", "用户名称", "分机号", "部门全路径", "一级分行", "分摊部门", "机构代码", "成本中心", "备注"};
             Row headerRow = sheet.createRow(0);
             for (int i = 0; i < headers.length; i++) {
@@ -1213,9 +1228,9 @@ public class AllocationOrgController {
                 row.createCell(6).setCellValue(strOrEmpty(e.get("org_code")));
                 row.createCell(7).setCellValue(strOrEmpty(e.get("cost_center")));
                 if (diffOnly) {
-                    row.createCell(8).setCellValue(strOrEmpty(e.get("prev_username")));
-                    row.createCell(9).setCellValue(strOrEmpty(e.get("prev_extension")));
-                    row.createCell(10).setCellValue(strOrEmpty(e.get("prev_dept_path")));
+                    row.createCell(8).setCellValue(strOrEmpty(e.get("compare_username")));
+                    row.createCell(9).setCellValue(strOrEmpty(e.get("compare_extension")));
+                    row.createCell(10).setCellValue(strOrEmpty(e.get("compare_dept_path")));
                     Object cols = e.get("changed_columns");
                     String colsStr = (cols instanceof List)
                             ? String.join(",", ((List<?>) cols).stream().map(String::valueOf).toArray(String[]::new))
