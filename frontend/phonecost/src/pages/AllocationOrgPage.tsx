@@ -51,9 +51,14 @@ const AllocationOrgPage: React.FC = () => {
   const [excBatchSearch, setExcBatchSearch] = useState('');
   const [excBatchLoading, setExcBatchLoading] = useState(false);
   const [excPrevMonth, setExcPrevMonth] = useState('');
-  // 差异数据 Tab：对比月份（默认=指定月+1，可手动选其他通讯录月份）
+  // 差异数据 Tab：对比月份（默认=指定月+1，通过对比弹窗确认）
   const [excCompareMonth, setExcCompareMonth] = useState<string | undefined>(undefined);
   const [directoryMonths, setDirectoryMonths] = useState<string[]>([]);
+  // 差异数据 Tab：对比弹窗
+  const [diffModalOpen, setDiffModalOpen] = useState(false);
+  const [diffModalMonth, setDiffModalMonth] = useState<string | undefined>(undefined);
+  // 差异数据是否已生成（点击对比确认后置 true，切换批次/月份时重置）
+  const [diffGenerated, setDiffGenerated] = useState(false);
 
   // import Tab：月份 + 批次列表 + 批次明细
   const [importMonth, setImportMonth] = useState<string | undefined>(undefined);
@@ -235,9 +240,10 @@ const AllocationOrgPage: React.FC = () => {
       setExcBatchTotal(0);
       setExcBatchPage(0);
       setExcBatchSearch('');
-      // 差异数据 Tab：默认对比月 = 指定月 + 1
-      if (excMonth) {
-        setExcCompareMonth(dayjs(excMonth).add(1, 'month').format('YYYY-MM'));
+      // 差异数据 Tab：月份变化时重置对比状态
+      if (activeTab === 'exceptionDiff') {
+        setDiffGenerated(false);
+        setExcCompareMonth(undefined);
       }
       fetchExcBatches(excMonth);
     }
@@ -270,16 +276,38 @@ const AllocationOrgPage: React.FC = () => {
     setExcSelectedBatchId(id);
     setExcBatchPage(0);
     setExcBatchSearch('');
-    fetchExcBatchEntries('', 0, excBatchPageSize, id);
-  }, [fetchExcBatchEntries, excBatchPageSize]);
-
-  // 差异 Tab：对比月份变化 → 重新加载选中批次明细
-  useEffect(() => {
-    if (activeTab === 'exceptionDiff' && excSelectedBatchId != null) {
-      fetchExcBatchEntries(excBatchSearch, excBatchPage, excBatchPageSize);
+    // 差异数据 Tab：选中批次后不自动加载明细，需点「对比」按钮
+    if (activeTab === 'exceptionDiff') {
+      setDiffGenerated(false);
+      setExcBatchEntries([]);
+      setExcBatchTotal(0);
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [excCompareMonth]);
+    fetchExcBatchEntries('', 0, excBatchPageSize, id);
+  }, [fetchExcBatchEntries, excBatchPageSize, activeTab]);
+
+  // 差异数据 Tab：点击「对比」按钮 → 打开弹窗（默认对比月=批次月+1）
+  const openDiffCompare = () => {
+    if (excSelectedBatchId == null) {
+      message.warning(t('allocationOrg.diffSelectBatchFirst'));
+      return;
+    }
+    // 计算默认对比月 = 选中批次月份 + 1
+    const selBatch = excBatches.find((b) => b.id === excSelectedBatchId);
+    const batchMonth = selBatch?.billing_month as string | undefined;
+    const defaultCmp = batchMonth ? dayjs(batchMonth).add(1, 'month').format('YYYY-MM') : undefined;
+    setDiffModalMonth(defaultCmp);
+    setDiffModalOpen(true);
+  };
+
+  // 差异数据 Tab：确认对比 → 加载差异明细
+  const confirmDiffCompare = () => {
+    setExcCompareMonth(diffModalMonth);
+    setDiffModalOpen(false);
+    setDiffGenerated(true);
+    // 立即加载差异明细
+    fetchExcBatchEntries('', 0, excBatchPageSize);
+  };
 
   // ==================== Tab change ====================
   const handleTabChange = (key: string) => {
@@ -293,6 +321,8 @@ const AllocationOrgPage: React.FC = () => {
     setExcBatchPage(0);
     setExcBatchSearch('');
     setExcPrevMonth('');
+    setDiffGenerated(false);
+    setExcCompareMonth(undefined);
     setSelectedBatchId(null);
     setBatchEntries([]);
     setBatchTotal(0);
@@ -879,13 +909,14 @@ const AllocationOrgPage: React.FC = () => {
                 options={availableMonths.map((m: string) => ({ value: m, label: m }))}
               />
               {isDiff && (
-                <Select
-                  value={excCompareMonth}
-                  onChange={(v) => setExcCompareMonth(v)}
-                  placeholder={t('allocationOrg.compareMonthPlaceholder')}
-                  style={{ width: 160 }}
-                  options={directoryMonths.map((m: string) => ({ value: m, label: m }))}
-                />
+                <Button
+                  size="small"
+                  type="primary"
+                  disabled={excSelectedBatchId == null}
+                  onClick={openDiffCompare}
+                >
+                  {t('allocationOrg.diffCompareBtn')}
+                </Button>
               )}
               <Button size="small" icon={<ReloadOutlined />} onClick={() => fetchExcBatches(excMonth)}>
                 {t('common.refresh')}
@@ -925,7 +956,7 @@ const AllocationOrgPage: React.FC = () => {
           </Row>
         </Card>
 
-        {/* 批次列表（PUSH-EXC-） */}
+        {/* 批次列表（EXC-IMP- 导入批次） */}
         <Card size="small" title={t('allocationOrg.batchListTitle')} style={{ marginBottom: 16 }}>
           <Table
             dataSource={excBatches}
@@ -940,8 +971,41 @@ const AllocationOrgPage: React.FC = () => {
           />
         </Card>
 
-        {/* 批次明细：全部原始条目（例外清单）/ 仅差异条目（差异数据） */}
-        {excSelectedBatchId != null ? (
+        {/* 批次明细：全部原始条目（例外清单）/ 差异条目（差异数据，需点对比后生成） */}
+        {isDiff ? (
+          diffGenerated && excSelectedBatchId != null ? (
+            <Card size="small" title={`${t('allocationOrg.batchDetailTitle')}（${t('allocationOrg.diffPrevMonth', { month: excPrevMonth })}})`}>
+              <Space wrap style={{ marginBottom: 12 }}>
+                <Input.Search
+                  placeholder={t('allocationOrg.exceptionSearchPlaceholder')}
+                  style={{ width: 300 }}
+                  allowClear
+                  onSearch={(val) => { setExcBatchSearch(val); setExcBatchPage(0); fetchExcBatchEntries(val, 0, excBatchPageSize); }}
+                />
+                <span style={{ color: '#999', fontSize: 12 }}>{t('common.paginationTotal', { total: excBatchTotal })}</span>
+              </Space>
+              <Table
+                dataSource={excBatchEntries}
+                columns={excDiffBatchColumns}
+                rowKey="id"
+                size="small"
+                loading={excBatchLoading}
+                pagination={{
+                  current: excBatchPage + 1,
+                  pageSize: excBatchPageSize,
+                  total: excBatchTotal,
+                  showSizeChanger: true,
+                  pageSizeOptions: ['20', '50', '100'],
+                  showTotal: (total: number) => t('common.paginationTotal', { total }),
+                  onChange: (p: number, s: number) => { setExcBatchPage(p - 1); setExcBatchPageSize(s); fetchExcBatchEntries(excBatchSearch, p - 1, s); },
+                }}
+                scroll={{ x: 1700 }}
+              />
+            </Card>
+          ) : (
+            <Card size="small"><div style={{ color: '#999', textAlign: 'center', padding: 24 }}>{excSelectedBatchId != null ? t('allocationOrg.diffSelectBatchFirst') : t('allocationOrg.noBatchSelected')}</div></Card>
+          )
+        ) : excSelectedBatchId != null ? (
           <Card size="small" title={t('allocationOrg.batchDetailTitle')}>
             <Space wrap style={{ marginBottom: 12 }}>
               <Input.Search
@@ -954,7 +1018,7 @@ const AllocationOrgPage: React.FC = () => {
             </Space>
             <Table
               dataSource={excBatchEntries}
-              columns={isDiff ? excDiffBatchColumns : excBatchColumns}
+              columns={excBatchColumns}
               rowKey="id"
               size="small"
               loading={excBatchLoading}
@@ -967,7 +1031,7 @@ const AllocationOrgPage: React.FC = () => {
                 showTotal: (total: number) => t('common.paginationTotal', { total }),
                 onChange: (p: number, s: number) => { setExcBatchPage(p - 1); setExcBatchPageSize(s); fetchExcBatchEntries(excBatchSearch, p - 1, s); },
               }}
-              scroll={{ x: isDiff ? 1700 : 1400 }}
+              scroll={{ x: 1400 }}
             />
           </Card>
         ) : (
@@ -1076,6 +1140,27 @@ const AllocationOrgPage: React.FC = () => {
             setExcBillingMonth(val);
           }}
           allowClear={false}
+        />
+      </Modal>
+
+      {/* 差异数据 Tab：对比月份选择弹窗 */}
+      <Modal
+        title={t('allocationOrg.diffCompareTitle')}
+        open={diffModalOpen}
+        onOk={confirmDiffCompare}
+        onCancel={() => setDiffModalOpen(false)}
+        okText={t('allocationOrg.diffCompareConfirm')}
+        cancelText={t('common.cancel')}
+        okButtonProps={{ disabled: !diffModalMonth }}
+      >
+        <p style={{ marginBottom: 12, color: '#666' }}>{t('allocationOrg.diffCompareHint')}</p>
+        <div style={{ marginBottom: 8, fontWeight: 500 }}>{t('allocationOrg.diffCompareMonthLabel')}</div>
+        <Select
+          value={diffModalMonth}
+          onChange={(v) => setDiffModalMonth(v)}
+          placeholder={t('allocationOrg.compareMonthPlaceholder')}
+          style={{ width: '100%' }}
+          options={directoryMonths.map((m: string) => ({ value: m, label: m }))}
         />
       </Modal>
 
