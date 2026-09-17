@@ -1,12 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { COLORS } from '../theme/morandi';
-import { Card, Table, Row, Col, message, Input, Button, Space, Select, Modal, Progress, DatePicker, Tabs, Form, Tag, Popconfirm, Dropdown } from 'antd';
-import { SearchOutlined, UploadOutlined, DownloadOutlined, ExportOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, DownOutlined } from '@ant-design/icons';
+import { Card, Table, Row, message, Input, Button, Space, Select, Modal, Progress, DatePicker, Tabs, Form, Tag, Popconfirm, Dropdown } from 'antd';
+import { UploadOutlined, DownloadOutlined, ExportOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, DownOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
 
 import {
-  getAllocOrgEntriesByMonth,
   getAllocOrgEntriesByBatch,
   getAllocOrgBatches,
   getAllocOrgMonths,
@@ -24,12 +23,11 @@ import type { ImportProgress } from '../types/import';
 
 type SourceTab = 'import' | 'exception' | 'exceptionDiff';
 
-/**
- * 号码分摊机构页面 — 三 Tab：
- * 1) 号码分摊机构（import）：月份 + 批次列表 + 批次明细（含导入 ALLOC-ORG-、通讯录差异推送 COMP-、分行号码推送 BRN- 批次）
- *    分机号/部门全路径：同月通讯录按号码实时匹配；分摊部门/机构代码/成本中心：分摊机构对照表实时匹配
- * 2) 例外号码清单（exception）：数据对比页推送的例外号码（PUSH-EXC-），仅显示与上一自然月通讯录无差异的号码
- * 3) 差异数据（exceptionDiff）：例外清单中与上一自然月通讯录有差异的号码（用户名称/分机号/部门全路径），附上月值对比
+  /**
+ * 号码分摊机构页面 — 三 Tab（统一「月份 → 批次列表 → 批次明细」三层架构）：
+ * 1) 号码分摊机构（import）：导入 ALLOC-ORG-/推送 COMP-/BRN- 批次；分机号/部门全路径实时匹配同月通讯录，分摊三列优先例外清单匹配、对照表兜底
+ * 2) 例外号码清单（exception）：PUSH-EXC- 批次，明细为全部原始条目+上月通讯录对比差异标记
+ * 3) 差异数据（exceptionDiff）：PUSH-EXC- 批次，明细仅与上月通讯录有差异的条目，附上月值对比
  */
 const AllocationOrgPage: React.FC = () => {
   const { t } = useTranslation();
@@ -40,15 +38,18 @@ const AllocationOrgPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<SourceTab>('import');
 
   // ==================== Data state ====================
-  // 例外清单/差异数据 Tab：按月份查询
-  const [entries, setEntries] = useState<Record<string, unknown>[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(0);
-  const [pageSize, setPageSize] = useState(50);
-  const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState('');
-  const [appliedSearch, setAppliedSearch] = useState('');
-  const [prevMonth, setPrevMonth] = useState('');
+  // 例外清单/差异数据 Tab：月份 + 批次列表 + 批次明细（与号码分摊机构 Tab 相同架构）
+  const [excMonth, setExcMonth] = useState<string | undefined>(undefined);
+  const [excBatches, setExcBatches] = useState<Array<Record<string, any>>>([]);
+  const [excBatchesLoading, setExcBatchesLoading] = useState(false);
+  const [excSelectedBatchId, setExcSelectedBatchId] = useState<number | null>(null);
+  const [excBatchEntries, setExcBatchEntries] = useState<Record<string, unknown>[]>([]);
+  const [excBatchTotal, setExcBatchTotal] = useState(0);
+  const [excBatchPage, setExcBatchPage] = useState(0);
+  const [excBatchPageSize, setExcBatchPageSize] = useState(50);
+  const [excBatchSearch, setExcBatchSearch] = useState('');
+  const [excBatchLoading, setExcBatchLoading] = useState(false);
+  const [excPrevMonth, setExcPrevMonth] = useState('');
 
   // import Tab：月份 + 批次列表 + 批次明细
   const [importMonth, setImportMonth] = useState<string | undefined>(undefined);
@@ -66,7 +67,6 @@ const AllocationOrgPage: React.FC = () => {
 
   // Month filter
   const [availableMonths, setAvailableMonths] = useState<string[]>([]);
-  const [selectedMonth, setSelectedMonth] = useState<string | undefined>(undefined);
 
   // Import (import Tab)
   const [uploading, setUploading] = useState(false);
@@ -110,8 +110,8 @@ const AllocationOrgPage: React.FC = () => {
       message.success(t('allocationOrg.exceptionImportSuccess', { total: p.total }));
       fetchMonths('exception');
       if (excBillingMonth) {
-        setSelectedMonth(excBillingMonth);
-        fetchData(excBillingMonth, 'exception', '', 0, pageSize);
+        setExcMonth(excBillingMonth);
+        fetchExcBatches(excBillingMonth);
       }
       setExcUploading(false);
     },
@@ -124,13 +124,13 @@ const AllocationOrgPage: React.FC = () => {
   // ==================== Fetch months ====================
   const fetchMonths = useCallback(async (source?: SourceTab) => {
     try {
-      const months = await getAllocOrgMonths(source === 'import' ? 'import' : (source === 'exception' || source === 'exceptionDiff') ? 'exception' : undefined);
+      const months = await getAllocOrgMonths(source === 'import' ? 'import' : 'exception');
       setAvailableMonths(months);
       if (months.length > 0) {
         if (source === 'import') {
           setImportMonth((prev) => prev || months[0]);
         } else {
-          setSelectedMonth((prev) => prev || months[0]);
+          setExcMonth((prev) => prev || months[0]);
         }
       }
     } catch {
@@ -199,46 +199,83 @@ const AllocationOrgPage: React.FC = () => {
     fetchBatchEntries('', 0, batchPageSize, id);
   }, [fetchBatchEntries, batchPageSize]);
 
-  // ==================== Fetch entries (例外清单/差异数据 Tab 按月份) ====================
-  const fetchData = useCallback(async (month: string | undefined, source?: SourceTab, keyword = '', p = 0, size = 50) => {
-    if (!month) return;
-    setLoading(true);
+  // ==================== Fetch batches (例外清单/差异数据 Tab: PUSH-EXC- 批次) ====================
+  const fetchExcBatches = useCallback(async (month?: string) => {
+    setExcBatchesLoading(true);
     try {
-      const data = await getAllocOrgEntriesByMonth(
-        month, keyword || undefined, p, size,
-        source === 'exception' ? 'exception' : source === 'exceptionDiff' ? 'exception-diff' : undefined,
-      );
-      setEntries(data.entries || []);
-      setTotal(data.total);
-      setPage(data.page);
-      setPageSize(data.size);
-      setPrevMonth((data as Record<string, unknown>).prev_month as string || '');
+      const data = await getAllocOrgBatches(month || undefined, 'exception');
+      setExcBatches(data || []);
+      // 若当前选中的批次不在新列表中，清空选中
+      setExcSelectedBatchId((prev) => {
+        const stillExists = (data || []).some((b) => b.id === prev);
+        if (!stillExists) {
+          setExcBatchEntries([]);
+          setExcBatchTotal(0);
+          return null;
+        }
+        return prev;
+      });
     } catch {
-      message.error(t('allocationOrg.fetchFailed'));
+      message.error(t('allocationOrg.fetchBatchesFailed'));
     } finally {
-      setLoading(false);
+      setExcBatchesLoading(false);
     }
   }, [t]);
 
+  // 例外 Tab：月份变化 → 重新加载批次列表
   useEffect(() => {
-    if ((activeTab === 'exception' || activeTab === 'exceptionDiff') && selectedMonth) {
-      fetchData(selectedMonth, activeTab, appliedSearch, 0, pageSize);
+    if (activeTab === 'exception' || activeTab === 'exceptionDiff') {
+      setExcSelectedBatchId(null);
+      setExcBatchEntries([]);
+      setExcBatchTotal(0);
+      setExcBatchPage(0);
+      setExcBatchSearch('');
+      if (excMonth) {
+        fetchExcBatches(excMonth);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedMonth, activeTab, appliedSearch]);
+  }, [excMonth, activeTab]);
+
+  // ==================== Fetch exception batch entries (例外/差异 Tab 批次明细) ====================
+  const fetchExcBatchEntries = useCallback(async (searchVal?: string, p?: number, s?: number, forceBatchId?: number) => {
+    const id = forceBatchId ?? excSelectedBatchId;
+    if (id == null) return;
+    setExcBatchLoading(true);
+    try {
+      const res = await getAllocOrgEntriesByBatch(
+        id, searchVal ?? excBatchSearch, p ?? excBatchPage, s ?? excBatchPageSize,
+        activeTab === 'exceptionDiff' ? 'exception-diff' : 'exception',
+      );
+      setExcBatchEntries(res.entries || []);
+      setExcBatchTotal(res.total || 0);
+      setExcPrevMonth((res as Record<string, unknown>).prev_month as string || '');
+    } catch {
+      message.error(t('allocationOrg.fetchBatchEntriesFailed'));
+    } finally {
+      setExcBatchLoading(false);
+    }
+  }, [excSelectedBatchId, excBatchSearch, excBatchPage, excBatchPageSize, activeTab, t]);
+
+  const selectExcBatch = useCallback((id: number) => {
+    setExcSelectedBatchId(id);
+    setExcBatchPage(0);
+    setExcBatchSearch('');
+    fetchExcBatchEntries('', 0, excBatchPageSize, id);
+  }, [fetchExcBatchEntries, excBatchPageSize]);
 
   // ==================== Tab change ====================
   const handleTabChange = (key: string) => {
     const newTab = key as SourceTab;
     setActiveTab(newTab);
-    setSearch('');
-    setAppliedSearch('');
-    setSelectedMonth(undefined);
     setImportMonth(undefined);
-    setEntries([]);
-    setTotal(0);
-    setPage(0);
-    setPrevMonth('');
+    setExcMonth(undefined);
+    setExcSelectedBatchId(null);
+    setExcBatchEntries([]);
+    setExcBatchTotal(0);
+    setExcBatchPage(0);
+    setExcBatchSearch('');
+    setExcPrevMonth('');
     setSelectedBatchId(null);
     setBatchEntries([]);
     setBatchTotal(0);
@@ -306,26 +343,40 @@ const AllocationOrgPage: React.FC = () => {
 
   // ==================== Export ====================
   const handleExport = () => {
-    exportAllocOrg(selectedMonth, activeTab === 'exception' ? 'exception' : activeTab === 'exceptionDiff' ? 'exception-diff' : 'import');
-  };
-
-  // ==================== Search (例外清单/差异数据 Tab) ====================
-  const handleSearch = () => {
-    setAppliedSearch(search);
-    fetchData(selectedMonth, activeTab, search, 0, pageSize);
+    if (activeTab === 'import') {
+      exportAllocOrg(importMonth, 'import');
+    } else {
+      exportAllocOrg(excMonth, activeTab === 'exceptionDiff' ? 'exception-diff' : 'exception');
+    }
   };
 
   // ==================== Edit handlers ====================
   const handleEdit = (record: Record<string, unknown>) => {
     setEditingEntry(record);
-    editForm.setFieldsValue({
-      phone_number: record.phone_number,
-      l1_branch: record.l1_branch,
-      alloc_dept: record.alloc_dept,
-      org_code: record.org_code,
-      cost_center: record.cost_center,
-      remark: record.remark,
-    });
+    if (activeTab === 'import') {
+      // 号码分摊机构：分机号/部门全路径实时匹配通讯录，不可编辑
+      editForm.setFieldsValue({
+        phone_number: record.phone_number,
+        l1_branch: record.l1_branch,
+        alloc_dept: record.alloc_dept,
+        org_code: record.org_code,
+        cost_center: record.cost_center,
+        remark: record.remark,
+      });
+    } else {
+      // 例外批次：用户名称/分机号/部门全路径为存储值，可编辑
+      editForm.setFieldsValue({
+        phone_number: record.phone_number,
+        username: record.username,
+        extension: record.extension,
+        dept_path: record.dept_path,
+        l1_branch: record.l1_branch,
+        alloc_dept: record.alloc_dept,
+        org_code: record.org_code,
+        cost_center: record.cost_center,
+        remark: record.remark,
+      });
+    }
     setEditModalOpen(true);
   };
 
@@ -337,7 +388,11 @@ const AllocationOrgPage: React.FC = () => {
       await updateAllocOrgEntry(editingEntry.id as number, values);
       message.success(t('allocationOrg.editSuccess'));
       setEditModalOpen(false);
-      fetchBatchEntries(batchSearch, batchPage, batchPageSize);
+      if (activeTab === 'import') {
+        fetchBatchEntries(batchSearch, batchPage, batchPageSize);
+      } else {
+        fetchExcBatchEntries(excBatchSearch, excBatchPage, excBatchPageSize);
+      }
     } catch (err) {
       if (err instanceof Error) {
         message.error(t('allocationOrg.editFailed', { error: err.message }));
@@ -352,7 +407,11 @@ const AllocationOrgPage: React.FC = () => {
     try {
       await deleteAllocOrgEntry(record.id as number);
       message.success(t('allocationOrg.deleteSuccess'));
-      fetchBatchEntries(batchSearch, batchPage, batchPageSize);
+      if (activeTab === 'import') {
+        fetchBatchEntries(batchSearch, batchPage, batchPageSize);
+      } else {
+        fetchExcBatchEntries(excBatchSearch, excBatchPage, excBatchPageSize);
+      }
     } catch (err) {
       message.error(t('allocationOrg.deleteFailed', {
         error: err instanceof Error ? err.message : t('common.unknown'),
@@ -360,17 +419,26 @@ const AllocationOrgPage: React.FC = () => {
     }
   };
 
-  // ==================== Delete batch (import Tab) ====================
+  // ==================== Delete batch ====================
   const handleDeleteBatch = async (batch: Record<string, any>) => {
     try {
       await deleteAllocOrgBatch(batch.id as number);
       message.success(t('allocationOrg.deleteBatchSuccess'));
-      if (selectedBatchId === batch.id) {
-        setSelectedBatchId(null);
-        setBatchEntries([]);
-        setBatchTotal(0);
+      if (activeTab === 'import') {
+        if (selectedBatchId === batch.id) {
+          setSelectedBatchId(null);
+          setBatchEntries([]);
+          setBatchTotal(0);
+        }
+        fetchBatches(importMonth, 'import');
+      } else {
+        if (excSelectedBatchId === batch.id) {
+          setExcSelectedBatchId(null);
+          setExcBatchEntries([]);
+          setExcBatchTotal(0);
+        }
+        fetchExcBatches(excMonth);
       }
-      fetchBatches(importMonth, 'import');
     } catch (err) {
       message.error(t('allocationOrg.deleteBatchFailed', {
         error: err instanceof Error ? err.message : t('common.unknown'),
@@ -379,56 +447,19 @@ const AllocationOrgPage: React.FC = () => {
   };
 
   // ==================== Table columns ====================
-  // 例外号码清单 Tab 列
-  const exceptionColumns = [
+  // 例外批次条目通用列（号码/用户名称/分机号/部门全路径/一级分行/分摊三列/备注/操作）
+  const excBaseColumns = [
     {
-      title: t('dataComparison.usernameCol'), dataIndex: 'username', key: 'username', width: 120,
-    },
-    {
-      title: t('dataComparison.extensionCol'), dataIndex: 'extension', key: 'extension', width: 110, align: 'center' as const,
-      render: (v: string) => v || '-',
-    },
-    {
-      title: t('dataComparison.phoneNumberCol'), dataIndex: 'phone_number', key: 'phone_number', width: 140,
+      title: t('allocationOrg.colPhoneNumber'), dataIndex: 'phone_number', key: 'phone_number', width: 140,
       render: (v: string) => <span style={{ fontFamily: 'monospace' }}>{v}</span>,
     },
     {
-      title: t('dataComparison.deptPathCol'), dataIndex: 'dept_path', key: 'dept_path', width: 300,
-      ellipsis: true,
-    },
-    {
-      title: t('allocationOrg.colL1Branch'), dataIndex: 'l1_branch', key: 'l1_branch', width: 110, align: 'center' as const,
-    },
-    {
-      title: t('allocationOrg.colAllocDept'), dataIndex: 'alloc_dept', key: 'alloc_dept', width: 180,
-      ellipsis: true,
-    },
-    {
-      title: t('allocationOrg.colOrgCode'), dataIndex: 'org_code', key: 'org_code', width: 90, align: 'center' as const,
-      render: (v: string) => v ? <span style={{ fontFamily: 'monospace' }}>{v}</span> : '-',
-    },
-    {
-      title: t('allocationOrg.colCostCenter'), dataIndex: 'cost_center', key: 'cost_center', width: 90, align: 'center' as const,
-      render: (v: string) => v ? <span style={{ fontFamily: 'monospace' }}>{v}</span> : '-',
-    },
-    {
-      title: t('allocationOrg.colRemark'), dataIndex: 'remark', key: 'remark', width: 180,
-      ellipsis: true,
-    },
-  ];
-
-  // 差异数据 Tab 列（与例外清单对比上月通讯录）
-  const exceptionDiffColumns = [
-    {
       title: t('dataComparison.usernameCol'), dataIndex: 'username', key: 'username', width: 110,
+      render: (v: string) => v || '-',
     },
     {
       title: t('dataComparison.extensionCol'), dataIndex: 'extension', key: 'extension', width: 100, align: 'center' as const,
       render: (v: string) => v || '-',
-    },
-    {
-      title: t('dataComparison.phoneNumberCol'), dataIndex: 'phone_number', key: 'phone_number', width: 130,
-      render: (v: string) => <span style={{ fontFamily: 'monospace' }}>{v}</span>,
     },
     {
       title: t('dataComparison.deptPathCol'), dataIndex: 'dept_path', key: 'dept_path', width: 240,
@@ -450,7 +481,69 @@ const AllocationOrgPage: React.FC = () => {
       render: (v: string) => v ? <span style={{ fontFamily: 'monospace' }}>{v}</span> : '-',
     },
     {
-      title: t('allocationOrg.diffPrevMonth', { month: prevMonth }), key: 'prev', width: 320, align: 'center' as const,
+      title: t('allocationOrg.colRemark'), dataIndex: 'remark', key: 'remark', width: 160,
+      ellipsis: true,
+    },
+  ];
+
+  // 操作列（例外批次条目：编辑/删除）
+  const excActionColumn = canEdit
+    ? [{
+      title: t('allocationOrg.colAction'),
+      key: 'action',
+      width: 160,
+      fixed: 'right' as const,
+      render: (_: unknown, record: Record<string, unknown>) => (
+        <Space size={0}>
+          <Button
+            type="link"
+            size="small"
+            icon={<EditOutlined />}
+            onClick={() => handleEdit(record)}
+          >
+            {t('common.edit')}
+          </Button>
+          <Popconfirm
+            title={t('allocationOrg.deleteConfirmTitle')}
+            description={t('allocationOrg.deleteConfirmContent')}
+            okText={t('common.confirm')}
+            cancelText={t('common.cancel')}
+            okButtonProps={{ danger: true }}
+            onConfirm={() => handleDelete(record)}
+          >
+            <Button
+              type="link"
+              size="small"
+              danger
+              icon={<DeleteOutlined />}
+            >
+              {t('common.delete')}
+            </Button>
+          </Popconfirm>
+        </Space>
+      ),
+    }]
+    : [];
+
+  // 例外号码清单批次明细列（全部原始条目 + 上月对比差异标记）
+  const excBatchColumns = [
+    ...excBaseColumns.slice(0, 8),  // 号码~成本中心
+    {
+      title: t('dataComparison.changedColumnsCol'), dataIndex: 'changed_columns', key: 'changed_columns', width: 150, align: 'center' as const,
+      render: (cols: string[]) => {
+        if (!Array.isArray(cols) || cols.length === 0) return '-';
+        return <span>{cols.map((c: string) => <Tag key={c} color="orange" style={{ marginBottom: 2 }}>{c}</Tag>)}</span>;
+      },
+    },
+    ...excBaseColumns.slice(8),     // 备注
+    ...excActionColumn,
+  ];
+
+  // 差异数据批次明细列（仅差异条目，附上月对比）
+  const excDiffBatchColumns = [
+    ...excBaseColumns.slice(0, 8),  // 号码~成本中心
+    {
+      title: t('allocationOrg.diffPrevMonth', { month: excPrevMonth }), key: 'prev', width: 320, align: 'center' as const,
       render: (_: unknown, record: Record<string, unknown>) => {
         const items = [
           { label: t('dataComparison.usernameCol'), cur: record.username, prev: record.prev_username },
@@ -478,6 +571,8 @@ const AllocationOrgPage: React.FC = () => {
         return <span>{cols.map((c: string) => <Tag key={c} color="orange" style={{ marginBottom: 2 }}>{c}</Tag>)}</span>;
       },
     },
+    ...excBaseColumns.slice(8),     // 备注
+    ...excActionColumn,
   ];
 
   const columns = [
@@ -734,50 +829,122 @@ const AllocationOrgPage: React.FC = () => {
     </>
   );
 
-  // ==================== Render: 例外清单/差异数据 Tab (按月份查询) ====================
-  const renderExceptionTab = () => (
-    <>
-      {/* Search */}
-      <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col flex="auto" />
-        <Col>
-          <Space>
-            <Input
-              placeholder={t('allocationOrg.exceptionSearchPlaceholder')}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onPressEnter={handleSearch}
-              prefix={<SearchOutlined />}
-              style={{ width: 260 }}
-              allowClear
-            />
-            <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>
-              {t('common.search')}
-            </Button>
-          </Space>
-        </Col>
-      </Row>
+  // ==================== Render: 例外清单/差异数据 Tab (月份 + 批次列表 + 批次明细，与号码分摊机构 Tab 架构一致) ====================
+  const renderExceptionTab = () => {
+    const isDiff = activeTab === 'exceptionDiff';
+    return (
+      <>
+        {/* 顶部工具栏：月份选择 + 刷新 | 导入下拉 + 导出 */}
+        <Card size="small" style={{ marginBottom: 16 }}>
+          <Row justify="space-between" align="middle" wrap>
+            <Space wrap>
+              <Select
+                value={excMonth}
+                onChange={(v) => setExcMonth(v)}
+                placeholder={t('allocationOrg.selectMonth')}
+                style={{ width: 160 }}
+                options={availableMonths.map((m: string) => ({ value: m, label: m }))}
+              />
+              <Button size="small" icon={<ReloadOutlined />} onClick={() => fetchExcBatches(excMonth)}>
+                {t('common.refresh')}
+              </Button>
+            </Space>
+            <Space wrap>
+              {!isDiff && canEdit && (
+                <Dropdown
+                  menu={{
+                    items: [
+                      { key: 'import', icon: <UploadOutlined />, label: t('allocationOrg.importLabel'), disabled: excUploading },
+                      { key: 'download', icon: <DownloadOutlined />, label: t('allocationOrg.downloadTemplate') },
+                    ],
+                    onClick: ({ key }) => {
+                      if (key === 'import') handleExcImportClick();
+                      if (key === 'download') downloadAllocOrgTemplate('exception');
+                    },
+                  }}
+                >
+                  <Button icon={<UploadOutlined />} loading={excUploading && !excImportPolling} disabled={excUploading}>
+                    {t('allocationOrg.importLabel')}<DownOutlined />
+                  </Button>
+                </Dropdown>
+              )}
+              {excImportPolling && excImportProgress && (
+                <Progress
+                  percent={excImportPercent}
+                  size="small"
+                  style={{ width: 160, display: 'inline-block', verticalAlign: 'middle' }}
+                  format={() => `${excImportProgress.processed}/${excImportProgress.total}`}
+                />
+              )}
+              <Button icon={<ExportOutlined />} onClick={handleExport}>
+                {t('allocationOrg.export')}
+              </Button>
+            </Space>
+          </Row>
+        </Card>
 
-      <Table
-        dataSource={entries}
-        columns={activeTab === 'exceptionDiff' ? exceptionDiffColumns : exceptionColumns}
-        rowKey="id"
-        loading={loading}
-        size="small"
-        scroll={{ x: activeTab === 'exceptionDiff' ? 1500 : 1300 }}
-        pagination={{
-          current: page + 1,
-          pageSize,
-          total,
-          showSizeChanger: true,
-          showTotal: (total: number) => t('common.totalCount', { count: total }),
-          onChange: (p, s) => {
-            fetchData(selectedMonth, activeTab, appliedSearch, p - 1, s);
-          },
-        }}
-      />
-    </>
-  );
+        {/* 批次列表（PUSH-EXC-） */}
+        <Card size="small" title={t('allocationOrg.batchListTitle')} style={{ marginBottom: 16 }}>
+          <Table
+            dataSource={excBatches}
+            columns={batchColumns}
+            rowKey="id"
+            size="small"
+            loading={excBatchesLoading}
+            rowClassName={(r: Record<string, any>) => r.id === excSelectedBatchId ? 'row-selected' : ''}
+            onRow={(r: Record<string, any>) => ({ onClick: () => selectExcBatch(r.id) })}
+            pagination={{ pageSize: 10, showSizeChanger: false }}
+            scroll={{ x: 700 }}
+          />
+        </Card>
+
+        {/* 批次明细：全部原始条目（例外清单）/ 仅差异条目（差异数据） */}
+        {excSelectedBatchId != null ? (
+          <Card size="small" title={t('allocationOrg.batchDetailTitle')}>
+            <Space wrap style={{ marginBottom: 12 }}>
+              <Input.Search
+                placeholder={t('allocationOrg.exceptionSearchPlaceholder')}
+                style={{ width: 300 }}
+                allowClear
+                onSearch={(val) => { setExcBatchSearch(val); setExcBatchPage(0); fetchExcBatchEntries(val, 0, excBatchPageSize); }}
+              />
+              <span style={{ color: '#999', fontSize: 12 }}>{t('common.paginationTotal', { total: excBatchTotal })}</span>
+            </Space>
+            <Table
+              dataSource={excBatchEntries}
+              columns={isDiff ? excDiffBatchColumns : excBatchColumns}
+              rowKey="id"
+              size="small"
+              loading={excBatchLoading}
+              pagination={{
+                current: excBatchPage + 1,
+                pageSize: excBatchPageSize,
+                total: excBatchTotal,
+                showSizeChanger: true,
+                pageSizeOptions: ['20', '50', '100'],
+                showTotal: (total: number) => t('common.paginationTotal', { total }),
+                onChange: (p: number, s: number) => { setExcBatchPage(p - 1); setExcBatchPageSize(s); fetchExcBatchEntries(excBatchSearch, p - 1, s); },
+              }}
+              scroll={{ x: isDiff ? 1700 : 1400 }}
+            />
+          </Card>
+        ) : (
+          <Card size="small"><div style={{ color: '#999', textAlign: 'center', padding: 24 }}>{t('allocationOrg.noBatchSelected')}</div></Card>
+        )}
+
+        {/* 导入进度（导入完成后自动刷新批次列表） */}
+        {excImportPolling && excImportProgress && excImportPercent >= 100 && (
+          <Card size="small" style={{ marginTop: 16 }}>
+            <div style={{ marginBottom: 4 }}>{t('allocationOrg.importProgress')}</div>
+            <Progress percent={excImportPercent} size="small" format={() => `${excImportProgress.processed}/${excImportProgress.total}`} status="success" />
+            <Button size="small" style={{ marginTop: 8 }} onClick={() => fetchExcBatches(excMonth)}>
+              {t('allocationOrg.refreshAfterImport')}
+            </Button>
+          </Card>
+        )}
+      </>
+    );
+  };
 
   // ==================== Render ====================
   return (
@@ -785,50 +952,6 @@ const AllocationOrgPage: React.FC = () => {
       <Card
         title={t('allocationOrg.title')}
         styles={{ header: { background: COLORS.sageLight } }}
-        extra={
-          <Space>
-            {activeTab !== 'import' ? (
-              <>
-                <Select
-                  value={selectedMonth}
-                  onChange={(v) => setSelectedMonth(v)}
-                  style={{ width: 130 }}
-                  placeholder={t('allocationOrg.selectMonth')}
-                  options={availableMonths.map(m => ({ label: m, value: m }))}
-                />
-                {activeTab === 'exception' && canEdit && (
-                  <Dropdown
-                    menu={{
-                      items: [
-                        { key: 'import', icon: <UploadOutlined />, label: t('allocationOrg.importLabel'), disabled: excUploading },
-                        { key: 'download', icon: <DownloadOutlined />, label: t('allocationOrg.downloadTemplate') },
-                      ],
-                      onClick: ({ key }) => {
-                        if (key === 'import') handleExcImportClick();
-                        if (key === 'download') downloadAllocOrgTemplate('exception');
-                      },
-                    }}
-                  >
-                    <Button icon={<UploadOutlined />} loading={excUploading && !excImportPolling} disabled={excUploading}>
-                      {t('allocationOrg.importLabel')}<DownOutlined />
-                    </Button>
-                  </Dropdown>
-                )}
-                {activeTab === 'exception' && excImportPolling && excImportProgress && (
-                  <Progress
-                    percent={excImportPercent}
-                    size="small"
-                    style={{ width: 160, display: 'inline-block', verticalAlign: 'middle' }}
-                    format={() => `${excImportProgress.processed}/${excImportProgress.total}`}
-                  />
-                )}
-                <Button icon={<ExportOutlined />} onClick={handleExport}>
-                  {t('allocationOrg.export')}
-                </Button>
-              </>
-            ) : null}
-          </Space>
-        }
       >
         <Tabs
           activeKey={activeTab}
@@ -928,12 +1051,28 @@ const AllocationOrgPage: React.FC = () => {
           <Form.Item name="phone_number" label={t('allocationOrg.colPhoneNumber')}>
             <Input />
           </Form.Item>
-          <Form.Item label={t('allocationOrg.colExtension')}>
-            <Input value={editingEntry?.extension as string || ''} disabled />
-          </Form.Item>
-          <Form.Item label={t('allocationOrg.colDeptPath')}>
-            <Input value={editingEntry?.dept_path as string || ''} disabled />
-          </Form.Item>
+          {activeTab === 'import' ? (
+            <>
+              <Form.Item label={t('allocationOrg.colExtension')}>
+                <Input value={editingEntry?.extension as string || ''} disabled />
+              </Form.Item>
+              <Form.Item label={t('allocationOrg.colDeptPath')}>
+                <Input value={editingEntry?.dept_path as string || ''} disabled />
+              </Form.Item>
+            </>
+          ) : (
+            <>
+              <Form.Item name="username" label={t('dataComparison.usernameCol')}>
+                <Input />
+              </Form.Item>
+              <Form.Item name="extension" label={t('allocationOrg.colExtension')}>
+                <Input />
+              </Form.Item>
+              <Form.Item name="dept_path" label={t('allocationOrg.colDeptPath')}>
+                <Input />
+              </Form.Item>
+            </>
+          )}
           <Form.Item name="l1_branch" label={t('allocationOrg.colL1Branch')}>
             <Input />
           </Form.Item>

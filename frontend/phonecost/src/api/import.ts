@@ -30,15 +30,17 @@ export const getAllocOrgBatches = (billingMonth?: string, source?: string) => {
   return apiGet<Array<Record<string, any>>>('/import/allocation-org/batches', params);
 };
 
-// 号码分摊机构批次明细（按批次 ID 分页查询）
-export const getAllocOrgEntriesByBatch = (batchId: number, search?: string, page = 0, size = 50) => {
+// 号码分摊机构批次明细（按批次 ID 分页查询；source: exception=例外批次全部条目+差异标记, exception-diff=仅差异条目）
+export const getAllocOrgEntriesByBatch = (batchId: number, search?: string, page = 0, size = 50, source?: string) => {
   const params: Record<string, string> = { page: String(page), size: String(size) };
   if (search) params.search = search;
+  if (source) params.source = source;
   return apiGet<{
     entries: Array<{
       id: number;
       batch_id: number;
       phone_number: string;
+      username: string;
       extension: string;
       dept_path: string;
       l1_branch: string;
@@ -46,10 +48,16 @@ export const getAllocOrgEntriesByBatch = (batchId: number, search?: string, page
       org_code: string;
       cost_center: string;
       remark: string;
+      prev_username?: string;
+      prev_extension?: string;
+      prev_dept_path?: string;
+      changed_columns?: string[];
+      has_diff?: boolean;
     }>;
     total: number;
     page: number;
     size: number;
+    prev_month?: string;
   }>(`/import/allocation-org/entries-by-batch/${batchId}`, params);
 };
 
@@ -84,6 +92,9 @@ export const getAllocOrgEntriesByMonth = (billingMonth: string, search?: string,
 
 export const updateAllocOrgEntry = (id: number, data: {
   phone_number?: string;
+  username?: string;
+  extension?: string;
+  dept_path?: string;
   l1_branch?: string;
   alloc_dept?: string;
   org_code?: string;

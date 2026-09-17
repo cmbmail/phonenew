@@ -380,8 +380,22 @@ public class AllocationOrgController {
         List<AllocationOrgBatch> batches;
         boolean hasMonth = billingMonth != null && !billingMonth.isBlank();
         boolean isImport = "import".equalsIgnoreCase(source);
+        boolean isException = "exception".equalsIgnoreCase(source);
 
-        if (isImport) {
+        if (isException) {
+            // 例外号码清单/差异数据 Tab：PUSH-EXC- 批次
+            if (scopeBranch == SCOPE_ALL) {
+                batches = hasMonth
+                        ? batchRepo.findByBillingMonthAndSourceException(billingMonth)
+                        : batchRepo.findBySourceException();
+            } else if (scopeBranch == null) {
+                batches = List.of();
+            } else {
+                batches = hasMonth
+                        ? batchRepo.findByBillingMonthAndSourceExceptionAndBranchOrgId(billingMonth, scopeBranch)
+                        : batchRepo.findBySourceExceptionAndBranchOrgId(scopeBranch);
+            }
+        } else if (isImport) {
             // 号码分摊机构 Tab：导入 ALLOC-ORG-/推送 COMP-/BRN- 批次（排除 PUSH- 例外批次）
             if (scopeBranch == SCOPE_ALL) {
                 batches = hasMonth
@@ -456,11 +470,14 @@ public class AllocationOrgController {
     /**
      * 按批次查询号码分摊机构明细（分页 + 搜索）
      * 数据隔离：admin/财务全量；分行/部门用户仅可见本行 entry（entry 级 branchOrgId）
+     * source=exception：PUSH-EXC- 批次全部条目（原始值 + 上月通讯录对比差异标记）
+     * source=exception-diff：PUSH-EXC- 批次仅差异条目（附上月对比值与差异列）
      */
     @GetMapping("/entries-by-batch/{batchId}")
     public ResponseEntity<ApiResponse<Map<String, Object>>> listEntriesByBatch(
             @PathVariable Long batchId,
             @RequestParam(value = "search", required = false) String search,
+            @RequestParam(value = "source", required = false) String source,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size,
             @RequestAttribute("userId") Long userId,
@@ -470,12 +487,22 @@ public class AllocationOrgController {
         String keyword = hasSearch ? search.trim() : "";
         Long scopeBranch = resolveScopeBranchOrg(role, userId);
 
+        AllocationOrgBatch batch = batchRepo.findByIdAndDeletedAtIsNull(batchId).orElse(null);
+        String batchMonth = batch != null ? batch.getBillingMonth() : null;
+
+        // 例外批次（PUSH-EXC-）：原始值 + 上月对比 + 分摊匹配（与按月聚合视图一致）
+        boolean isExceptionBatch = batch != null && batch.getBatchNo() != null
+                && batch.getBatchNo().startsWith("PUSH-EXC-");
+        if (isExceptionBatch) {
+            boolean diffOnly = "exception-diff".equalsIgnoreCase(source);
+            return ResponseEntity.ok(ApiResponse.ok(
+                    buildExceptionBatchDetail(batchId, batchMonth, keyword, page, size, scopeBranch, diffOnly)));
+        }
+
         // 全量加载该批次未删除条目（<=200/页由内存分页处理）
         List<AllocationOrgEntry> all = entryRepo.findByBatchIdAndDeletedAtIsNull(batchId);
 
         // 批次所属月份：用于实时匹配同月通讯录与分摊机构对照表
-        AllocationOrgBatch batch = batchRepo.findByIdAndDeletedAtIsNull(batchId).orElse(null);
-        String batchMonth = batch != null ? batch.getBillingMonth() : null;
         AllocationOrgMatchResolver resolver = batchMonth != null && !batchMonth.isBlank()
                 ? buildMatchResolver(batchMonth)
                 : null;
@@ -654,16 +681,12 @@ public class AllocationOrgController {
     }
 
     /**
-     * 构建例外号码清单/差异数据查询结果：
-     * 例外清单（PUSH-EXC- 批次）按号码与上一自然月通讯录对比：
-     * - 比较用户名称、分机号、部门全路径三项
-     * - 导入条目（用户三字段全空）不参与上月对比，直接进例外清单 Tab
-     * - 推送条目（有用户信息）保持对比：清单 Tab（diffOnly=false）仅返回无差异条目；差异 Tab（diffOnly=true）仅返回有差异条目
-     * - 分摊三列：导入条目直接显示自身值；推送条目优先按号码从例外清单同号导入条目匹配，匹配不到再按 一级分行+部门全路径 从对照表匹配
+     * 构建例外号码清单/差异数据查询结果（按月聚合全部 PUSH-EXC- 批次）：
+     * 复用 processExceptionEntries 统一处理逻辑
      */
     private Map<String, Object> buildExceptionDiffResult(String billingMonth, String keyword,
                                                           int page, int size, Long scopeBranch, boolean diffOnly) {
-        // 1. 加载例外清单条目（PUSH-EXC-）
+        // 1. 加载例外清单条目（PUSH-EXC-，按月聚合）
         List<AllocationOrgEntry> entries;
         if (scopeBranch == SCOPE_ALL) {
             entries = entryRepo.findAllByBillingMonthAndSourceException(billingMonth);
@@ -672,19 +695,45 @@ public class AllocationOrgController {
         } else {
             entries = entryRepo.findAllByBillingMonthAndSourceExceptionAndBranchOrgId(billingMonth, scopeBranch);
         }
+        return processExceptionEntries(entries, billingMonth, keyword, page, size, diffOnly);
+    }
 
-        // 2. 加载上一自然月通讯录（按号码聚合）
+    /**
+     * 单个例外批次（PUSH-EXC-）明细查询结果：
+     * - diffOnly=false：该批次全部条目（原始值 + 上月对比差异标记，不过滤）
+     * - diffOnly=true：该批次仅差异条目（附上月对比值与差异列）
+     */
+    private Map<String, Object> buildExceptionBatchDetail(Long batchId, String batchMonth, String keyword,
+                                                          int page, int size, Long scopeBranch, boolean diffOnly) {
+        List<AllocationOrgEntry> all = entryRepo.findByBatchIdAndDeletedAtIsNull(batchId);
+        List<AllocationOrgEntry> scoped;
+        if (scopeBranch == SCOPE_ALL) {
+            scoped = all;
+        } else if (scopeBranch == null) {
+            scoped = List.of();
+        } else {
+            scoped = all.stream().filter(e -> scopeBranch.equals(e.getBranchOrgId())).toList();
+        }
+        // 批次明细视图：diffOnly=true 仅差异；否则全部条目（null 不过滤）
+        return processExceptionEntries(scoped, batchMonth, keyword, page, size, diffOnly ? Boolean.TRUE : null);
+    }
+
+    /**
+     * 例外条目统一处理（按月聚合与单批次明细共用）：
+     * - 与上一自然月通讯录对比：比较用户名称、分机号、部门全路径三项
+     * - 导入条目（用户三字段全空）不参与上月对比，视为无差异
+     * - 分摊三列：自身携带 → 同月例外清单同号导入条目 → 对照表（一级分行+部门全路径）兑底
+     * - diffOnly 过滤：null=不过滤（批次明细全部条目）；false=仅无差异（按月清单视图）；true=仅差异（差异视图）
+     * - 关键词过滤 → 内存分页
+     */
+    private Map<String, Object> processExceptionEntries(List<AllocationOrgEntry> entries, String billingMonth,
+                                                        String keyword, int page, int size, Boolean diffOnly) {
+        // 1. 加载上一自然月通讯录（按号码聚合）
         String prevMonth = previousNaturalMonth(billingMonth);
         Map<String, String[]> prevByPhone = loadDirectoryByPhone(prevMonth);
 
-        // 2.5 分摊三列匹配上下文：例外清单同号导入条目（后写入覆盖）+ 对照表（兜底）
-        Map<String, String[]> exceptionAllocByPhone = new HashMap<>();
-        for (AllocationOrgEntry e : entries) {
-            if (e.getPhoneNumber() == null || e.getPhoneNumber().isBlank()) continue;
-            if (AllocationOrgMatchResolver.hasAllocInfo(e)) {
-                exceptionAllocByPhone.put(e.getPhoneNumber().trim(), AllocationOrgMatchResolver.allocTrioOf(e));
-            }
-        }
+        // 2. 分摊三列匹配上下文：同月例外清单携带分摊信息的条目（后写入覆盖）+ 对照表（兜底）
+        Map<String, String[]> exceptionAllocByPhone = loadExceptionAllocByPhone(billingMonth);
         AllocationOrgMatchResolver mappingOnly = new AllocationOrgMatchResolver();
         mappingOnly.mappingByBranchDept.putAll(loadMappingByBranchDept());
 
@@ -745,12 +794,12 @@ public class AllocationOrgController {
             item.changedCols = changedCols;
 
             boolean hasDiff = !changedCols.isEmpty();
-            if (diffOnly == hasDiff) {
+            if (diffOnly == null || diffOnly == hasDiff) {
                 items.add(item);
             }
         }
 
-        // 4. 关键词过滤（号码/用户名称/分机号/部门全路径/分摊三列）
+        // 4. 关键词过滤（号码/用户名称/分机号/部门全路径/一级分行/分摊三列/备注）
         if (keyword != null && !keyword.isBlank()) {
             String kw = keyword.toLowerCase();
             items = items.stream().filter(i ->
@@ -758,9 +807,11 @@ public class AllocationOrgController {
                             || i.username.toLowerCase().contains(kw)
                             || i.extension.toLowerCase().contains(kw)
                             || i.deptPath.toLowerCase().contains(kw)
+                            || i.l1Branch.toLowerCase().contains(kw)
                             || i.allocDept.toLowerCase().contains(kw)
                             || i.orgCode.toLowerCase().contains(kw)
-                            || i.costCenter.toLowerCase().contains(kw))
+                            || i.costCenter.toLowerCase().contains(kw)
+                            || i.remark.toLowerCase().contains(kw))
                     .collect(Collectors.toList());
         }
 
@@ -874,7 +925,11 @@ public class AllocationOrgController {
         }
 
         // 逐字段更新：用 containsKey 区分"未传"与"传空串"（空串=清空字段）
+        // username/extension/dept_path 仅例外批次（PUSH-EXC-）条目有存储值，编辑例外条目时提交
         if (body.containsKey("phone_number")) entry.setPhoneNumber(str(body.get("phone_number")));
+        if (body.containsKey("username")) entry.setUsername(str(body.get("username")));
+        if (body.containsKey("extension")) entry.setExtension(str(body.get("extension")));
+        if (body.containsKey("dept_path")) entry.setDeptPath(str(body.get("dept_path")));
         if (body.containsKey("l1_branch")) entry.setL1Branch(str(body.get("l1_branch")));
         if (body.containsKey("alloc_dept")) entry.setAllocDept(str(body.get("alloc_dept")));
         if (body.containsKey("org_code")) entry.setOrgCode(str(body.get("org_code")));
@@ -882,9 +937,11 @@ public class AllocationOrgController {
         if (body.containsKey("remark")) entry.setRemark(str(body.get("remark")));
 
         // 至少有一个字段被提交才允许更新
-        if (!body.containsKey("phone_number") && !body.containsKey("l1_branch")
-                && !body.containsKey("alloc_dept") && !body.containsKey("org_code")
-                && !body.containsKey("cost_center") && !body.containsKey("remark")) {
+        if (!body.containsKey("phone_number") && !body.containsKey("username")
+                && !body.containsKey("extension") && !body.containsKey("dept_path")
+                && !body.containsKey("l1_branch") && !body.containsKey("alloc_dept")
+                && !body.containsKey("org_code") && !body.containsKey("cost_center")
+                && !body.containsKey("remark")) {
             throw new IllegalArgumentException("没有可更新的字段");
         }
 
