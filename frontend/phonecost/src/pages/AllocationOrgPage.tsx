@@ -251,7 +251,7 @@ const AllocationOrgPage: React.FC = () => {
   }, [excMonth, activeTab]);
 
   // ==================== Fetch exception batch entries (例外/差异 Tab 批次明细；差异 Tab 仅差异条目) ====================
-  const fetchExcBatchEntries = useCallback(async (searchVal?: string, p?: number, s?: number, forceBatchId?: number) => {
+  const fetchExcBatchEntries = useCallback(async (searchVal?: string, p?: number, s?: number, forceBatchId?: number, forceCompareMonth?: string) => {
     const id = forceBatchId ?? excSelectedBatchId;
     if (id == null) return;
     setExcBatchLoading(true);
@@ -259,7 +259,7 @@ const AllocationOrgPage: React.FC = () => {
       const res = await getAllocOrgEntriesByBatch(
         id, searchVal ?? excBatchSearch, p ?? excBatchPage, s ?? excBatchPageSize,
         'exception',
-        activeTab === 'exceptionDiff' ? excCompareMonth : undefined,
+        activeTab === 'exceptionDiff' ? (forceCompareMonth ?? excCompareMonth) : undefined,
         activeTab === 'exceptionDiff',
       );
       setExcBatchEntries(res.entries || []);
@@ -300,13 +300,13 @@ const AllocationOrgPage: React.FC = () => {
     setDiffModalOpen(true);
   };
 
-  // 差异数据 Tab：确认对比 → 加载差异明细
+  // 差异数据 Tab：确认对比 → 加载差异明细（直接传弹窗选中的月份，避免闭包陷阱）
   const confirmDiffCompare = () => {
     setExcCompareMonth(diffModalMonth);
     setDiffModalOpen(false);
     setDiffGenerated(true);
-    // 立即加载差异明细
-    fetchExcBatchEntries('', 0, excBatchPageSize);
+    // 立即加载差异明细（forceCompareMonth 直接传入选中月份，不依赖 state 更新时序）
+    fetchExcBatchEntries('', 0, excBatchPageSize, undefined, diffModalMonth);
   };
 
   // ==================== Tab change ====================
