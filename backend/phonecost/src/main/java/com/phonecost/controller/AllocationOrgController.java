@@ -88,7 +88,7 @@ public class AllocationOrgController {
      * 查询时实时匹配器：
      * 1) 同月通讯录（directory_entry JOIN directory_batch）按号码聚合 extension/dept_path 多值（「、」分隔）
      * 2) 分摊机构对照表（allocation_org_mapping）构建 l1Branch+deptPath → orgName/orgCode/costCenterCode 映射
-     * 3) 同月例外号码清单（PUSH-EXC- 导入数据）按号码直接携带分摊部门/机构代码/成本中心（优先级高于对照表）
+     * 3) 同月例外号码清单导入数据（EXC-IMP- 批次）按号码直接携带分摊部门/机构代码/成本中心（优先级高于对照表）
      */
     private static class AllocationOrgMatchResolver {
         final Map<String, String[]> extByPhone = new HashMap<>();
@@ -240,7 +240,7 @@ public class AllocationOrgController {
     }
 
     /**
-     * 同月例外号码清单（PUSH-EXC-）中携带分摊信息的条目：号码 → [allocDept, orgCode, costCenter]
+     * 同月例外号码清单（导入 EXC-IMP- 批次）中携带分摊信息的条目：号码 → [allocDept, orgCode, costCenter]
      * （后写入覆盖先写入，重复导入时最新批次优先）
      */
     private Map<String, String[]> loadExceptionAllocByPhone(String billingMonth) {
@@ -381,9 +381,23 @@ public class AllocationOrgController {
         boolean hasMonth = billingMonth != null && !billingMonth.isBlank();
         boolean isImport = "import".equalsIgnoreCase(source);
         boolean isException = "exception".equalsIgnoreCase(source);
+        boolean isExceptionDiff = "exception-diff".equalsIgnoreCase(source);
 
         if (isException) {
-            // 例外号码清单/差异数据 Tab：PUSH-EXC- 批次
+            // 例外号码清单 Tab：仅导入批次（EXC-IMP-，例外清单上传产生）
+            if (scopeBranch == SCOPE_ALL) {
+                batches = hasMonth
+                        ? batchRepo.findByBillingMonthAndSourceExceptionImport(billingMonth)
+                        : batchRepo.findBySourceExceptionImport();
+            } else if (scopeBranch == null) {
+                batches = List.of();
+            } else {
+                batches = hasMonth
+                        ? batchRepo.findByBillingMonthAndSourceExceptionImportAndBranchOrgId(billingMonth, scopeBranch)
+                        : batchRepo.findBySourceExceptionImportAndBranchOrgId(scopeBranch);
+            }
+        } else if (isExceptionDiff) {
+            // 差异数据 Tab：仅推送批次（PUSH-EXC-，数据对比页推送产生）
             if (scopeBranch == SCOPE_ALL) {
                 batches = hasMonth
                         ? batchRepo.findByBillingMonthAndSourceException(billingMonth)
@@ -434,6 +448,7 @@ public class AllocationOrgController {
         List<String> months;
         boolean isImport = "import".equalsIgnoreCase(source);
         boolean isException = "exception".equalsIgnoreCase(source);
+        boolean isExceptionDiff = "exception-diff".equalsIgnoreCase(source);
 
         if (isImport) {
             if (scopeBranch == SCOPE_ALL) {
@@ -444,7 +459,16 @@ public class AllocationOrgController {
                 months = batchRepo.findDistinctBillingMonthsBySourceImportAndBranchOrgId(scopeBranch);
             }
         } else if (isException) {
-            // 例外号码清单：仅取 PUSH-EXC- 推送批次所在月份
+            // 例外号码清单 Tab：仅导入批次（EXC-IMP-）所在月份
+            if (scopeBranch == SCOPE_ALL) {
+                months = batchRepo.findDistinctBillingMonthsBySourceExceptionImport();
+            } else if (scopeBranch == null) {
+                months = List.of();
+            } else {
+                months = batchRepo.findDistinctBillingMonthsBySourceExceptionImportAndBranchOrgId(scopeBranch);
+            }
+        } else if (isExceptionDiff) {
+            // 差异数据 Tab：仅推送批次（PUSH-EXC-）所在月份
             if (scopeBranch == SCOPE_ALL) {
                 months = batchRepo.findDistinctBillingMonthsBySourceException();
             } else if (scopeBranch == null) {
@@ -470,8 +494,8 @@ public class AllocationOrgController {
     /**
      * 按批次查询号码分摊机构明细（分页 + 搜索）
      * 数据隔离：admin/财务全量；分行/部门用户仅可见本行 entry（entry 级 branchOrgId）
-     * source=exception：PUSH-EXC- 批次全部条目（原始值 + 上月通讯录对比差异标记）
-     * source=exception-diff：PUSH-EXC- 批次仅差异条目（附上月对比值与差异列）
+     * source=exception：例外批次全部条目（原始值 + 上月通讯录对比差异标记）
+     * source=exception-diff：例外批次仅差异条目（附上月对比值与差异列）
      */
     @GetMapping("/entries-by-batch/{batchId}")
     public ResponseEntity<ApiResponse<Map<String, Object>>> listEntriesByBatch(
@@ -490,9 +514,9 @@ public class AllocationOrgController {
         AllocationOrgBatch batch = batchRepo.findByIdAndDeletedAtIsNull(batchId).orElse(null);
         String batchMonth = batch != null ? batch.getBillingMonth() : null;
 
-        // 例外批次（PUSH-EXC-）：原始值 + 上月对比 + 分摊匹配（与按月聚合视图一致）
+        // 例外批次（推送 PUSH-EXC- / 导入 EXC-IMP-）：原始值 + 上月对比 + 分摊匹配（与按月聚合视图一致）
         boolean isExceptionBatch = batch != null && batch.getBatchNo() != null
-                && batch.getBatchNo().startsWith("PUSH-EXC-");
+                && (batch.getBatchNo().startsWith("PUSH-EXC-") || batch.getBatchNo().startsWith("EXC-IMP-"));
         if (isExceptionBatch) {
             boolean diffOnly = "exception-diff".equalsIgnoreCase(source);
             return ResponseEntity.ok(ApiResponse.ok(
@@ -568,7 +592,7 @@ public class AllocationOrgController {
     /**
      * 按月份查询号码分摊机构明细（分页 + 搜索）
      * source=import：号码分摊机构 Tab（导入 ALLOC-ORG-/推送 COMP-/BRN- 批次），实时匹配同月通讯录；分摊三列优先同月例外号码清单，匹配不到再查对照表
-     * source=exception：例外号码清单 Tab（PUSH-EXC- 批次），仅展示与上一自然月通讯录无差异的号码
+     * source=exception：例外号码清单 Tab（导入 EXC-IMP- + 推送 PUSH-EXC- 批次聚合），仅展示与上一自然月通讯录无差异的号码
      * source=exception-diff：差异数据 Tab，仅展示与上一自然月通讯录有差异的号码（含原值 vs 上月值对比）
      */
     @GetMapping("/entries-by-month")
@@ -681,12 +705,12 @@ public class AllocationOrgController {
     }
 
     /**
-     * 构建例外号码清单/差异数据查询结果（按月聚合全部 PUSH-EXC- 批次）：
+     * 构建例外号码清单/差异数据查询结果（按月聚合全部例外批次：导入 EXC-IMP- + 推送 PUSH-EXC-）：
      * 复用 processExceptionEntries 统一处理逻辑
      */
     private Map<String, Object> buildExceptionDiffResult(String billingMonth, String keyword,
                                                           int page, int size, Long scopeBranch, boolean diffOnly) {
-        // 1. 加载例外清单条目（PUSH-EXC-，按月聚合）
+        // 1. 加载例外清单条目（导入 + 推送，按月聚合）
         List<AllocationOrgEntry> entries;
         if (scopeBranch == SCOPE_ALL) {
             entries = entryRepo.findAllByBillingMonthAndSourceException(billingMonth);
@@ -699,7 +723,7 @@ public class AllocationOrgController {
     }
 
     /**
-     * 单个例外批次（PUSH-EXC-）明细查询结果：
+     * 单个例外批次（推送 PUSH-EXC- / 导入 EXC-IMP-）明细查询结果：
      * - diffOnly=false：该批次全部条目（原始值 + 上月对比差异标记，不过滤）
      * - diffOnly=true：该批次仅差异条目（附上月对比值与差异列）
      */
@@ -925,7 +949,7 @@ public class AllocationOrgController {
         }
 
         // 逐字段更新：用 containsKey 区分"未传"与"传空串"（空串=清空字段）
-        // username/extension/dept_path 仅例外批次（PUSH-EXC-）条目有存储值，编辑例外条目时提交
+        // username/extension/dept_path 仅例外批次（EXC-IMP-/PUSH-EXC-）条目有存储值，编辑例外条目时提交
         if (body.containsKey("phone_number")) entry.setPhoneNumber(str(body.get("phone_number")));
         if (body.containsKey("username")) entry.setUsername(str(body.get("username")));
         if (body.containsKey("extension")) entry.setExtension(str(body.get("extension")));

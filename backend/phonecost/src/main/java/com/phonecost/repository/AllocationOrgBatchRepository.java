@@ -40,13 +40,22 @@ public interface AllocationOrgBatchRepository extends JpaRepository<AllocationOr
     @Query("SELECT DISTINCT b.billingMonth FROM AllocationOrgBatch b WHERE b.deletedAt IS NULL AND b.billingMonth IS NOT NULL AND b.batchNo NOT LIKE 'PUSH-%' AND b.id IN (SELECT e.batchId FROM AllocationOrgEntry e WHERE e.branchOrgId = :branchOrgId AND e.deletedAt IS NULL) ORDER BY b.billingMonth DESC")
     List<String> findDistinctBillingMonthsBySourceImportAndBranchOrgId(@Param("branchOrgId") Long branchOrgId);
 
-    // ==================== Exception-scoped queries (例外号码清单 Tab: PUSH-EXC- 批次) ====================
+    // ==================== Exception-scoped queries (例外号码清单/差异数据 Tab) ====================
+    // 推送批次（PUSH-EXC-，数据对比页推送）：差异数据 Tab
 
     @Query("SELECT DISTINCT b.billingMonth FROM AllocationOrgBatch b WHERE b.deletedAt IS NULL AND b.billingMonth IS NOT NULL AND b.batchNo LIKE 'PUSH-EXC-%' ORDER BY b.billingMonth DESC")
     List<String> findDistinctBillingMonthsBySourceException();
 
     @Query("SELECT DISTINCT b.billingMonth FROM AllocationOrgBatch b WHERE b.deletedAt IS NULL AND b.billingMonth IS NOT NULL AND b.batchNo LIKE 'PUSH-EXC-%' AND b.id IN (SELECT e.batchId FROM AllocationOrgEntry e WHERE e.branchOrgId = :branchOrgId AND e.deletedAt IS NULL) ORDER BY b.billingMonth DESC")
     List<String> findDistinctBillingMonthsBySourceExceptionAndBranchOrgId(@Param("branchOrgId") Long branchOrgId);
+
+    // 导入批次（EXC-IMP-，例外号码清单 Tab 上传）：例外号码清单 Tab
+
+    @Query("SELECT DISTINCT b.billingMonth FROM AllocationOrgBatch b WHERE b.deletedAt IS NULL AND b.billingMonth IS NOT NULL AND b.batchNo LIKE 'EXC-IMP-%' ORDER BY b.billingMonth DESC")
+    List<String> findDistinctBillingMonthsBySourceExceptionImport();
+
+    @Query("SELECT DISTINCT b.billingMonth FROM AllocationOrgBatch b WHERE b.deletedAt IS NULL AND b.billingMonth IS NOT NULL AND b.batchNo LIKE 'EXC-IMP-%' AND (b.branchOrgId = :branchOrgId OR b.id IN (SELECT e.batchId FROM AllocationOrgEntry e WHERE e.branchOrgId = :branchOrgId AND e.deletedAt IS NULL)) ORDER BY b.billingMonth DESC")
+    List<String> findDistinctBillingMonthsBySourceExceptionImportAndBranchOrgId(@Param("branchOrgId") Long branchOrgId);
 
     // ==================== Source-scoped batch lists (按来源过滤批次列表) ====================
 
@@ -62,7 +71,8 @@ public interface AllocationOrgBatchRepository extends JpaRepository<AllocationOr
     @Query("SELECT b FROM AllocationOrgBatch b WHERE b.deletedAt IS NULL AND b.billingMonth = :billingMonth AND b.branchOrgId = :branchOrgId AND b.batchNo NOT LIKE 'PUSH-%' ORDER BY b.createdAt DESC")
     List<AllocationOrgBatch> findByBillingMonthAndSourceImportAndBranchOrgId(@Param("billingMonth") String billingMonth, @Param("branchOrgId") Long branchOrgId);
 
-    // ==================== Exception-scoped batch lists (例外清单/差异数据 Tab: PUSH-EXC- 批次) ====================
+    // ==================== Exception-scoped batch lists (例外号码清单/差异数据 Tab) ====================
+    // 推送批次（PUSH-EXC-，数据对比页推送）：差异数据 Tab
 
     @Query("SELECT b FROM AllocationOrgBatch b WHERE b.deletedAt IS NULL AND b.batchNo LIKE 'PUSH-EXC-%' ORDER BY b.createdAt DESC")
     List<AllocationOrgBatch> findBySourceException();
@@ -79,4 +89,22 @@ public interface AllocationOrgBatchRepository extends JpaRepository<AllocationOr
            "AND (b.branchOrgId = :branchOrgId OR b.id IN (SELECT e.batchId FROM AllocationOrgEntry e WHERE e.branchOrgId = :branchOrgId AND e.deletedAt IS NULL)) " +
            "ORDER BY b.createdAt DESC")
     List<AllocationOrgBatch> findByBillingMonthAndSourceExceptionAndBranchOrgId(@Param("billingMonth") String billingMonth, @Param("branchOrgId") Long branchOrgId);
+
+    // 导入批次（EXC-IMP-，例外号码清单 Tab 上传）：例外号码清单 Tab
+
+    @Query("SELECT b FROM AllocationOrgBatch b WHERE b.deletedAt IS NULL AND b.batchNo LIKE 'EXC-IMP-%' ORDER BY b.createdAt DESC")
+    List<AllocationOrgBatch> findBySourceExceptionImport();
+
+    @Query("SELECT b FROM AllocationOrgBatch b WHERE b.deletedAt IS NULL AND b.billingMonth = :billingMonth AND b.batchNo LIKE 'EXC-IMP-%' ORDER BY b.createdAt DESC")
+    List<AllocationOrgBatch> findByBillingMonthAndSourceExceptionImport(@Param("billingMonth") String billingMonth);
+
+    @Query("SELECT b FROM AllocationOrgBatch b WHERE b.deletedAt IS NULL AND b.batchNo LIKE 'EXC-IMP-%' " +
+           "AND (b.branchOrgId = :branchOrgId OR b.id IN (SELECT e.batchId FROM AllocationOrgEntry e WHERE e.branchOrgId = :branchOrgId AND e.deletedAt IS NULL)) " +
+           "ORDER BY b.createdAt DESC")
+    List<AllocationOrgBatch> findBySourceExceptionImportAndBranchOrgId(@Param("branchOrgId") Long branchOrgId);
+
+    @Query("SELECT b FROM AllocationOrgBatch b WHERE b.deletedAt IS NULL AND b.billingMonth = :billingMonth AND b.batchNo LIKE 'EXC-IMP-%' " +
+           "AND (b.branchOrgId = :branchOrgId OR b.id IN (SELECT e.batchId FROM AllocationOrgEntry e WHERE e.branchOrgId = :branchOrgId AND e.deletedAt IS NULL)) " +
+           "ORDER BY b.createdAt DESC")
+    List<AllocationOrgBatch> findByBillingMonthAndSourceExceptionImportAndBranchOrgId(@Param("billingMonth") String billingMonth, @Param("branchOrgId") Long branchOrgId);
 }

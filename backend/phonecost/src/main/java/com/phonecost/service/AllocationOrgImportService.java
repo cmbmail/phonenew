@@ -106,11 +106,11 @@ public class AllocationOrgImportService {
     }
 
     /**
-     * 导入例外号码清单（生成 PUSH-EXC- 批次，change_type=exception）
+     * 导入例外号码清单（生成 EXC-IMP- 批次，change_type=exception）
      * 模板 6 列：号码、一级分行、分摊部门、机构代码、成本中心、备注
      */
     public AllocationOrgBatch importExceptionList(MultipartFile file, Long userId, String billingMonth) {
-        String batchNo = "PUSH-EXC-" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
+        String batchNo = "EXC-IMP-" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
                 + "-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
 
         Long branchOrgId = resolveBranchOrgId(userId);
@@ -228,7 +228,7 @@ public class AllocationOrgImportService {
     }
 
     /**
-     * 批量写入例外清单条目（PUSH-EXC- 批次，change_type=exception）
+     * 批量写入例外清单条目（EXC-IMP- 批次，change_type=exception）
      * 模板列：[0]号码 [1]一级分行 [2]分摊部门 [3]机构代码 [4]成本中心 [5]备注
      * 用户名称/分机号/部门全路径置空（导入数据不参与上月通讯录对比）
      */

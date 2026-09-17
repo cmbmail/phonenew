@@ -88,15 +88,15 @@ public interface AllocationOrgEntryRepository extends JpaRepository<AllocationOr
            "ORDER BY CASE WHEN e.changeType = 'unmatched' THEN 0 ELSE 1 END, e.id")
     List<AllocationOrgEntry> findAllByBillingMonthAndSourceImportAndBranchOrgId(@Param("billingMonth") String billingMonth, @Param("branchOrgId") Long branchOrgId);
 
-    // ==================== Exception-scoped queries (例外号码清单 Tab: PUSH-EXC- 批次) ====================
+    // ==================== Exception-scoped queries (例外号码清单/差异数据: 推送 PUSH-EXC- + 导入 EXC-IMP- 批次) ====================
 
     @Query("SELECT e FROM AllocationOrgEntry e JOIN AllocationOrgBatch b ON e.batchId = b.id " +
-           "WHERE b.billingMonth = :billingMonth AND e.deletedAt IS NULL AND b.deletedAt IS NULL AND b.batchNo LIKE 'PUSH-EXC-%' " +
+           "WHERE b.billingMonth = :billingMonth AND e.deletedAt IS NULL AND b.deletedAt IS NULL AND (b.batchNo LIKE 'PUSH-EXC-%' OR b.batchNo LIKE 'EXC-IMP-%') " +
            "ORDER BY e.id")
     List<AllocationOrgEntry> findAllByBillingMonthAndSourceException(@Param("billingMonth") String billingMonth);
 
     @Query("SELECT e FROM AllocationOrgEntry e JOIN AllocationOrgBatch b ON e.batchId = b.id " +
-           "WHERE b.billingMonth = :billingMonth AND e.branchOrgId = :branchOrgId AND e.deletedAt IS NULL AND b.deletedAt IS NULL AND b.batchNo LIKE 'PUSH-EXC-%' " +
+           "WHERE b.billingMonth = :billingMonth AND e.branchOrgId = :branchOrgId AND e.deletedAt IS NULL AND b.deletedAt IS NULL AND (b.batchNo LIKE 'PUSH-EXC-%' OR b.batchNo LIKE 'EXC-IMP-%') " +
            "ORDER BY e.id")
     List<AllocationOrgEntry> findAllByBillingMonthAndSourceExceptionAndBranchOrgId(@Param("billingMonth") String billingMonth, @Param("branchOrgId") Long branchOrgId);
 

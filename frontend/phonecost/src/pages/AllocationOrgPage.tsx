@@ -23,11 +23,11 @@ import type { ImportProgress } from '../types/import';
 
 type SourceTab = 'import' | 'exception' | 'exceptionDiff';
 
-  /**
+/**
  * 号码分摊机构页面 — 三 Tab（统一「月份 → 批次列表 → 批次明细」三层架构）：
  * 1) 号码分摊机构（import）：导入 ALLOC-ORG-/推送 COMP-/BRN- 批次；分机号/部门全路径实时匹配同月通讯录，分摊三列优先例外清单匹配、对照表兜底
- * 2) 例外号码清单（exception）：PUSH-EXC- 批次，明细为全部原始条目+上月通讯录对比差异标记
- * 3) 差异数据（exceptionDiff）：PUSH-EXC- 批次，明细仅与上月通讯录有差异的条目，附上月值对比
+ * 2) 例外号码清单（exception）：仅导入批次（EXC-IMP-，本 Tab 上传产生），明细为全部条目+上月对比差异标记
+ * 3) 差异数据（exceptionDiff）：仅推送批次（PUSH-EXC-，数据对比页推送产生），明细仅与上月通讯录有差异的条目，附上月值对比
  */
 const AllocationOrgPage: React.FC = () => {
   const { t } = useTranslation();
@@ -124,7 +124,10 @@ const AllocationOrgPage: React.FC = () => {
   // ==================== Fetch months ====================
   const fetchMonths = useCallback(async (source?: SourceTab) => {
     try {
-      const months = await getAllocOrgMonths(source === 'import' ? 'import' : 'exception');
+      // 例外清单 Tab=导入批次月份（source=exception）；差异数据 Tab=推送批次月份（source=exception-diff）
+      const months = await getAllocOrgMonths(
+        source === 'import' ? 'import' : source === 'exceptionDiff' ? 'exception-diff' : 'exception',
+      );
       setAvailableMonths(months);
       if (months.length > 0) {
         if (source === 'import') {
@@ -199,11 +202,14 @@ const AllocationOrgPage: React.FC = () => {
     fetchBatchEntries('', 0, batchPageSize, id);
   }, [fetchBatchEntries, batchPageSize]);
 
-  // ==================== Fetch batches (例外清单/差异数据 Tab: PUSH-EXC- 批次) ====================
+  // ==================== Fetch batches (例外清单 Tab: 导入 EXC-IMP- 批次 / 差异数据 Tab: 推送 PUSH-EXC- 批次) ====================
   const fetchExcBatches = useCallback(async (month?: string) => {
     setExcBatchesLoading(true);
     try {
-      const data = await getAllocOrgBatches(month || undefined, 'exception');
+      const data = await getAllocOrgBatches(
+        month || undefined,
+        activeTab === 'exceptionDiff' ? 'exception-diff' : 'exception',
+      );
       setExcBatches(data || []);
       // 若当前选中的批次不在新列表中，清空选中
       setExcSelectedBatchId((prev) => {
@@ -220,9 +226,9 @@ const AllocationOrgPage: React.FC = () => {
     } finally {
       setExcBatchesLoading(false);
     }
-  }, [t]);
+  }, [activeTab, t]);
 
-  // 例外 Tab：月份变化 → 重新加载批次列表
+  // 例外/差异 Tab：月份变化 → 重新加载批次列表（按 Tab 来源过滤）
   useEffect(() => {
     if (activeTab === 'exception' || activeTab === 'exceptionDiff') {
       setExcSelectedBatchId(null);
