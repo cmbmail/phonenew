@@ -762,6 +762,9 @@ public class AllocationOrgController {
                 ? compareMonth.trim() : nextNaturalMonth(billingMonth);
         Map<String, String[]> compareByPhone = loadDirectoryByPhone(cmpMonth);
 
+        // 1b. 加载同月通讯录（用于填充例外清单导入条目的用户名称/分机号/部门全路径）
+        Map<String, String[]> sameMonthDir = loadDirectoryByPhone(billingMonth);
+
         // 2. 分摊三列匹配上下文：同月例外清单携带分摊信息的条目（后写入覆盖）+ 对照表（兜底）
         Map<String, String[]> exceptionAllocByPhone = loadExceptionAllocByPhone(billingMonth);
         AllocationOrgMatchResolver mappingOnly = new AllocationOrgMatchResolver();
@@ -778,6 +781,16 @@ public class AllocationOrgController {
             item.deptPath = entry.getDeptPath() != null ? entry.getDeptPath() : "";
             item.l1Branch = entry.getL1Branch() != null ? entry.getL1Branch() : "";
             item.remark = entry.getRemark() != null ? entry.getRemark() : "";
+
+            // 从同月通讯录按号码匹配用户名称/分机号/部门全路径（导入条目三字段为空时填充）
+            if (item.phoneNumber.trim().isEmpty() == false) {
+                String[] dir = sameMonthDir.get(item.phoneNumber.trim());
+                if (dir != null) {
+                    if (item.username.isBlank()) item.username = dir[0];
+                    if (item.extension.isBlank()) item.extension = dir[1];
+                    if (item.deptPath.isBlank()) item.deptPath = dir[2];
+                }
+            }
 
             // 分摊三列：自身携带 → 例外清单同号导入条目 → 对照表（一级分行+部门全路径）
             String[] ownTrio = AllocationOrgMatchResolver.allocTrioOf(entry);
@@ -800,15 +813,10 @@ public class AllocationOrgController {
                 }
             }
 
-            // 对比月通讯录对比：导入条目（用户三字段全空）不参与对比，视为无差异直接进例外清单 Tab
-            boolean imported = item.username.isBlank() && item.extension.isBlank() && item.deptPath.isBlank();
+            // 对比月通讯录对比：按号码匹配对比月通讯录，逐列比较
             String[] cmp = compareByPhone.get(item.phoneNumber.trim());
             List<String> changedCols = new ArrayList<>();
-            if (imported) {
-                item.compareUsername = "";
-                item.compareExtension = "";
-                item.compareDeptPath = "";
-            } else if (cmp == null) {
+            if (cmp == null) {
                 changedCols.add("对比月通讯录未找到");
                 item.compareUsername = "";
                 item.compareExtension = "";
