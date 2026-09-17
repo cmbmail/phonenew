@@ -134,12 +134,13 @@ export const downloadAllocOrgTemplate = (source?: string) => {
     });
 };
 
-export const exportAllocOrg = (billingMonth?: string, source?: string) => {
+export const exportAllocOrg = (billingMonth?: string, source?: string, batchId?: number) => {
   const token = useAuthStore.getState().token;
   const baseUrl = getApiBaseUrl();
   const params: string[] = [];
   if (billingMonth) params.push(`billing_month=${encodeURIComponent(billingMonth)}`);
   if (source) params.push(`source=${encodeURIComponent(source)}`);
+  if (batchId != null) params.push(`batch_id=${batchId}`);
   const queryStr = params.length > 0 ? `?${params.join('&')}` : '';
   const url = `${baseUrl}/import/allocation-org/export${queryStr}`;
   fetch(url, {

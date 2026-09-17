@@ -125,17 +125,11 @@ const AllocationOrgPage: React.FC = () => {
   const fetchMonths = useCallback(async (source?: SourceTab) => {
     try {
       // 例外清单 Tab=导入批次月份（source=exception）；差异数据 Tab=推送批次月份（source=exception-diff）
+      // 月份默认不选中（空=展示全部批次），仅加载可选列表
       const months = await getAllocOrgMonths(
         source === 'import' ? 'import' : source === 'exceptionDiff' ? 'exception-diff' : 'exception',
       );
       setAvailableMonths(months);
-      if (months.length > 0) {
-        if (source === 'import') {
-          setImportMonth((prev) => prev || months[0]);
-        } else {
-          setExcMonth((prev) => prev || months[0]);
-        }
-      }
     } catch {
       // ignore
     }
@@ -228,7 +222,7 @@ const AllocationOrgPage: React.FC = () => {
     }
   }, [activeTab, t]);
 
-  // 例外/差异 Tab：月份变化 → 重新加载批次列表（按 Tab 来源过滤）
+  // 例外/差异 Tab：月份变化（含清空）→ 重新加载批次列表（按 Tab 来源过滤，空月份=全部批次）
   useEffect(() => {
     if (activeTab === 'exception' || activeTab === 'exceptionDiff') {
       setExcSelectedBatchId(null);
@@ -236,9 +230,7 @@ const AllocationOrgPage: React.FC = () => {
       setExcBatchTotal(0);
       setExcBatchPage(0);
       setExcBatchSearch('');
-      if (excMonth) {
-        fetchExcBatches(excMonth);
-      }
+      fetchExcBatches(excMonth);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [excMonth, activeTab]);
@@ -347,12 +339,20 @@ const AllocationOrgPage: React.FC = () => {
     }
   };
 
-  // ==================== Export ====================
+  // ==================== Export（仅导出选中批次，未选中提示） ====================
   const handleExport = () => {
     if (activeTab === 'import') {
-      exportAllocOrg(importMonth, 'import');
+      if (selectedBatchId == null) {
+        message.warning(t('allocationOrg.exportSelectBatchFirst'));
+        return;
+      }
+      exportAllocOrg(importMonth, 'import', selectedBatchId);
     } else {
-      exportAllocOrg(excMonth, activeTab === 'exceptionDiff' ? 'exception-diff' : 'exception');
+      if (excSelectedBatchId == null) {
+        message.warning(t('allocationOrg.exportSelectBatchFirst'));
+        return;
+      }
+      exportAllocOrg(excMonth, activeTab === 'exceptionDiff' ? 'exception-diff' : 'exception', excSelectedBatchId);
     }
   };
 
@@ -718,7 +718,8 @@ const AllocationOrgPage: React.FC = () => {
             <Select
               value={importMonth}
               onChange={(v) => setImportMonth(v)}
-              placeholder={t('allocationOrg.selectMonth')}
+              placeholder={t('allocationOrg.allMonths')}
+              allowClear
               style={{ width: 160 }}
               options={availableMonths.map((m: string) => ({ value: m, label: m }))}
             />
@@ -847,7 +848,8 @@ const AllocationOrgPage: React.FC = () => {
               <Select
                 value={excMonth}
                 onChange={(v) => setExcMonth(v)}
-                placeholder={t('allocationOrg.selectMonth')}
+                placeholder={t('allocationOrg.allMonths')}
+                allowClear
                 style={{ width: 160 }}
                 options={availableMonths.map((m: string) => ({ value: m, label: m }))}
               />

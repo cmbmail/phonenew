@@ -1039,8 +1039,9 @@ public class AllocationOrgController {
 
     @GetMapping("/export")
     public ResponseEntity<byte[]> exportEntries(
-            @RequestParam("billing_month") String billingMonth,
+            @RequestParam(value = "billing_month", required = false) String billingMonth,
             @RequestParam(value = "source", required = false) String source,
+            @RequestParam(value = "batch_id", required = false) Long batchId,
             @RequestAttribute("userId") Long userId,
             @RequestAttribute("role") Byte role) {
         Long scopeBranch = resolveScopeBranchOrg(role, userId);
@@ -1048,10 +1049,36 @@ public class AllocationOrgController {
         boolean isException = "exception".equalsIgnoreCase(source) || "exception-diff".equalsIgnoreCase(source);
         boolean isDiffOnly = "exception-diff".equalsIgnoreCase(source);
 
+        // ===== 批次导出：仅导出选中批次的数据 =====
+        if (batchId != null) {
+            AllocationOrgBatch batch = batchRepo.findByIdAndDeletedAtIsNull(batchId)
+                    .orElseThrow(() -> new RuntimeException("批次不存在: " + batchId));
+            String batchMonth = batch.getBillingMonth() != null ? batch.getBillingMonth() : "";
+            boolean batchIsException = batch.getBatchNo() != null
+                    && (batch.getBatchNo().startsWith("PUSH-EXC-") || batch.getBatchNo().startsWith("EXC-IMP-"));
+            if (batchIsException) {
+                // 例外批次：source=exception 全部条目 / source=exception-diff 仅差异条目（与页面批次明细一致）
+                Map<String, Object> data = buildExceptionBatchDetail(batchId, batchMonth, null, 0, Integer.MAX_VALUE, scopeBranch, isDiffOnly);
+                return exportExceptionList(batchMonth, isDiffOnly, data, batch.getBatchNo());
+            }
+            // import 批次（ALLOC-ORG-/COMP-/BRN-）：按批次数据导出（实时匹配列，与页面批次明细一致）
+            List<AllocationOrgEntry> entries = entryRepo.findByBatchIdAndDeletedAtIsNull(batchId);
+            if (scopeBranch != SCOPE_ALL) {
+                entries = (scopeBranch == null) ? List.of()
+                        : entries.stream().filter(e -> scopeBranch.equals(e.getBranchOrgId())).toList();
+            }
+            return exportImportList(entries, batchMonth, true, batch.getBatchNo());
+        }
+
+        // ===== 按月导出（原逻辑不变） =====
+        if (billingMonth == null || billingMonth.isBlank()) {
+            throw new IllegalArgumentException("请选择月份或批次");
+        }
+
         // 例外号码清单/差异数据导出（附上月对比列）
         if (isException) {
             Map<String, Object> data = buildExceptionDiffResult(billingMonth, null, 0, Integer.MAX_VALUE, scopeBranch, isDiffOnly);
-            return exportExceptionList(billingMonth, isDiffOnly, data);
+            return exportExceptionList(billingMonth, isDiffOnly, data, null);
         }
 
         List<AllocationOrgEntry> entries;
@@ -1064,6 +1091,7 @@ public class AllocationOrgController {
             } else {
                 entries = entryRepo.findAllByBillingMonthAndSourceImportAndBranchOrgId(billingMonth, scopeBranch);
             }
+            return exportImportList(entries, billingMonth, true, null);
         } else {
             if (scopeBranch == SCOPE_ALL) {
                 entries = entryRepo.findAllByBillingMonth(billingMonth);
@@ -1072,8 +1100,17 @@ public class AllocationOrgController {
             } else {
                 entries = entryRepo.findAllByBillingMonthAndBranchOrgId(billingMonth, scopeBranch);
             }
+            return exportImportList(entries, billingMonth, false, null);
         }
+    }
 
+    /**
+     * 号码分摊机构 Excel 导出（import 来源：分机号/部门全路径来自同月通讯录实时匹配，
+     * 分摊三列优先同月例外号码清单（按号码）、对照表兜底；非 import（全量）：保持原值）
+     * batchNo 非空时文件名附带批次号
+     */
+    private ResponseEntity<byte[]> exportImportList(List<AllocationOrgEntry> entries, String billingMonth,
+                                                    boolean useResolver, String batchNo) {
         try (Workbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             Sheet sheet = wb.createSheet("号码分摊机构");
 
@@ -1085,8 +1122,6 @@ public class AllocationOrgController {
             headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
 
             // 导出列：号码、分机号、部门全路径、一级分行、分摊部门、机构代码、成本中心、备注
-            // import 来源：分机号/部门全路径来自同月通讯录实时匹配；分摊部门/机构代码/成本中心优先同月例外号码清单（按号码），匹配不到再查对照表（匹配不到为空）
-            // 非来源（全量）：保持原值
             String[] headers = {"号码", "分机号", "部门全路径", "一级分行", "分摊部门", "机构代码", "成本中心", "备注"};
             Row headerRow = sheet.createRow(0);
             for (int i = 0; i < headers.length; i++) {
@@ -1096,12 +1131,13 @@ public class AllocationOrgController {
                 sheet.setColumnWidth(i, 6000);
             }
 
-            AllocationOrgMatchResolver resolver = isImport ? buildMatchResolver(billingMonth) : null;
+            AllocationOrgMatchResolver resolver = useResolver && billingMonth != null && !billingMonth.isBlank()
+                    ? buildMatchResolver(billingMonth) : null;
             int rowIdx = 1;
             for (AllocationOrgEntry entry : entries) {
                 Row row = sheet.createRow(rowIdx++);
                 row.createCell(0).setCellValue(entry.getPhoneNumber() != null ? entry.getPhoneNumber() : "");
-                if (isImport) {
+                if (resolver != null) {
                     Map<String, String> matched = resolver.resolve(entry.getPhoneNumber(), entry.getL1Branch());
                     row.createCell(1).setCellValue(matched.get("extension"));
                     row.createCell(2).setCellValue(matched.get("dept_path"));
@@ -1122,7 +1158,9 @@ public class AllocationOrgController {
             }
 
             wb.write(out);
-            String fileName = URLEncoder.encode("号码分摊机构导出.xlsx", StandardCharsets.UTF_8);
+            String fileTitle = batchNo != null && !batchNo.isBlank()
+                    ? "号码分摊机构导出_" + batchNo + ".xlsx" : "号码分摊机构导出.xlsx";
+            String fileName = URLEncoder.encode(fileTitle, StandardCharsets.UTF_8);
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + fileName)
                     .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
@@ -1133,10 +1171,10 @@ public class AllocationOrgController {
     }
 
     /**
-     * 例外号码清单/差异数据导出（附上月对比列）
+     * 例外号码清单/差异数据导出（附上月对比列）；batchNo 非空时文件名附带批次号，否则附带月份
      */
     @SuppressWarnings("unchecked")
-    private ResponseEntity<byte[]> exportExceptionList(String billingMonth, boolean diffOnly, Map<String, Object> data) {
+    private ResponseEntity<byte[]> exportExceptionList(String billingMonth, boolean diffOnly, Map<String, Object> data, String batchNo) {
         List<Map<String, Object>> entries = (List<Map<String, Object>>) data.get("entries");
         String prevMonth = String.valueOf(data.getOrDefault("prev_month", ""));
 
@@ -1191,7 +1229,8 @@ public class AllocationOrgController {
 
             wb.write(out);
             String fileTitle = diffOnly ? "差异数据导出_" : "例外号码清单导出_";
-            String fileName = URLEncoder.encode(fileTitle + billingMonth + ".xlsx", StandardCharsets.UTF_8);
+            String fileSuffix = (batchNo != null && !batchNo.isBlank()) ? batchNo : billingMonth;
+            String fileName = URLEncoder.encode(fileTitle + fileSuffix + ".xlsx", StandardCharsets.UTF_8);
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + fileName)
                     .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))

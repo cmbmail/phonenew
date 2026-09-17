@@ -69,22 +69,22 @@ public interface AllocationOrgEntryRepository extends JpaRepository<AllocationOr
     // ==================== Source-scoped queries (按来源过滤：import=号码分摊机构 Tab 含导入/COMP-/BRN-，exception=例外号码清单 Tab) ====================
 
     @Query("SELECT e FROM AllocationOrgEntry e JOIN AllocationOrgBatch b ON e.batchId = b.id " +
-           "WHERE b.billingMonth = :billingMonth AND e.deletedAt IS NULL AND b.deletedAt IS NULL AND b.batchNo NOT LIKE 'PUSH-%' " +
+           "WHERE b.billingMonth = :billingMonth AND e.deletedAt IS NULL AND b.deletedAt IS NULL AND b.batchNo NOT LIKE 'PUSH-%' AND b.batchNo NOT LIKE 'EXC-IMP-%' " +
            "ORDER BY CASE WHEN e.changeType = 'unmatched' THEN 0 ELSE 1 END, e.id")
     Page<AllocationOrgEntry> findByBillingMonthAndSourceImport(@Param("billingMonth") String billingMonth, Pageable pageable);
 
     @Query("SELECT e FROM AllocationOrgEntry e JOIN AllocationOrgBatch b ON e.batchId = b.id " +
-           "WHERE b.billingMonth = :billingMonth AND e.deletedAt IS NULL AND b.deletedAt IS NULL AND b.batchNo NOT LIKE 'PUSH-%' " +
+           "WHERE b.billingMonth = :billingMonth AND e.deletedAt IS NULL AND b.deletedAt IS NULL AND b.batchNo NOT LIKE 'PUSH-%' AND b.batchNo NOT LIKE 'EXC-IMP-%' " +
            "ORDER BY CASE WHEN e.changeType = 'unmatched' THEN 0 ELSE 1 END, e.id")
     List<AllocationOrgEntry> findAllByBillingMonthAndSourceImport(@Param("billingMonth") String billingMonth);
 
     @Query("SELECT e FROM AllocationOrgEntry e JOIN AllocationOrgBatch b ON e.batchId = b.id " +
-           "WHERE b.billingMonth = :billingMonth AND e.branchOrgId = :branchOrgId AND e.deletedAt IS NULL AND b.deletedAt IS NULL AND b.batchNo NOT LIKE 'PUSH-%' " +
+           "WHERE b.billingMonth = :billingMonth AND e.branchOrgId = :branchOrgId AND e.deletedAt IS NULL AND b.deletedAt IS NULL AND b.batchNo NOT LIKE 'PUSH-%' AND b.batchNo NOT LIKE 'EXC-IMP-%' " +
            "ORDER BY CASE WHEN e.changeType = 'unmatched' THEN 0 ELSE 1 END, e.id")
     Page<AllocationOrgEntry> findByBillingMonthAndSourceImportAndBranchOrgId(@Param("billingMonth") String billingMonth, @Param("branchOrgId") Long branchOrgId, Pageable pageable);
 
     @Query("SELECT e FROM AllocationOrgEntry e JOIN AllocationOrgBatch b ON e.batchId = b.id " +
-           "WHERE b.billingMonth = :billingMonth AND e.branchOrgId = :branchOrgId AND e.deletedAt IS NULL AND b.deletedAt IS NULL AND b.batchNo NOT LIKE 'PUSH-%' " +
+           "WHERE b.billingMonth = :billingMonth AND e.branchOrgId = :branchOrgId AND e.deletedAt IS NULL AND b.deletedAt IS NULL AND b.batchNo NOT LIKE 'PUSH-%' AND b.batchNo NOT LIKE 'EXC-IMP-%' " +
            "ORDER BY CASE WHEN e.changeType = 'unmatched' THEN 0 ELSE 1 END, e.id")
     List<AllocationOrgEntry> findAllByBillingMonthAndSourceImportAndBranchOrgId(@Param("billingMonth") String billingMonth, @Param("branchOrgId") Long branchOrgId);
 
@@ -101,13 +101,13 @@ public interface AllocationOrgEntryRepository extends JpaRepository<AllocationOr
     List<AllocationOrgEntry> findAllByBillingMonthAndSourceExceptionAndBranchOrgId(@Param("billingMonth") String billingMonth, @Param("branchOrgId") Long branchOrgId);
 
     @Query("SELECT e FROM AllocationOrgEntry e JOIN AllocationOrgBatch b ON e.batchId = b.id " +
-           "WHERE b.billingMonth = :billingMonth AND e.deletedAt IS NULL AND b.deletedAt IS NULL AND b.batchNo NOT LIKE 'PUSH-%' " +
+           "WHERE b.billingMonth = :billingMonth AND e.deletedAt IS NULL AND b.deletedAt IS NULL AND b.batchNo NOT LIKE 'PUSH-%' AND b.batchNo NOT LIKE 'EXC-IMP-%' " +
            "AND (e.phoneNumber LIKE %:keyword% OR e.l1Branch LIKE %:keyword% OR e.allocDept LIKE %:keyword% OR e.orgCode LIKE %:keyword% OR e.remark LIKE %:keyword%) " +
            "ORDER BY CASE WHEN e.changeType = 'unmatched' THEN 0 ELSE 1 END, e.id")
     Page<AllocationOrgEntry> searchByBillingMonthAndSourceImport(@Param("billingMonth") String billingMonth, @Param("keyword") String keyword, Pageable pageable);
 
     @Query("SELECT e FROM AllocationOrgEntry e JOIN AllocationOrgBatch b ON e.batchId = b.id " +
-           "WHERE b.billingMonth = :billingMonth AND e.branchOrgId = :branchOrgId AND e.deletedAt IS NULL AND b.deletedAt IS NULL AND b.batchNo NOT LIKE 'PUSH-%' " +
+           "WHERE b.billingMonth = :billingMonth AND e.branchOrgId = :branchOrgId AND e.deletedAt IS NULL AND b.deletedAt IS NULL AND b.batchNo NOT LIKE 'PUSH-%' AND b.batchNo NOT LIKE 'EXC-IMP-%' " +
            "AND (e.phoneNumber LIKE %:keyword% OR e.l1Branch LIKE %:keyword% OR e.allocDept LIKE %:keyword% OR e.orgCode LIKE %:keyword% OR e.remark LIKE %:keyword%) " +
            "ORDER BY CASE WHEN e.changeType = 'unmatched' THEN 0 ELSE 1 END, e.id")
     Page<AllocationOrgEntry> searchByBillingMonthAndSourceImportAndBranchOrgId(@Param("billingMonth") String billingMonth, @Param("branchOrgId") Long branchOrgId, @Param("keyword") String keyword, Pageable pageable);

@@ -825,6 +825,8 @@ export default {
     exceptionListTab: '例外号码清单',
     exceptionDiffTab: '差异数据',
     exceptionSearchPlaceholder: '搜索号码/用户名称/分机号/部门全路径/分摊部门/机构代码',
+    allMonths: '全部月份',
+    exportSelectBatchFirst: '请先选择要导出的批次',
     exceptionImportMonthTitle: '选择例外清单导入月份',
     exceptionImportMonthHint: '请选择例外号码清单所属月份',
     exceptionImportSuccess: '例外号码清单导入完成：共 {{total}} 条',
