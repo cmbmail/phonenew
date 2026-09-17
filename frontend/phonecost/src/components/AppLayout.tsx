@@ -38,7 +38,7 @@ const allMenuItems: MenuItemDef[] = [
     label: '基础数据',
     children: [
       { key: '/org', icon: <TeamOutlined />, label: '组织架构' },
-      { key: '/data-comparison', icon: <SwapOutlined />, label: '数据对比', roles: [1, 2] },
+      { key: '/data-comparison', icon: <SwapOutlined />, label: '通讯录数据', roles: [1, 2] },
       { key: '/maintenance/branch-number', icon: <BankOutlined />, label: '分行号码', roles: [1, 2] },
       { key: '/maintenance/allocation-org', icon: <BranchesOutlined />, label: '号码分摊机构', roles: [1, 2] },
       { key: '/maintenance/org-code-mapping', icon: <SafetyCertificateOutlined />, label: '组织机构对照表', roles: [1, 2] },

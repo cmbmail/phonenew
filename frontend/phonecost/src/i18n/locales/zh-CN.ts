@@ -959,7 +959,7 @@ export default {
     extensionCol: '分机号',
     phoneNumberCol: '号码',
     // 3-Tab labels
-    currentDataTab: '数据录入',
+    currentDataTab: '通讯录数据',
     historyDataTab: '差异数据',
     exceptionDataTab: '例外数据',
     fetchCurrentFailed: '获取当前数据失败',
@@ -994,7 +994,7 @@ export default {
     // 差异数据Tab（通讯录差异 + 例外数据差异）
     directoryDiffTitle: '通讯录差异',
     exceptionDiffTitle: '例外数据差异',
-    directoryDiffEmpty: '暂无对比结果，请在「数据录入」Tab 点击「数据对比」',
+    directoryDiffEmpty: '暂无对比结果，请在「通讯录数据」Tab 点击「数据对比」',
     searchPlaceholder: '搜索用户名称/分机号/号码/部门',
     exceptionDiffEmpty: '暂无例外数据差异',
     exceptionDiffFailed: '加载例外数据差异失败',
