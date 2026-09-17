@@ -30,12 +30,13 @@ export const getAllocOrgBatches = (billingMonth?: string, source?: string) => {
   return apiGet<Array<Record<string, any>>>('/import/allocation-org/batches', params);
 };
 
-// 号码分摊机构批次明细（按批次 ID 分页查询；source: exception=例外批次全部条目+差异标记, exception-diff=仅差异条目；compareMonth=对比月通讯录月份，默认=批次月+1）
-export const getAllocOrgEntriesByBatch = (batchId: number, search?: string, page = 0, size = 50, source?: string, compareMonth?: string) => {
+// 号码分摊机构批次明细（按批次 ID 分页查询；source: exception=例外清单导入批次（EXC-IMP-），exception-diff=旧推送差异视图；diffOnly=true=仅差异条目；compareMonth=对比月通讯录月份，默认=批次月+1）
+export const getAllocOrgEntriesByBatch = (batchId: number, search?: string, page = 0, size = 50, source?: string, compareMonth?: string, diffOnly?: boolean) => {
   const params: Record<string, string> = { page: String(page), size: String(size) };
   if (search) params.search = search;
   if (source) params.source = source;
   if (compareMonth) params.compare_month = compareMonth;
+  if (diffOnly) params.diff = 'true';
   return apiGet<{
     entries: Array<{
       id: number;
@@ -136,7 +137,7 @@ export const downloadAllocOrgTemplate = (source?: string) => {
     });
 };
 
-export const exportAllocOrg = (billingMonth?: string, source?: string, batchId?: number, compareMonth?: string) => {
+export const exportAllocOrg = (billingMonth?: string, source?: string, batchId?: number, compareMonth?: string, diffOnly?: boolean) => {
   const token = useAuthStore.getState().token;
   const baseUrl = getApiBaseUrl();
   const params: string[] = [];
@@ -144,6 +145,7 @@ export const exportAllocOrg = (billingMonth?: string, source?: string, batchId?:
   if (source) params.push(`source=${encodeURIComponent(source)}`);
   if (batchId != null) params.push(`batch_id=${batchId}`);
   if (compareMonth) params.push(`compare_month=${encodeURIComponent(compareMonth)}`);
+  if (diffOnly) params.push('diff=true');
   const queryStr = params.length > 0 ? `?${params.join('&')}` : '';
   const url = `${baseUrl}/import/allocation-org/export${queryStr}`;
   fetch(url, {

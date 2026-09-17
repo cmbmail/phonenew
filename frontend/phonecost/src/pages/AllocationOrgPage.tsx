@@ -128,10 +128,9 @@ const AllocationOrgPage: React.FC = () => {
   // ==================== Fetch months ====================
   const fetchMonths = useCallback(async (source?: SourceTab) => {
     try {
-      // 例外清单 Tab=导入批次月份（source=exception）；差异数据 Tab=推送批次月份（source=exception-diff）
-      // 月份默认不选中（空=展示全部批次），仅加载可选列表
+      // 例外清单 Tab / 差异数据 Tab 均为导入批次（EXC-IMP-）；差异 Tab 额外仅差异条目
       const months = await getAllocOrgMonths(
-        source === 'import' ? 'import' : source === 'exceptionDiff' ? 'exception-diff' : 'exception',
+        source === 'import' ? 'import' : 'exception',
       );
       setAvailableMonths(months);
     } catch {
@@ -200,14 +199,11 @@ const AllocationOrgPage: React.FC = () => {
     fetchBatchEntries('', 0, batchPageSize, id);
   }, [fetchBatchEntries, batchPageSize]);
 
-  // ==================== Fetch batches (例外清单 Tab: 导入 EXC-IMP- 批次 / 差异数据 Tab: 推送 PUSH-EXC- 批次) ====================
+  // ==================== Fetch batches (例外清单 Tab / 差异数据 Tab: 均为导入批次 EXC-IMP-，差异 Tab 明细仅差异条目) ====================
   const fetchExcBatches = useCallback(async (month?: string) => {
     setExcBatchesLoading(true);
     try {
-      const data = await getAllocOrgBatches(
-        month || undefined,
-        activeTab === 'exceptionDiff' ? 'exception-diff' : 'exception',
-      );
+      const data = await getAllocOrgBatches(month || undefined, 'exception');
       setExcBatches(data || []);
       // 若当前选中的批次不在新列表中，清空选中
       setExcSelectedBatchId((prev) => {
@@ -248,7 +244,7 @@ const AllocationOrgPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [excMonth, activeTab]);
 
-  // ==================== Fetch exception batch entries (例外/差异 Tab 批次明细) ====================
+  // ==================== Fetch exception batch entries (例外/差异 Tab 批次明细；差异 Tab 仅差异条目) ====================
   const fetchExcBatchEntries = useCallback(async (searchVal?: string, p?: number, s?: number, forceBatchId?: number) => {
     const id = forceBatchId ?? excSelectedBatchId;
     if (id == null) return;
@@ -256,8 +252,9 @@ const AllocationOrgPage: React.FC = () => {
     try {
       const res = await getAllocOrgEntriesByBatch(
         id, searchVal ?? excBatchSearch, p ?? excBatchPage, s ?? excBatchPageSize,
-        activeTab === 'exceptionDiff' ? 'exception-diff' : 'exception',
+        'exception',
         activeTab === 'exceptionDiff' ? excCompareMonth : undefined,
+        activeTab === 'exceptionDiff',
       );
       setExcBatchEntries(res.entries || []);
       setExcBatchTotal(res.total || 0);
@@ -376,9 +373,10 @@ const AllocationOrgPage: React.FC = () => {
       }
       exportAllocOrg(
         excMonth,
-        activeTab === 'exceptionDiff' ? 'exception-diff' : 'exception',
+        'exception',
         excSelectedBatchId,
         activeTab === 'exceptionDiff' ? excCompareMonth : undefined,
+        activeTab === 'exceptionDiff',
       );
     }
   };

@@ -494,8 +494,9 @@ public class AllocationOrgController {
     /**
      * 按批次查询号码分摊机构明细（分页 + 搜索）
      * 数据隔离：admin/财务全量；分行/部门用户仅可见本行 entry（entry 级 branchOrgId）
-     * source=exception：例外批次全部条目（原始值 + 上月通讯录对比差异标记）
-     * source=exception-diff：例外批次仅差异条目（附上月对比值与差异列）
+     * source=exception：例外批次（EXC-IMP- 导入 / PUSH-EXC- 推送）全部条目（原始值 + 对比月通讯录差异标记）
+     * source=exception-diff：兼容旧差异视图（仅推送批次差异条目，已不再被前端使用）
+     * diff=true：仅差异条目（差异数据 Tab 使用：source=exception + diff=true）
      */
     @GetMapping("/entries-by-batch/{batchId}")
     public ResponseEntity<ApiResponse<Map<String, Object>>> listEntriesByBatch(
@@ -503,6 +504,7 @@ public class AllocationOrgController {
             @RequestParam(value = "search", required = false) String search,
             @RequestParam(value = "source", required = false) String source,
             @RequestParam(value = "compare_month", required = false) String compareMonth,
+            @RequestParam(value = "diff", required = false) Boolean diff,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size,
             @RequestAttribute("userId") Long userId,
@@ -519,7 +521,7 @@ public class AllocationOrgController {
         boolean isExceptionBatch = batch != null && batch.getBatchNo() != null
                 && (batch.getBatchNo().startsWith("PUSH-EXC-") || batch.getBatchNo().startsWith("EXC-IMP-"));
         if (isExceptionBatch) {
-            boolean diffOnly = "exception-diff".equalsIgnoreCase(source);
+            boolean diffOnly = "exception-diff".equalsIgnoreCase(source) || Boolean.TRUE.equals(diff);
             return ResponseEntity.ok(ApiResponse.ok(
                     buildExceptionBatchDetail(batchId, batchMonth, compareMonth, keyword, page, size, scopeBranch, diffOnly)));
         }
@@ -1057,12 +1059,13 @@ public class AllocationOrgController {
             @RequestParam(value = "source", required = false) String source,
             @RequestParam(value = "batch_id", required = false) Long batchId,
             @RequestParam(value = "compare_month", required = false) String compareMonth,
+            @RequestParam(value = "diff", required = false) Boolean diff,
             @RequestAttribute("userId") Long userId,
             @RequestAttribute("role") Byte role) {
         Long scopeBranch = resolveScopeBranchOrg(role, userId);
         boolean isImport = "import".equalsIgnoreCase(source);
         boolean isException = "exception".equalsIgnoreCase(source) || "exception-diff".equalsIgnoreCase(source);
-        boolean isDiffOnly = "exception-diff".equalsIgnoreCase(source);
+        boolean isDiffOnly = "exception-diff".equalsIgnoreCase(source) || Boolean.TRUE.equals(diff);
 
         // ===== 批次导出：仅导出选中批次的数据 =====
         if (batchId != null) {
