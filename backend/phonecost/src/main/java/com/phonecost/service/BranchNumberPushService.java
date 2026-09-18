@@ -57,7 +57,7 @@ public class BranchNumberPushService {
      * 推送分行号码数据到号码分摊机构
      *
      * 已存在的号码跳过，不存在的号码新增。
-     * 分摊部门、机构代码、成本中心、备注 从最近月清单获取。
+     * 分摊部门、机构代码、成本中心、备注、一级分行 从最近月清单获取（一级分行优先导入数据，无匹配回退分行号码页面值）。
      *
      * @param sourceMonth 分行号码月份（数据来源）
      * @param targetMonth 推送目标月份（写入号码分摊机构的月份，可为空则取 sourceMonth）
@@ -162,7 +162,7 @@ public class BranchNumberPushService {
             // allocation_org_entry 表的归属列为 branch_org_id（org id），需将可见分行名称转成 org id 集合
             List<Object> args = new ArrayList<>();
             args.add(matchMonth);
-            String sql = "SELECT e.phone_number, e.alloc_dept, e.org_code, e.cost_center, e.remark " +
+            String sql = "SELECT e.phone_number, e.alloc_dept, e.org_code, e.cost_center, e.remark, e.l1_branch " +
                     "FROM allocation_org_entry e " +
                     "INNER JOIN allocation_org_batch b ON e.batch_id = b.id " +
                     "WHERE b.billing_month = ? AND e.deleted_at IS NULL AND b.deleted_at IS NULL";
@@ -197,7 +197,11 @@ public class BranchNumberPushService {
             Map<String, Object> row = new HashMap<>();
             row.put("phone_number", phone);
             row.put("username", e.getDescription() != null ? e.getDescription() : "");
-            row.put("l1_branch", e.getL1Branch() != null ? e.getL1Branch() : "");
+            // 一级分行：优先取匹配到的号码分摊机构导入数据（上月），无匹配时回退分行号码页面值
+            String l1Branch = (matched != null && matched[4] != null && !matched[4].isBlank())
+                    ? matched[4]
+                    : (e.getL1Branch() != null ? e.getL1Branch() : "");
+            row.put("l1_branch", l1Branch);
             String allocDept = "";
             String orgCode = "";
             String costCenter = "";
@@ -293,7 +297,8 @@ public class BranchNumberPushService {
             String orgCode = row.get("org_code") != null ? String.valueOf(row.get("org_code")) : "";
             String costCenter = row.get("cost_center") != null ? String.valueOf(row.get("cost_center")) : "";
             String remark = row.get("remark") != null ? String.valueOf(row.get("remark")) : "";
-            matchMap.putIfAbsent(String.valueOf(phone).trim(), new String[]{allocDept, orgCode, costCenter, remark});
+            String l1Branch = row.get("l1_branch") != null ? String.valueOf(row.get("l1_branch")) : "";
+            matchMap.putIfAbsent(String.valueOf(phone).trim(), new String[]{allocDept, orgCode, costCenter, remark, l1Branch});
         }
     }
 
